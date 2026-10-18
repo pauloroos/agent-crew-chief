@@ -1,0 +1,542 @@
+"""Command-line interface for agent-crew-chief.
+
+Every subcommand wires the modules of the package together in the order the
+coordinator uses them: ``discover`` lists the executors present right now,
+``job new``/``piece add`` build the record, ``pick`` chooses an executor,
+``dispatch`` runs one attempt, ``correction``/``grade`` close the loop and
+``accept``/``discard``/``close`` land or drop the work.
+
+All commands take ``--project PATH`` (default: the current directory) and
+``--json`` (structured output instead of text). A ``PrefsError``,
+``RecordError``, ``NotAGitRepo`` or ``ValueError`` prints one line to stderr
+and exits 2; exit 1 means "nothing to do" (no executor, an attempt that is not
+``ok``, nothing to accept) and exit 0 means success. A ``RuntimeError`` from a
+git or worktree operation (a merge conflict, a taken worktree path) is an
+operational failure: one ``error: ...`` line on stderr and exit 1.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from . import records
+from .config import PrefsError, load_prefs
+from .discover import discover
+from .dispatch import dispatch as run_attempt
+from .records import RecordError
+from .scoring import (
+    build_stats,
+    free_failures,
+    grade as score_piece,
+    pick as pick_executor,
+    render_scoreboard,
+)
+from .worktree import NotAGitRepo
+from .worktree import accept as accept_branch
+from .worktree import discard as discard_branch
+
+#: Path of the committed scoreboard, relative to the project root.
+_SCOREBOARD_RELATIVE_PATH = Path("docs") / "crew-chief" / "scoreboard.md"
+
+#: Escalation reasons recorded by ``pick``.
+_ESCALATION_FREE_FAILURES = "2 free failures"
+_ESCALATION_STRONG = "--strong: complex, cannot be split"
+
+
+# --- helpers ---------------------------------------------------------------
+
+
+def _reconfigure_streams() -> None:
+    """Force UTF-8 on stdout and stderr so accented text survives on Windows."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
+
+def _project(args: argparse.Namespace) -> Path:
+    """The project to act on: ``--project`` or the current directory."""
+    if args.project:
+        return Path(args.project).expanduser().resolve()
+    return Path.cwd()
+
+
+def _emit(args: argparse.Namespace, text: str, payload: dict) -> None:
+    """Print ``text``, or ``payload`` as JSON when ``--json`` was given."""
+    if args.json:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    else:
+        sys.stdout.write(text + "\n")
+
+
+def _read_text(path: Path, label: str) -> str:
+    """Read ``path`` as UTF-8; a read failure becomes a :class:`ValueError`."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"{label}: cannot read {path}: {exc}") from exc
+
+
+def _now_iso() -> str:
+    """The current UTC instant as an ISO 8601 string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _piece(job: dict, number: int) -> dict:
+    """The piece numbered ``number``; :class:`ValueError` when it is absent."""
+    for piece in job.get("pieces") or []:
+        if piece.get("n") == number:
+            return piece
+    raise ValueError(f"job {job.get('id')!r} has no piece {number}")
+
+
+def _write_scoreboard(project: Path, text: str) -> Path:
+    """Write the rendered scoreboard into the project and return its path."""
+    path = project / _SCOREBOARD_RELATIVE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _last_ok_exec_attempt(piece: dict) -> dict | None:
+    """The piece's last ``exec`` attempt with status ``ok``, or ``None``."""
+    for attempt in reversed(piece.get("attempts") or []):
+        if attempt.get("role") == "exec" and attempt.get("status") == "ok":
+            return attempt
+    return None
+
+
+# --- commands --------------------------------------------------------------
+
+
+def _cmd_discover(args: argparse.Namespace) -> int:
+    project = _project(args)
+    prefs = load_prefs(project)
+    executors, notes = discover(prefs)
+
+    lines = [
+        f"{executor.id}  cost={executor.cost}  "
+        f"trains={'yes' if executor.trains else 'no'}"
+        for executor in executors
+    ]
+    lines.extend(f"skipped: {note}" for note in notes)
+
+    payload = {
+        "executors": [
+            {
+                "id": executor.id,
+                "tool": executor.tool.get("name"),
+                "model": executor.model,
+                "cost": executor.cost,
+                "trains": executor.trains,
+            }
+            for executor in executors
+        ],
+        "skipped": list(notes),
+    }
+    _emit(args, "\n".join(lines) if lines else "no executors", payload)
+    return 0
+
+
+def _cmd_job_new(args: argparse.Namespace) -> int:
+    project = _project(args)
+    distributed = not args.not_distributed
+    reason = args.reason or ""
+    if not distributed and not reason:
+        raise ValueError("--not-distributed requires --reason")
+
+    request = _read_text(Path(args.request_file), "--request-file")
+    job = records.new_job(
+        project, args.title, request, distributed, reason, args.issue or ""
+    )
+    _emit(args, job["id"], {"id": job["id"]})
+    return 0
+
+
+def _cmd_piece_add(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    number = records.add_piece(job, args.title, args.type, args.risk)
+    records.save_job(project, job)
+    _emit(args, str(number), {"piece": number})
+    return 0
+
+
+def _cmd_pick(args: argparse.Namespace) -> int:
+    project = _project(args)
+    prefs = load_prefs(project)
+    executors, _notes = discover(prefs)
+    job = records.load_job(project, args.job)
+    piece = _piece(job, args.piece)
+
+    exclude = set(args.exclude or [])
+    for attempt in piece.get("attempts") or []:
+        if attempt.get("role") != "exec" or attempt.get("status") == "ok":
+            continue
+        executor_id = attempt.get("executor")
+        if isinstance(executor_id, str) and executor_id:
+            exclude.add(executor_id)
+
+    escalation = ""
+    if free_failures(job, args.piece) >= 2:
+        escalation = _ESCALATION_FREE_FAILURES
+    elif args.strong:
+        escalation = _ESCALATION_STRONG
+    if escalation:
+        exclude |= {executor.id for executor in executors if executor.cost == "free"}
+
+    stats = build_stats(project)
+    choice, reason = pick_executor(
+        executors,
+        stats,
+        piece.get("type", ""),
+        piece.get("risk", ""),
+        prefs,
+        exclude,
+        random.Random(),
+    )
+
+    if escalation:
+        records.add_escalation(
+            job, args.piece, escalation, choice.id if choice else ""
+        )
+
+    if choice is None:
+        records.save_job(project, job)
+        _emit(args, reason, {"executor": None, "reason": reason})
+        return 1
+
+    piece.setdefault("picks", []).append(
+        {"pick": choice.id, "reason": reason, "at": _now_iso()}
+    )
+    records.save_job(project, job)
+    _emit(args, f"{choice.id}\n{reason}", {"executor": choice.id, "reason": reason})
+    return 0
+
+
+def _cmd_dispatch(args: argparse.Namespace) -> int:
+    project = _project(args)
+    if args.review and not args.target:
+        raise ValueError("--review requires --target")
+
+    prefs = load_prefs(project)
+    executors, _notes = discover(prefs)
+    executor = next((item for item in executors if item.id == args.executor), None)
+    if executor is None:
+        raise ValueError(f"unknown executor {args.executor!r}")
+
+    brief = _read_text(Path(args.brief_file), "--brief-file")
+    attempt = run_attempt(
+        project,
+        args.job,
+        args.piece,
+        executor,
+        brief,
+        prefs,
+        role="review" if args.review else "exec",
+        effort=args.effort,
+        timeout_s=args.timeout,
+        review_target=(
+            Path(args.target).expanduser().resolve() if args.target else None
+        ),
+    )
+
+    status = attempt["status"]
+    lines = [
+        f"status: {status}",
+        f"branch: {attempt['branch'] or '-'}",
+        f"worktree: {attempt['worktree'] or '-'}",
+        "destructive_suspect: "
+        + (", ".join(attempt["destructive_suspect"]) or "-"),
+        "outside_writes: " + (", ".join(attempt["outside_writes"]) or "-"),
+    ]
+    payload = {
+        "status": status,
+        "branch": attempt["branch"],
+        "worktree": attempt["worktree"],
+        "destructive_suspect": attempt["destructive_suspect"],
+        "outside_writes": attempt["outside_writes"],
+    }
+    _emit(args, "\n".join(lines), payload)
+    return 0 if status == "ok" else 1
+
+
+def _cmd_correction(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    executor = args.executor or ""
+    records.add_correction(job, args.piece, args.reason, executor)
+    records.save_job(project, job)
+    _emit(
+        args,
+        f"correction recorded on piece {args.piece}",
+        {"piece": args.piece, "reason": args.reason, "executor": executor},
+    )
+    return 0
+
+
+def _cmd_grade(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+
+    stored = score_piece(
+        args.corrections, args.done, args.missing, args.extra, args.penalty or []
+    )
+    stored["executor"] = args.executor
+    stored["graded_at"] = _now_iso()
+    records.set_grade(job, args.piece, stored)
+    records.save_job(project, job)
+    _write_scoreboard(project, render_scoreboard(project))
+
+    _emit(
+        args,
+        f"score: {stored['score']}\n{stored['explain']}",
+        {
+            "score": stored["score"],
+            "explain": stored["explain"],
+            "executor": stored["executor"],
+            "graded_at": stored["graded_at"],
+        },
+    )
+    return 0
+
+
+def _cmd_accept(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    piece = _piece(job, args.piece)
+    attempt = _last_ok_exec_attempt(piece)
+
+    if attempt is None or not attempt.get("branch") or not attempt.get("worktree"):
+        _emit(
+            args,
+            f"nothing to accept on piece {args.piece}",
+            {"branch": None, "worktree": None},
+        )
+        return 1
+
+    accept_branch(project, Path(attempt["worktree"]), attempt["branch"])
+    _emit(
+        args,
+        f"accepted {attempt['branch']}",
+        {"branch": attempt["branch"], "worktree": attempt["worktree"]},
+    )
+    return 0
+
+
+def _cmd_discard(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    piece = _piece(job, args.piece)
+    attempt = _last_ok_exec_attempt(piece)
+
+    if attempt is None or not attempt.get("branch") or not attempt.get("worktree"):
+        _emit(
+            args,
+            f"nothing to discard on piece {args.piece}",
+            {"branch": None, "worktree": None},
+        )
+        return 1
+
+    discard_branch(project, Path(attempt["worktree"]), attempt["branch"])
+    _emit(
+        args,
+        f"discarded {attempt['branch']}",
+        {"branch": attempt["branch"], "worktree": attempt["worktree"]},
+    )
+    return 0
+
+
+def _cmd_close(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    commit, issue = records.summaries(job)
+    _write_scoreboard(project, render_scoreboard(project))
+    _emit(args, f"{commit}\n\n---\n\n{issue}", {"commit": commit, "issue": issue})
+    return 0
+
+
+def _cmd_scoreboard(args: argparse.Namespace) -> int:
+    project = _project(args)
+    text = render_scoreboard(project)
+    _write_scoreboard(project, text)
+    _emit(args, text.rstrip("\n"), {"scoreboard": text})
+    return 0
+
+
+# --- parser ----------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for every subcommand."""
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--project",
+        metavar="PATH",
+        default=None,
+        help="project root (default: the current directory)",
+    )
+    common.add_argument(
+        "--json", action="store_true", help="print the result as JSON"
+    )
+
+    parser = argparse.ArgumentParser(
+        prog="crew-chief", description="Coordinate several executor CLIs."
+    )
+    subcommands = parser.add_subparsers(dest="command", required=True)
+
+    discover_parser = subcommands.add_parser(
+        "discover", parents=[common], help="list the executors available now"
+    )
+    discover_parser.set_defaults(handler=_cmd_discover)
+
+    job_parser = subcommands.add_parser("job", help="job records")
+    job_commands = job_parser.add_subparsers(dest="job_command", required=True)
+    job_new = job_commands.add_parser(
+        "new", parents=[common], help="create a job from a request file"
+    )
+    job_new.add_argument("--title", required=True, help="job title")
+    job_new.add_argument(
+        "--request-file", metavar="F", required=True, help="UTF-8 request file"
+    )
+    job_new.add_argument(
+        "--not-distributed",
+        action="store_true",
+        help="the job stays with the coordinator",
+    )
+    job_new.add_argument("--reason", default="", help="why the job was not distributed")
+    job_new.add_argument("--issue", default="", help="issue tracker reference")
+    job_new.set_defaults(handler=_cmd_job_new)
+
+    piece_parser = subcommands.add_parser("piece", help="job pieces")
+    piece_commands = piece_parser.add_subparsers(dest="piece_command", required=True)
+    piece_add = piece_commands.add_parser(
+        "add", parents=[common], help="append a piece to a job"
+    )
+    piece_add.add_argument("--job", required=True, help="job id")
+    piece_add.add_argument("--title", required=True, help="piece title")
+    piece_add.add_argument("--type", required=True, help="work type")
+    piece_add.add_argument("--risk", required=True, help="risk level")
+    piece_add.set_defaults(handler=_cmd_piece_add)
+
+    pick_parser = subcommands.add_parser(
+        "pick", parents=[common], help="choose the next executor for a piece"
+    )
+    pick_parser.add_argument("--job", required=True, help="job id")
+    pick_parser.add_argument("--piece", type=int, required=True, help="piece number")
+    pick_parser.add_argument(
+        "--exclude",
+        nargs="+",
+        default=[],
+        metavar="EXECUTOR",
+        help="executor ids to leave out",
+    )
+    pick_parser.add_argument(
+        "--strong",
+        action="store_true",
+        help="the piece is complex and cannot be split",
+    )
+    pick_parser.set_defaults(handler=_cmd_pick)
+
+    dispatch_parser = subcommands.add_parser(
+        "dispatch", parents=[common], help="run one attempt"
+    )
+    dispatch_parser.add_argument("--job", required=True, help="job id")
+    dispatch_parser.add_argument(
+        "--piece", type=int, required=True, help="piece number"
+    )
+    dispatch_parser.add_argument("--executor", required=True, help="executor id")
+    dispatch_parser.add_argument(
+        "--brief-file", metavar="F", required=True, help="UTF-8 brief file"
+    )
+    dispatch_parser.add_argument(
+        "--review", action="store_true", help="run as a review, not as exec"
+    )
+    dispatch_parser.add_argument(
+        "--target", default=None, help="worktree a review must run in"
+    )
+    dispatch_parser.add_argument("--effort", default=None, help="effort/reasoning")
+    dispatch_parser.add_argument(
+        "--timeout", type=int, default=None, metavar="S", help="timeout in seconds"
+    )
+    dispatch_parser.set_defaults(handler=_cmd_dispatch)
+
+    correction_parser = subcommands.add_parser(
+        "correction", parents=[common], help="record a correction on a piece"
+    )
+    correction_parser.add_argument("--job", required=True, help="job id")
+    correction_parser.add_argument(
+        "--piece", type=int, required=True, help="piece number"
+    )
+    correction_parser.add_argument("--reason", required=True, help="what went wrong")
+    correction_parser.add_argument("--executor", default=None, help="executor id")
+    correction_parser.set_defaults(handler=_cmd_correction)
+
+    grade_parser = subcommands.add_parser(
+        "grade", parents=[common], help="grade a piece and refresh the scoreboard"
+    )
+    grade_parser.add_argument("--job", required=True, help="job id")
+    grade_parser.add_argument("--piece", type=int, required=True, help="piece number")
+    grade_parser.add_argument("--executor", required=True, help="executor id")
+    grade_parser.add_argument(
+        "--corrections", type=int, required=True, help="number of corrections"
+    )
+    grade_parser.add_argument("--done", type=int, required=True, help="items done")
+    grade_parser.add_argument("--missing", type=int, required=True, help="items missing")
+    grade_parser.add_argument("--extra", type=int, required=True, help="items added")
+    grade_parser.add_argument(
+        "--penalty",
+        action="append",
+        default=[],
+        metavar="P",
+        help="named penalty (repeatable)",
+    )
+    grade_parser.set_defaults(handler=_cmd_grade)
+
+    accept_parser = subcommands.add_parser(
+        "accept", parents=[common], help="merge the piece's last ok attempt"
+    )
+    accept_parser.add_argument("--job", required=True, help="job id")
+    accept_parser.add_argument("--piece", type=int, required=True, help="piece number")
+    accept_parser.set_defaults(handler=_cmd_accept)
+
+    discard_parser = subcommands.add_parser(
+        "discard", parents=[common], help="drop the piece's last ok attempt"
+    )
+    discard_parser.add_argument("--job", required=True, help="job id")
+    discard_parser.add_argument(
+        "--piece", type=int, required=True, help="piece number"
+    )
+    discard_parser.set_defaults(handler=_cmd_discard)
+
+    close_parser = subcommands.add_parser(
+        "close", parents=[common], help="print the job's commit message and comment"
+    )
+    close_parser.add_argument("--job", required=True, help="job id")
+    close_parser.set_defaults(handler=_cmd_close)
+
+    scoreboard_parser = subcommands.add_parser(
+        "scoreboard", parents=[common], help="regenerate and print the scoreboard"
+    )
+    scoreboard_parser.set_defaults(handler=_cmd_scoreboard)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the CLI for ``argv`` (default: ``sys.argv[1:]``) and return a code."""
+    _reconfigure_streams()
+    args = build_parser().parse_args(argv)
+    try:
+        return args.handler(args)
+    except (PrefsError, RecordError, NotAGitRepo, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc).splitlines() else ""
+        print(f"error: {first_line}", file=sys.stderr)
+        return 1
