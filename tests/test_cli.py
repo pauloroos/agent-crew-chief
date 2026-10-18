@@ -64,6 +64,20 @@ cost = "paid"
 """
 
 
+_GLOBAL_PREFS = """
+[[tools]]
+name = "gstub"
+kind = "generic"
+bin = "gstub"
+models = ["m"]
+run_cmd = ["gstub", "{prompt}"]
+
+[[models]]
+match = "gstub:*"
+cost = "free"
+"""
+
+
 def _write_prefs(repo: Path, text: str) -> None:
     path = repo / "docs" / "crew-chief" / "preferences.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +165,25 @@ def test_full_cycle_with_generic_stub(git_repo, fake_bin, monkeypatch, capsys):
     )
     assert "| stub:m | 100 |" in scoreboard
     assert (repo / "out.py").is_file()
+
+
+# --- global preferences ----------------------------------------------------
+
+
+def test_discover_uses_the_global_preferences_file(
+    git_repo, tmp_path, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    global_file = tmp_path / "global-preferences.toml"
+    global_file.write_text(_GLOBAL_PREFS, encoding="utf-8")
+    monkeypatch.setenv("AGENT_CREW_CHIEF_GLOBAL_PREFS", str(global_file))
+    fake_bin("gstub", "print('x')\n")
+    _only_bins(monkeypatch, {"gstub"})
+
+    assert main(["discover", "--project", str(repo)]) == 0
+
+    out = capsys.readouterr().out
+    assert "gstub:m  cost=free  trains=no" in out
 
 
 # --- escalation ------------------------------------------------------------

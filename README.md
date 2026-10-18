@@ -101,11 +101,14 @@ The skill files and the snippet are refreshed. Your `preferences.toml`, your
 
 Preferences live in `docs/crew-chief/preferences.toml` (created from
 `skill/crew-chief/templates/preferences.example.toml`; a full copy with comments
-ships in the skill). An optional global file at
-`~/.config/agent-crew-chief/preferences.toml` is read first: scalar keys are
-overridden one by one (project wins), and the `[[tools]]` / `[[models]]` tables
-are merged by `name` / `match` with the project winning. A model matched by no
-rule is `paid`.
+ships in the skill). A global file at
+`~/.config/agent-crew-chief/preferences.toml` is always read as well — set
+`AGENT_CREW_CHIEF_GLOBAL_PREFS` to point at another location, and a missing file
+is fine. Scalar keys are overridden one by one (project wins), and the
+`[[tools]]` / `[[models]]` tables are merged by `name` / `match` with the
+project winning. A model matched by no rule is `paid`, and a rule with
+`cost = "forbidden"` wins at any level: a global `forbidden` beats a project
+`free`.
 
 Executor ids look like `<tool>:<model>`, for example
 `opencode:opencode-go/longcat-2.5-preview-free`. The fixed vocabularies are work

@@ -9,6 +9,7 @@ tables are merged by ``name``/``match`` with the project winning.
 from __future__ import annotations
 
 import fnmatch
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,9 @@ ISSUE_TRACKERS = ("none", "github", "plane", "linear", "other")
 
 # Location of the project preferences file, relative to the project root.
 PREFS_RELATIVE_PATH = Path("docs") / "crew-chief" / "preferences.toml"
+
+#: Environment variable that overrides the location of the global file.
+GLOBAL_PREFS_ENV = "AGENT_CREW_CHIEF_GLOBAL_PREFS"
 
 DEFAULT_STRONG_ORDER = ["codex", "claude"]
 DEFAULT_EXPLORE_RATE = 0.1
@@ -169,16 +173,31 @@ def _merge_models(
     return merged
 
 
+def default_global_path() -> Path:
+    """Where the optional global preferences file lives by default.
+
+    ``AGENT_CREW_CHIEF_GLOBAL_PREFS`` overrides the path; otherwise it is
+    ``~/.config/agent-crew-chief/preferences.toml``.
+    """
+    override = os.environ.get(GLOBAL_PREFS_ENV)
+    if override:
+        return Path(override)
+    return Path.home() / ".config" / "agent-crew-chief" / "preferences.toml"
+
+
 def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
     """Load and merge preferences for ``project``.
 
     Reads the optional global file and the project's
     ``docs/crew-chief/preferences.toml``, validates both and returns the
-    resolved :class:`Prefs`.
+    resolved :class:`Prefs`. ``global_path=None`` means
+    :func:`default_global_path`; a missing global file is fine.
     """
     project = Path(project)
     project_file = project / PREFS_RELATIVE_PATH
 
+    if global_path is None:
+        global_path = default_global_path()
     global_data: dict[str, Any] = {}
     if global_path is not None:
         global_path = Path(global_path)
@@ -225,16 +244,25 @@ def classify(
 ) -> tuple[str, bool]:
     """Classify an executor id as ``(cost, trains)``.
 
-    The first matching ``[[models]]`` rule (fnmatch on the executor id) wins.
-    With no match the result is ``(tool_default or "paid", False)``. When
-    ``prefs.forbid_training`` is set and the matched rule trains, the cost
-    becomes ``"forbidden"``.
+    A ``cost = "forbidden"`` rule at any level (project or global) wins over
+    every other match, so an operator can forbid an executor globally even
+    when the project grants it. Otherwise the first matching ``[[models]]``
+    rule (fnmatch on the executor id) wins. With no match the result is
+    ``(tool_default or "paid", False)``. When ``prefs.forbid_training`` is set
+    and the matched rule trains, the cost becomes ``"forbidden"``.
     """
+    first: dict | None = None
     for rule in prefs.models:
-        if fnmatch.fnmatchcase(executor_id, rule["match"]):
-            cost = rule["cost"]
-            trains = bool(rule.get("trains", False))
-            if prefs.forbid_training and trains:
-                cost = "forbidden"
-            return cost, trains
-    return (tool_default or "paid"), False
+        if not fnmatch.fnmatchcase(executor_id, rule["match"]):
+            continue
+        if rule["cost"] == "forbidden":
+            return "forbidden", bool(rule.get("trains", False))
+        if first is None:
+            first = rule
+    if first is None:
+        return (tool_default or "paid"), False
+    cost = first["cost"]
+    trains = bool(first.get("trains", False))
+    if prefs.forbid_training and trains:
+        cost = "forbidden"
+    return cost, trains

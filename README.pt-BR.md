@@ -102,11 +102,14 @@ Os arquivos da skill e o trecho são atualizados. Seu `preferences.toml`, seus
 
 As preferências ficam em `docs/crew-chief/preferences.toml` (criado a partir de
 `skill/crew-chief/templates/preferences.example.toml`; uma cópia completa com
-comentários vem junto com a skill). Um arquivo global opcional em
-`~/.config/agent-crew-chief/preferences.toml` é lido primeiro: chaves escalares
-são sobrescritas uma a uma (o projeto vence), e as tabelas `[[tools]]` /
-`[[models]]` são mescladas por `name` / `match` com o projeto vencendo. Um modelo
-que não casa com nenhuma regra é `paid`.
+comentários vem junto com a skill). Um arquivo global em
+`~/.config/agent-crew-chief/preferences.toml` também é sempre lido — defina
+`AGENT_CREW_CHIEF_GLOBAL_PREFS` para apontar para outro lugar, e um arquivo
+ausente não é problema. Chaves escalares são sobrescritas uma a uma (o projeto
+vence), e as tabelas `[[tools]]` / `[[models]]` são mescladas por `name` /
+`match` com o projeto vencendo. Um modelo que não casa com nenhuma regra é
+`paid`, e uma regra com `cost = "forbidden"` vence em qualquer nível: um
+`forbidden` global bate um `free` do projeto.
 
 Os ids de executor têm o formato `<tool>:<model>`, por exemplo
 `opencode:opencode-go/longcat-2.5-preview-free`. Os vocabulários fixos são os

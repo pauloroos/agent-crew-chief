@@ -14,6 +14,19 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 
+@pytest.fixture(autouse=True)
+def isolated_global_prefs(tmp_path: Path, monkeypatch) -> Path:
+    """Point the global preferences file at a non-existent path under tmp_path.
+
+    ``load_prefs`` falls back to ``default_global_path()``, so without this a
+    developer's real ``~/.config/agent-crew-chief/preferences.toml`` would
+    leak into every test.
+    """
+    path = tmp_path / "no-global-preferences.toml"
+    monkeypatch.setenv("AGENT_CREW_CHIEF_GLOBAL_PREFS", str(path))
+    return path
+
+
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(
         ["git", *args],
