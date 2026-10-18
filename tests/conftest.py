@@ -52,7 +52,7 @@ def fake_bin(tmp_path: Path, monkeypatch):
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir(exist_ok=True)
         if not script_text.startswith("#!"):
-            script_text = "#!python3\n" + script_text
+            script_text = f"#!{sys.executable}\n" + script_text
         stub = bin_dir / name
         stub.write_text(script_text, encoding="utf-8")
         if os.name == "nt":
