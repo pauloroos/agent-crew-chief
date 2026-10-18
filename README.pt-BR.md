@@ -26,7 +26,7 @@ Você provavelmente tem mais poder de IA do que usa: modelos grátis no OpenCode
 
 O **agent-crew-chief** transforma o agente em que você já trabalha (Claude Code, Codex, OpenCode, Cursor, Antigravity…) num **chefe de equipe**:
 
-| | |
+| Recurso | O que você ganha |
 |---|---|
 | 🆓 **Grátis primeiro** | Os modelos grátis pegam o trabalho. Os pagos só entram quando os grátis não dão conta, ou quando a tarefa é complexa demais para dividir. |
 | 🔍 **Revisão de verdade** | Toda entrega é lida por um modelo de **outra família** antes de chegar a você. A palavra final é do chefe. |
@@ -40,7 +40,7 @@ Sem servidor, sem processo de fundo, sem dependências: uma skill e um CLI Pytho
 ## Como funciona
 
 ```mermaid
-flowchart LR
+flowchart TB
     A([Seu pedido]) --> B[Chefe planeja<br/>e divide]
     B --> C{pick}
     C -->|grátis primeiro| D[Executor trabalha<br/>em pasta isolada]

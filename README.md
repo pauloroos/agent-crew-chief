@@ -26,7 +26,7 @@ You probably have more AI firepower than you use. There are free models in OpenC
 
 **agent-crew-chief** turns the agent you already work in (Claude Code, Codex, OpenCode, Cursor, Antigravity…) into a **crew chief**:
 
-| | |
+| Feature | What you get |
 |---|---|
 | 🆓 **Free first** | Free models get the work. Paid ones step in only when the free ones can't deliver, or the task is too complex to split. |
 | 🔍 **Real review** | Every delivery is read by a **different model family** before you see it. The chief has the final word. |
@@ -40,7 +40,7 @@ No server, no daemon, no dependencies: one skill plus a stdlib Python CLI that a
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TB
     A([Your request]) --> B[Chief plans<br/>and splits]
     B --> C{pick}
     C -->|free first| D[Executor works in<br/>an isolated worktree]
