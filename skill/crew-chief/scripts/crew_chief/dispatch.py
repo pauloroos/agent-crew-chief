@@ -85,6 +85,9 @@ def dispatch(
     The returned dict is also appended to ``piece`` of the job and the job is
     saved, whatever the status: ``ok``, ``failed``, ``timeout``, ``quota``,
     ``outside_write`` or ``brief_refused``.
+
+    Precondition: ``piece`` must exist in the job; otherwise ValueError is
+    raised and nothing is recorded.
     """
     project = Path(project)
     if role == "review" and review_target is None:
@@ -167,7 +170,7 @@ def dispatch(
             text=True,
             encoding="utf-8",
             errors="replace",
-            start_new_session=True,
+            start_new_session=(os.name != "nt"),
         )
     except OSError as exc:
         _remove_brief(role, brief_file)
@@ -186,7 +189,7 @@ def dispatch(
     attempt["outside_writes"] = writes
 
     text = stdout or ""
-    if not text.strip() and output_file.exists():
+    if text == "" and output_file.exists():
         text = output_file.read_text(encoding="utf-8", errors="replace")
     attempt["note"] = text[-MAX_NOTE:]
 

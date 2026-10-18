@@ -254,6 +254,26 @@ def test_output_file_used_when_stdout_is_empty(git_repo, fake_bin):
     assert attempt["note"] == "answer from file"
 
 
+def test_whitespace_stdout_beats_output_file(git_repo, fake_bin):
+    fake_bin(
+        "stub",
+        "import sys\n"
+        "from pathlib import Path\n"
+        "Path(sys.argv[1]).write_text('answer from file', encoding='utf-8')\n"
+        "sys.stdout.buffer.write(b'\\n')\n"
+        "sys.stdout.buffer.flush()\n",
+    )
+    job = _seed_job(git_repo)
+    tool = _tool()
+    tool["run_cmd"] = ["stub", "{output_file}", "{prompt}"]
+    executor = Executor(id="stub:m", tool=tool, model="m", cost="free", trains=False)
+
+    attempt = dispatch(git_repo, job["id"], 1, executor, "go\n", _prefs())
+
+    assert attempt["status"] == "ok"
+    assert attempt["note"] == "\n"
+
+
 def test_missing_env_fails_before_starting(git_repo, fake_bin, monkeypatch):
     fake_bin(
         "stub",
