@@ -238,6 +238,32 @@ Tudo em `docs/crew-chief/`:
 Eles pertencem ao projeto, então um colega (ou a próxima sessão) herda o
 histórico. Commitar é o ponto: o placar só serve se sobreviver.
 
+## Matemática do placar
+
+Cada parte avaliada vira um número — o mesmo que `grade` grava no job e que o
+`scoreboard.md` usa para ranquear:
+
+```
+score = 100 * done / (done + missing)
+        - 15 * corrections
+        - 5 * extra
+        - penalties
+score = clamp(round(score), 0, 100)
+```
+
+As penalidades são 40 para `destructive`, 60 para `outside_write`, 40 para
+`false_done` e 30 para `model_mismatch`. Quando `done + missing == 0`, o termo
+de aderência vale 100.
+
+O histórico é ponderado pela idade com meia-vida de 30 dias: uma nota de 30
+dias atrás vale metade da de hoje, uma de 60 dias atrás vale um quarto. A nota
+mostrada por executor e tipo de trabalho é a média ponderada das notas dele.
+
+A escolha é free primeiro: a melhor nota com decaimento ganha, empates vão para
+a menor duração média e, só em trabalho de risco baixo, há 1 chance em 10
+(`explore_rate`, padrão `0.1`) de um executor sem nota ou abaixo da mediana
+ganhar uma segunda chance. Nenhum modelo é descartado para sempre.
+
 ## Coordenadores suportados
 
 Testados: **Claude Code**, **Codex** e **OpenCode**. Esperados funcionar, ainda

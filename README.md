@@ -238,6 +238,32 @@ They belong to the project, so a teammate (or the next session) inherits the
 history. Committing them is the point: the scoreboard is only useful if it
 survives.
 
+## Scoreboard math
+
+Each graded piece becomes one number — the same one `grade` stores in the job
+and `scoreboard.md` ranks by:
+
+```
+score = 100 * done / (done + missing)
+        - 15 * corrections
+        - 5 * extra
+        - penalties
+score = clamp(round(score), 0, 100)
+```
+
+The penalties are 40 for `destructive`, 60 for `outside_write`, 40 for
+`false_done` and 30 for `model_mismatch`. When `done + missing == 0` the
+adherence term is a full 100.
+
+History is weighted by age with a 30-day half-life: a grade from 30 days ago
+counts half as much as today's, one from 60 days ago a quarter as much. The
+score shown per executor and work type is the weighted mean of its grades.
+
+Picking is free-first: the best decayed score wins, ties break on the shorter
+mean duration, and on low-risk work only there is a 1-in-10 chance
+(`explore_rate`, default `0.1`) that an unrated or below-median executor gets a
+second chance. No model is ever dropped for good.
+
 ## Supported coordinators
 
 Tested: **Claude Code**, **Codex** and **OpenCode**. Expected to work, not yet

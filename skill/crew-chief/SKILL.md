@@ -174,10 +174,10 @@ The script computes the score from inputs you supply after reading the diff:
 
 The score is `100 * done/(done+missing) - 15*corrections - 5*extra - the
 penalties`, and the result is clamped to the 0-100 range. A low score is
-information, not a death
-sentence: `pick` weighs it down, the scoreboard keeps it, and an unrated or
-below-median executor still gets a second chance on low-risk work
-(`explore_rate`, default `0.1`). No model is ever dropped for good.
+information, not a death sentence: `pick` weighs it down, the scoreboard keeps
+it, and an unrated or below-median executor still gets a second chance on
+low-risk work (`explore_rate`, default `0.1`). No model is ever dropped for
+good.
 
 ## Safety
 

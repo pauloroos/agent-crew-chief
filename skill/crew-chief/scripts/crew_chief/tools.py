@@ -213,6 +213,30 @@ def _fill_from_registry(names: list[str], env: dict[str, str]) -> list[str]:
     return still_missing
 
 
+def _env_and_missing(tool: dict) -> tuple[dict[str, str], list[str]]:
+    """The environment for ``tool`` plus its still-missing declared names.
+
+    Starts from ``os.environ``; a declared name missing from it is read from
+    ``HKCU\\Environment`` on Windows (no registry elsewhere). Registry values
+    are never printed.
+    """
+    env = dict(os.environ)
+    missing = [name for name in tool.get("env", []) if name not in env]
+    if missing and os.name == "nt":
+        missing = _fill_from_registry(missing, env)
+    return env, missing
+
+
+def missing_env(tool: dict) -> list[str]:
+    """Declared env var names that are still missing for ``tool``.
+
+    Uses the same lookup as :func:`tool_env`: ``os.environ`` first, then
+    ``HKCU\\Environment`` on Windows. Returns ``[]`` when the tool declares
+    nothing or everything is satisfied.
+    """
+    return _env_and_missing(tool)[1]
+
+
 def tool_env(tool: dict) -> dict[str, str] | None:
     """Environment for ``tool``: ``os.environ`` plus its declared names.
 
@@ -220,8 +244,5 @@ def tool_env(tool: dict) -> dict[str, str] | None:
     on Windows (no registry on other platforms). Returns ``None`` when a
     declared name is still missing.
     """
-    env = dict(os.environ)
-    missing = [name for name in tool.get("env", []) if name not in env]
-    if missing and os.name == "nt":
-        missing = _fill_from_registry(missing, env)
+    env, missing = _env_and_missing(tool)
     return None if missing else env

@@ -45,6 +45,56 @@ def test_discover_skips_missing_bin_and_missing_env(fake_bin, monkeypatch):
     assert "CREWCHIEF_TEST_MISSING" in notes_text
 
 
+def test_discover_missing_env_note_names_only_vars_still_missing(fake_bin, monkeypatch):
+    """The note must not name a var that the Windows registry fill satisfied."""
+    monkeypatch.setenv("CREWCHIEF_PRESENT_X", "value")
+    monkeypatch.delenv("CREWCHIEF_MISSING_Y", raising=False)
+    fake_bin("envtool", "print('m')\n")
+    prefs = _prefs([
+        {"name": "envtool", "kind": "generic", "bin": "envtool", "models": ["m1"],
+         "env": ["CREWCHIEF_PRESENT_X", "CREWCHIEF_MISSING_Y"]},
+    ])
+    executors, notes = discover(prefs)
+    assert executors == []
+    note = next(n for n in notes if n.startswith("envtool"))
+    assert "CREWCHIEF_MISSING_Y" in note
+    assert "CREWCHIEF_PRESENT_X" not in note
+
+
+def test_discover_note_ignores_names_the_registry_filled(fake_bin, monkeypatch):
+    """A name the Windows registry can supply must not appear in the note."""
+    import os as _os
+    import types
+
+    from crew_chief import tools as tools_module
+
+    monkeypatch.delenv("CREWCHIEF_FROM_REGISTRY", raising=False)
+    monkeypatch.delenv("CREWCHIEF_MISSING_Y", raising=False)
+    monkeypatch.setattr(
+        tools_module,
+        "_fill_from_registry",
+        lambda names, env: [
+            name for name in names if name != "CREWCHIEF_FROM_REGISTRY"
+        ],
+    )
+    # Fake a Windows environment so the registry fill path is taken.
+    monkeypatch.setattr(
+        tools_module,
+        "os",
+        types.SimpleNamespace(name="nt", environ=dict(_os.environ)),
+    )
+    fake_bin("envtool", "print('m')\n")
+    prefs = _prefs([
+        {"name": "envtool", "kind": "generic", "bin": "envtool", "models": ["m1"],
+         "env": ["CREWCHIEF_FROM_REGISTRY", "CREWCHIEF_MISSING_Y"]},
+    ])
+    executors, notes = discover(prefs)
+    assert executors == []
+    note = next(n for n in notes if n.startswith("envtool"))
+    assert "CREWCHIEF_MISSING_Y" in note
+    assert "CREWCHIEF_FROM_REGISTRY" not in note
+
+
 def test_discover_excludes_forbidden(fake_bin):
     fake_bin("paidcli", "print('m')\n")
     prefs = _prefs(

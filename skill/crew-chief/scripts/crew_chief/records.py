@@ -16,7 +16,7 @@ import os
 import tempfile
 import unicodedata
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 #: Fixed work-type vocabulary (see global constraints).
@@ -245,14 +245,18 @@ def add_correction(
 ) -> None:
     """Record that the piece drew a correction, with the ISO timestamp."""
     _find_piece(job, piece)["corrections"].append(
-        {"reason": reason, "executor": executor, "at": datetime.now().isoformat()}
+        {
+            "reason": reason,
+            "executor": executor,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
     )
 
 
 def add_escalation(job: dict, piece: int, reason: str, to: str) -> None:
     """Record that the piece escalated to another executor, with the timestamp."""
     _find_piece(job, piece)["escalations"].append(
-        {"reason": reason, "to": to, "at": datetime.now().isoformat()}
+        {"reason": reason, "to": to, "at": datetime.now(timezone.utc).isoformat()}
     )
 
 

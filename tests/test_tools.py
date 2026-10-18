@@ -7,6 +7,7 @@ from crew_chief.tools import (
     Executor,
     build_command,
     list_models,
+    missing_env,
     parse_reported_model,
     tool_env,
     wants_effort,
@@ -174,6 +175,24 @@ def test_tool_env_missing_name_returns_none(monkeypatch):
     monkeypatch.delenv("CREWCHIEF_TEST_ABSENT", raising=False)
     assert tool_env({"name": "t", "kind": "generic", "bin": "b",
                      "env": ["CREWCHIEF_TEST_ABSENT"]}) is None
+
+
+def test_missing_env_names_only_the_truly_missing(monkeypatch):
+    monkeypatch.setenv("CREWCHIEF_PRESENT_X", "value")
+    monkeypatch.delenv("CREWCHIEF_MISSING_Y", raising=False)
+    assert missing_env({"name": "t", "kind": "generic", "bin": "b",
+                        "env": ["CREWCHIEF_PRESENT_X", "CREWCHIEF_MISSING_Y"]}) \
+        == ["CREWCHIEF_MISSING_Y"]
+
+
+def test_missing_env_is_empty_when_all_names_are_present(monkeypatch):
+    monkeypatch.setenv("CREWCHIEF_PRESENT_X", "value")
+    assert missing_env({"name": "t", "kind": "generic", "bin": "b",
+                        "env": ["CREWCHIEF_PRESENT_X"]}) == []
+
+
+def test_missing_env_is_empty_without_declared_names(monkeypatch):
+    assert missing_env({"name": "t", "kind": "generic", "bin": "b"}) == []
 
 
 # --- wants_effort / Executor ----------------------------------------------

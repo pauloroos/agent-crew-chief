@@ -60,8 +60,7 @@ CURSOR_RULE_RELATIVE = Path(".cursor") / "rules" / "agent-crew-chief.mdc"
 #: Frontmatter written on top of the Cursor rule.
 CURSOR_FRONTMATTER = (
     "---\n"
-    "description: agent-crew-chief - the coordinator splits non-trivial tasks "
-    "and dispatches them to the project's executor CLIs.\n"
+    "description: agent-crew-chief - the coordinator splits non-trivial tasks and dispatches them to the project's executor CLIs.\n"
     "alwaysApply: true\n"
     "---\n\n"
 )

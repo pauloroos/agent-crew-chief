@@ -470,7 +470,11 @@ def render_scoreboard(project: Path, now: datetime | None = None) -> str:
     if skipped:
         lines.extend(["## Skipped records", ""])
         for path, error in skipped:
-            lines.append(f"- {error}")
+            reason = (error or "unreadable record").splitlines()[0]
+            prefix = f"{path}: "
+            if reason.startswith(prefix):
+                reason = reason[len(prefix):]
+            lines.append(f"- {path.name}: {reason}")
         lines.append("")
 
     return "\n".join(lines)

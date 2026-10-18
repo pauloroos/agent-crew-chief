@@ -211,6 +211,17 @@ def test_add_correction_and_escalation_shapes(tmp_path):
     assert escalation["at"]
 
 
+def test_correction_and_escalation_timestamps_are_utc(tmp_path):
+    job = _new_job(tmp_path)
+    piece = add_piece(job, "A", "code", "low")
+
+    add_correction(job, piece, "missed the docstring", executor="opencode:m")
+    add_escalation(job, piece, "two free failures", "codex:g")
+
+    assert job["pieces"][0]["corrections"][0]["at"].endswith("+00:00")
+    assert job["pieces"][0]["escalations"][0]["at"].endswith("+00:00")
+
+
 # --- rendering and summaries ----------------------------------------------
 
 

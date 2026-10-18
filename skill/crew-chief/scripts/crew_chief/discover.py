@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 
 from crew_chief.config import Prefs, classify
-from crew_chief.tools import Executor, list_models, tool_env
+from crew_chief.tools import Executor, list_models, missing_env, tool_env
 
 
 def discover(prefs: Prefs) -> tuple[list[Executor], list[str]]:
@@ -29,9 +28,7 @@ def discover(prefs: Prefs) -> tuple[list[Executor], list[str]]:
 
         env = tool_env(tool)
         if env is None:
-            missing = ", ".join(
-                var for var in tool.get("env", []) if var not in os.environ
-            )
+            missing = ", ".join(missing_env(tool))
             notes.append(f"{name}: missing required env var {missing}")
             continue
 

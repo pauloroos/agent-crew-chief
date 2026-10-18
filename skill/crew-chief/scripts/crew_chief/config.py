@@ -98,6 +98,13 @@ def _validate_tool(path: Path, tool: dict[str, Any]) -> None:
             f"{path}: tool {name!r}: invalid kind {kind!r} "
             f"(expected one of {', '.join(KIND_VALUES)})"
         )
+    if kind == "generic":
+        run_cmd = tool.get("run_cmd")
+        if not isinstance(run_cmd, list) or not run_cmd:
+            raise PrefsError(
+                f"{path}: tool {name!r}: kind 'generic' requires a non-empty "
+                f"'run_cmd' list"
+            )
 
 
 def _validate_model(path: Path, rule: dict[str, Any]) -> None:

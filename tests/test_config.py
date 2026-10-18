@@ -10,7 +10,19 @@ from crew_chief.config import Prefs, PrefsError, classify, load_prefs
 def test_defaults_when_no_files(tmp_path):
     p = load_prefs(tmp_path, global_path=tmp_path / "none.toml")
     assert p.explore_rate == 0.1 and p.dispatch_timeout_s == 900
-    assert {t["name"] for t in p.tools} >= {"opencode", "antigravity", "codex", "claude", "cursor"}
+    assert {t["name"] for t in p.tools} == {
+        "opencode", "antigravity", "codex", "claude", "cursor",
+    }
+
+
+def test_generic_tool_without_run_cmd_is_rejected(tmp_path):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        '[[tools]]\nname="mycli"\nkind="generic"\nbin="mycli"\n', encoding="utf-8")
+    with pytest.raises(PrefsError) as excinfo:
+        load_prefs(tmp_path, tmp_path / "n.toml")
+    message = str(excinfo.value)
+    assert "preferences.toml" in message and "run_cmd" in message
 
 
 def test_project_overrides_global_by_name(tmp_path):

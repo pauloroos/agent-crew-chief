@@ -728,6 +728,7 @@ def test_scoreboard_skips_corrupt(tmp_path):
     assert "broken.json" in text
     assert "opencode:a" in text
     assert "42s" in text
+    assert str(tmp_path) not in text
 
 
 def test_scoreboard_without_corrupt_files_has_no_skipped_section(tmp_path):
