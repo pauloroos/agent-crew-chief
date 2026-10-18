@@ -1,0 +1,106 @@
+# agent-crew-chief - project preferences.
+#
+# `install.py` copies this file to docs/crew-chief/preferences.toml only when
+# that file does not exist yet, and never touches it afterwards.
+#
+# An optional global file at ~/.config/agent-crew-chief/preferences.toml is read
+# first: scalar keys are overridden one by one (project wins), and the [[tools]]
+# and [[models]] tables are merged by `name` / `match` with the project winning.
+
+# --- coordinator -----------------------------------------------------------
+
+# Tools tried for a paid escalation, best first. A tool that is not listed
+# sorts last.
+strong_order = ["my-claude-proxy", "codex", "claude"]
+
+# Chance (0..1) that low-risk work gets a second chance instead of going to the
+# best-scoring executor; keeps an unrated or below-median model in the game.
+explore_rate = 0.1
+
+# When true, a model whose rule says `trains = true` counts as `forbidden` and
+# is never dispatched.
+forbid_training = false
+
+# fnmatch patterns for paths a brief must never point at, for example
+# [".env", "secrets/*"]. dispatch refuses such a brief as `brief_refused`.
+sensitive_paths = []
+
+# Issue tracker used by `close`: none, github, plane, linear or other.
+issue_tracker = "none"
+
+# Hard limit for one dispatch attempt, in seconds. On overrun the process tree
+# is killed and the attempt is recorded as `timeout`.
+dispatch_timeout_s = 900
+
+# Executor id used for reviews when the coordinator has no better idea, for
+# example "codex:gpt-5-codex". Empty means "choose one yourself".
+review_default = ""
+
+# --- models ----------------------------------------------------------------
+#
+# `match` is an fnmatch glob tested against the executor id "<tool>:<model>".
+# The first matching rule wins. `cost` is free, paid or forbidden; `trains` says
+# whether the provider may train on what you send it. A model matched by no
+# rule is `paid`.
+
+[[models]]
+match = "opencode:opencode/*-free"
+cost = "free"
+
+[[models]]
+match = "opencode:opencode-go/*-free"
+cost = "free"
+
+[[models]]
+match = "antigravity:*"
+cost = "free"
+
+# Preview and contributor models are free but may train on your traffic.
+[[models]]
+match = "*-preview-free"
+cost = "free"
+trains = true
+
+[[models]]
+match = "*contributor*"
+cost = "free"
+trains = true
+
+# --- tools -----------------------------------------------------------------
+#
+# A tool is one executor CLI on PATH. Keys:
+#   name         unique name, also the prefix of the executor id
+#   kind         claude-code, opencode, codex, antigravity or generic
+#   bin          executable to run (looked up on PATH)
+#   models       fixed list of model ids the tool accepts; empty means "ask the
+#                tool" with `<bin> models` (kinds claude-code and codex always
+#                use this fixed list)
+#   effort       whether the tool takes an effort/reasoning flag (default:
+#                true for codex and antigravity, false otherwise)
+#   env          environment variable names the tool needs; a name missing from
+#                the environment is read from HKCU\Environment on Windows
+#   cost_default classifies a model that no [[models]] rule matched
+#   run_cmd      argv template for kind "generic"; the placeholders {worktree},
+#                {model}, {prompt}, {brief_file} and {output_file} are filled in
+#   list_cmd     argv that prints one model id per line, for kind "generic"
+#
+# The default tools (opencode, antigravity, codex, claude, cursor) are always
+# present; an entry here replaces the default with the same `name`.
+
+# A Claude-Code-like CLI behind a third-party API key:
+# [[tools]]
+# name = "my-claude-proxy"
+# kind = "claude-code"
+# bin = "my-claude-proxy"
+# models = ["<model-id>"]
+# effort = false
+# env = ["MY_PROXY_API_KEY"]
+# cost_default = "paid"
+
+# Any CLI, driven by its own command line:
+# [[tools]]
+# name = "my-generic-cli"
+# kind = "generic"
+# bin = "my-generic-cli"
+# run_cmd = ["my-generic-cli", "run", "--model", "{model}", "{prompt}"]
+# list_cmd = ["my-generic-cli", "models"]

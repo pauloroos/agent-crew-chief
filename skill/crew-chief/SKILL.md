@@ -1,0 +1,203 @@
+---
+name: crew-chief
+description: Coordinate several executor CLIs on any non-trivial task in a project where this skill is installed - planning, coding, refactoring, tests, docs, research, diagnosis, data work and code review. Use it whenever the request is more than a one-line answer: split the work into pieces, dispatch each piece to a free executor first, have the result reviewed by a different model family, grade it and keep the scoreboard. Not for trivial edits or plain conversation.
+---
+
+# crew-chief
+
+You are the coordinator. Other CLI agents ("executors") do the typing; you plan,
+write briefs, dispatch, judge and report. Dispatch without asking permission
+first: split the request, run the cycle, then show the result at the end.
+
+## The CLI
+
+`CC` below stands for the installed CLI, using whichever path exists:
+
+```bash
+python -I .agents/skills/crew-chief/scripts/crew-chief.py
+python -I .claude/skills/crew-chief/scripts/crew-chief.py
+```
+
+Every subcommand takes `--project <path>` (default: the current directory) and
+`--json`. Prefer `--json` when you need to parse the answer. Exit codes: `0`
+success, `1` nothing to do (no executor, an attempt that is not `ok`, nothing to
+accept), `2` a configuration error (one line on stderr).
+
+Start with `CC discover --project .`: it lists the executors available on this
+machine as `<tool>:<model>  cost=<free|paid>  trains=<yes|no>`, plus a line for
+every tool it skipped and why.
+
+## The job cycle
+
+Seven steps, in order.
+
+1. **Create the job.** Write the user's request verbatim to a UTF-8 file, then
+   register it:
+
+   ```bash
+   CC job new --project . --title "Add CSV export" --request-file .crew-chief-request.md
+   ```
+
+   It prints the job id (use it everywhere below). If the work stays with you
+   because it must not be distributed, add `--not-distributed --reason "<why>"`.
+   Add `--issue <ref>` when the request came from an issue tracker.
+
+2. **Split it into pieces.** One piece per unit you can dispatch, review and
+   grade on its own:
+
+   ```bash
+   CC piece add --project . --job <id> --title "Write the exporter" --type code --risk low
+   ```
+
+   `--type` is one of `code, tests, refactor, design, docs, research, diagnosis,
+   data, review`; `--risk` is `low, medium, high`. Prefer more, smaller pieces
+   over one large one: a smaller brief is a cheaper failure.
+
+3. **Pick an executor.**
+
+   ```bash
+   CC pick --project . --job <id> --piece 1
+   ```
+
+   It prints `<tool>:<model>` and the one-line reason. Free executors come
+   first, ranked by their decayed score on this work type. `pick` already
+   excludes executors that failed this piece; add `--exclude <id> ...` to leave
+   more out. When the reason mentions a "second chance", a low-risk piece went
+   to an unrated or below-median model on purpose - that is the point.
+
+4. **Write the brief and dispatch.**
+
+   ```bash
+   CC dispatch --project . --job <id> --piece 1 --executor <tool>:<model> --brief-file .crew-chief-brief.md
+   ```
+
+   The brief is the whole contract: what to change, where, what "done" means,
+   which files may be touched and how to test it. The executor runs in a
+   throwaway git worktree and never touches your branch. `dispatch` prints
+   `status`, `branch`, `worktree`, `destructive_suspect` and `outside_writes`,
+   and exits `0` only on `status: ok`. Any other status (`failed`, `timeout`,
+   `quota`, `outside_write`, `brief_refused`) is recorded in the job with the
+   executor's output as a note - read it before you retry. Give long work a
+   smaller `--timeout <seconds>` only when you know the piece is short; the
+   default comes from `dispatch_timeout_s` (900 s).
+
+5. **Review with a different model family.**
+
+   ```bash
+   CC dispatch --project . --job <id> --piece 1 --executor <other-tool>:<model> --brief-file .crew-chief-review.md --review --target <worktree>
+   ```
+
+   `--target` is the worktree printed by step 4. The reviewer runs read-only
+   there, commits nothing and leaves no brief file behind. Ask the reviewer to
+   check the request item by item, not to rewrite the code. See **Review**.
+
+6. **Grade.** Record every correction, then score the piece:
+
+   ```bash
+   CC correction --project . --job <id> --piece 1 --reason "missed the empty case" --executor <tool>:<model>
+   CC grade --project . --job <id> --piece 1 --executor <tool>:<model> --corrections 1 --done 4 --missing 0 --extra 0
+   ```
+
+   `--penalty` is repeatable and takes `destructive`, `outside_write`,
+   `false_done` or `model_mismatch`. `grade` recomputes
+   `docs/crew-chief/scoreboard.md`. See **Grading** for the inputs.
+
+7. **Land it.**
+
+   ```bash
+   CC accept --project . --job <id> --piece 1
+   CC discard --project . --job <id> --piece 1
+   CC close --project . --job <id>
+   ```
+
+   `accept` merges the piece's last `ok` attempt into the current branch;
+   `discard` drops it. `close` prints the commit message for the delivery and
+   the issue comment. Commit with the printed message and show the user the
+   result plus the `close` output.
+
+`CC scoreboard --project .` regenerates and prints the scoreboard when the user
+asks how the executors are doing.
+
+## What stays with the coordinator
+
+- The plan: the split into pieces, their order and their risk.
+- The briefs: the only spec an executor ever sees.
+- The review: which model reviews, and the final judgment.
+- `accept` / `discard`: nothing lands in the project's branch without you.
+- The answer: the user talks to you, never to an executor.
+
+Never hand a whole request to one executor when it has parts you can grade
+separately. Never let an executor's own report of success decide the outcome -
+read the diff.
+
+## Escalation
+
+Break the task down before you escalate; splitting is almost always cheaper than
+a stronger model.
+
+After **2 free failures** on the same piece - a non-`ok` attempt by a free
+executor, or a correction against one - `pick` escalates on its own: it leaves
+every free executor out and takes the first paid tool in `strong_order`. The
+escalation is recorded in the job, so do not force it by hand.
+
+`--strong` is only for complex work that cannot be split. It escalates by the
+same rule and should be rare and deliberate.
+
+If `pick` prints `no executor available` and exits `1`, no executor satisfied
+the rules. Report that to the user instead of retrying blindly.
+
+## Review
+
+Every piece that changes files gets a review by a **different model family**
+than the executor - the same family tends to bless its own habits. Use the
+`review_default` preference as the executor id when it is set; otherwise pick
+another tool from `CC discover`. The reviewer must be a different tool (family)
+than the one that wrote the code.
+
+The reviewer sees only the review brief and the target worktree. The coordinator
+always judges: a review is input, not a verdict. Read the diff, the attempt note
+and the reviewer's answer, then grade.
+
+## Grading
+
+The script computes the score from inputs you supply after reading the diff:
+
+- **corrections** - how many times the work needed correcting (by you, the user
+  or the review). Count every fix that was needed, not only the expensive ones.
+- **done / missing / extra** - walk the request item by item and count each item
+  as done, missing, or extra (delivered but not asked for).
+- **penalties** - `destructive` (40) when the diff deletes or rewrites more than
+  the piece asked for, `outside_write` (60) when the attempt wrote outside its
+  worktree, `false_done` (40) when it claims part of the request is done and it
+  is not, `model_mismatch` (30) when the tool answered with a different model
+  than the one dispatched.
+
+The score is `100 * done/(done+missing) - 15*corrections - 5*extra - the
+penalties`, and the result is clamped to the 0-100 range. A low score is
+information, not a death
+sentence: `pick` weighs it down, the scoreboard keeps it, and an unrated or
+below-median executor still gets a second chance on low-risk work
+(`explore_rate`, default `0.1`). No model is ever dropped for good.
+
+## Safety
+
+- **Never put secrets or real client data in a brief.** The brief travels into a
+  worktree and into the executor's context. `dispatch` refuses a brief that looks
+  like a secret (key/token patterns) or points at a `sensitive_paths` entry; the
+  refusal is recorded as `brief_refused`. Paraphrase instead of pasting.
+- **Check `destructive_suspect` and `outside_writes` before you accept.** An
+  attempt that wrote outside its worktree, or whose diff looks destructive, is
+  never clean: inspect the worktree the dispatch left behind, then fix,
+  re-dispatch or discard it.
+- **Pass the project's domain skills into the brief.** When the project has
+  skills under `.agents/skills/` or `.claude/skills/`, name the relevant ones in
+  the brief and quote the constraints that matter (style, test command, API
+  rules). The executor does not read them unless you say so.
+- Never delete or edit a scoreboard row or a job record to hide a failure.
+
+## Reporting back
+
+- Reply in the user's language.
+- Show the result: what changed, the score, what the review flagged, and the
+  `close` output (commit message and issue comment).
+- Say plainly what was not done and what you discarded.
