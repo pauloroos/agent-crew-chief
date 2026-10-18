@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 from crew_chief import records
 from crew_chief.cli import main
+from crew_chief.worktree import commit_worktree, create_worktree
 
 #: A stub executor: writes ``out.py`` in its cwd (the worktree) and answers.
 _STUB = (
@@ -86,6 +88,19 @@ def _write(path: Path, text: str) -> Path:
 def _stored_job(repo: Path, job_id: str) -> dict:
     path = records.jobs_dir(repo) / f"{job_id}.json"
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _git(repo: Path, *args: str) -> str:
+    """Run ``git <args>`` in ``repo`` and return its stdout."""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return result.stdout
 
 
 # --- full cycle ------------------------------------------------------------
@@ -253,3 +268,44 @@ def test_close_json_shape(git_repo, capsys):
     assert payload["commit"].startswith("feat: ")
     assert "Record: docs/crew-chief/jobs/" in payload["issue"]
     assert (repo / "docs" / "crew-chief" / "scoreboard.md").is_file()
+
+
+# --- git failures ----------------------------------------------------------
+
+
+def test_accept_merge_conflict_is_one_line_error_and_keeps_worktree(
+    git_repo, capsys
+):
+    repo = git_repo
+    job = records.new_job(repo, "Conflict", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+
+    worktree, branch = create_worktree(repo, job["id"], 1, 1)
+    (worktree / "README.md").write_text("worktree change\n", encoding="utf-8")
+    commit_worktree(worktree, "crew change")
+
+    (repo / "README.md").write_text("main change\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "main change")
+
+    records.add_attempt(
+        job,
+        1,
+        {
+            "executor": "stub:m",
+            "role": "exec",
+            "status": "ok",
+            "branch": branch,
+            "worktree": str(worktree),
+        },
+    )
+    records.save_job(repo, job)
+
+    assert main(["accept", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 1
+
+    err = capsys.readouterr().err
+    assert err.startswith("error: ")
+    assert len(err.strip().splitlines()) == 1
+    assert worktree.is_dir()
+    assert branch in _git(repo, "branch", "--list", "--format=%(refname:short)")

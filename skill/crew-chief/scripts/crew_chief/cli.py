@@ -10,7 +10,9 @@ All commands take ``--project PATH`` (default: the current directory) and
 ``--json`` (structured output instead of text). A ``PrefsError``,
 ``RecordError``, ``NotAGitRepo`` or ``ValueError`` prints one line to stderr
 and exits 2; exit 1 means "nothing to do" (no executor, an attempt that is not
-``ok``, nothing to accept) and exit 0 means success.
+``ok``, nothing to accept) and exit 0 means success. A ``RuntimeError`` from a
+git or worktree operation (a merge conflict, a taken worktree path) is an
+operational failure: one ``error: ...`` line on stderr and exit 1.
 """
 
 from __future__ import annotations
@@ -534,3 +536,7 @@ def main(argv: list[str] | None = None) -> int:
     except (PrefsError, RecordError, NotAGitRepo, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc).splitlines() else ""
+        print(f"error: {first_line}", file=sys.stderr)
+        return 1
