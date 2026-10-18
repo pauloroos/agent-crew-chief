@@ -58,9 +58,15 @@ projeto guarda todo o histórico.
 ## Instalação
 
 ```bash
-git clone https://github.com/pauloroos/agent-crew-chief
-python install.py /caminho/do/projeto
+git clone --branch v0.1.0 https://github.com/pauloroos/agent-crew-chief
+python agent-crew-chief/install.py /caminho/do/projeto
 ```
+
+Sem git? Baixe o `agent-crew-chief-v0.1.0.zip` da
+[última release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
+descompacte e rode `python install.py /caminho/do/projeto` de dentro da pasta.
+Fixe uma tag (`--branch vX.Y.Z`) para nunca instalar código no meio de uma mudança;
+o `main` pode estar à frente da última release. Veja o [CHANGELOG.md](CHANGELOG.md).
 
 O `install.py` copia a skill para `.claude/skills/crew-chief/` e
 `.agents/skills/crew-chief/`, insere um trecho curto entre
@@ -89,9 +95,10 @@ o seu coordenador lê. Todo subcomando aceita `--project <caminho>` e `--json`.
 
 ## Atualização
 
-Rode o mesmo comando de novo:
+Baixe a tag nova e rode o instalador de novo:
 
 ```bash
+cd agent-crew-chief && git fetch --tags && git checkout vX.Y.Z
 python install.py /caminho/do/projeto
 ```
 

@@ -57,9 +57,15 @@ shell, and the project keeps the whole history.
 ## Install
 
 ```bash
-git clone https://github.com/pauloroos/agent-crew-chief
-python install.py /path/to/project
+git clone --branch v0.1.0 https://github.com/pauloroos/agent-crew-chief
+python agent-crew-chief/install.py /path/to/project
 ```
+
+No git? Download `agent-crew-chief-v0.1.0.zip` from the
+[latest release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
+unzip it and run `python install.py /path/to/project` from the unzipped folder.
+Pin a tag (`--branch vX.Y.Z`) so you never install code in the middle of a change;
+`main` may be ahead of the latest release. See [CHANGELOG.md](CHANGELOG.md).
 
 `install.py` copies the skill into `.claude/skills/crew-chief/` and
 `.agents/skills/crew-chief/`, adds a short snippet between
@@ -88,9 +94,10 @@ coordinator reads. Every subcommand takes `--project <path>` and `--json`.
 
 ## Update
 
-Run the same command again:
+Fetch the new tag and run the installer again:
 
 ```bash
+cd agent-crew-chief && git fetch --tags && git checkout vX.Y.Z
 python install.py /path/to/project
 ```
 
