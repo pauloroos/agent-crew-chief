@@ -1,59 +1,64 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="logo do agent-crew-chief" width="128" height="128">
+
 # agent-crew-chief
 
-**[Read in English](README.md)**
+**Seu agente de código para de trabalhar sozinho e passa a chefiar uma equipe.**
 
-Transforme qualquer CLI de programação com IA em um chefe de equipe: ele divide
-uma tarefa não trivial em partes, despacha cada parte para os outros CLIs que
-você tem instalados (os gratuitos primeiro), manda o resultado ser revisado por
-um modelo diferente, dá uma nota e mantém um placar dentro do projeto.
+Ele divide o trabalho, entrega cada pedaço ao melhor modelo *grátis* que você tem, pede uma segunda opinião a outro modelo, dá nota a cada entrega e aprende em quem confiar em cada projeto.
 
-## O que é
+[![CI](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml/badge.svg)](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pauloroos/agent-crew-chief?color=f59e0b)](https://github.com/pauloroos/agent-crew-chief/releases/latest)
+[![Python](https://img.shields.io/badge/python-3.11%2B-0f766e)](#instalação)
+[![Dependências](https://img.shields.io/badge/depend%C3%AAncias-nenhuma-0f766e)](#instalação)
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-1e1b4b)](LICENSE)
 
-`agent-crew-chief` é uma skill que você instala em um projeto. O CLI em que você
-já trabalha (Claude Code, Codex, OpenCode, Cursor…) vira o **coordenador**: ele
-planeja o trabalho, escreve os briefs, despacha para os outros CLIs executores
-da sua máquina, confere o resultado e reporta para você.
+[English](README.md) · **Português**
 
-Os executores rodam em worktrees git descartáveis, então nada entra na sua
-branch até o coordenador aceitar. Tudo o que o coordenador aprende é escrito em
-`docs/crew-chief/` dentro do projeto e commitado junto com a entrega.
+</div>
 
-## Por quê
+---
 
-- **Gratuito primeiro.** O `pick` ordena os executores pelo histórico deles
-  naquele tipo de trabalho, mas os gratuitos vêm primeiro. Você escala para um
-  modelo pago só quando os gratuitos não entregaram, seguindo `strong_order`.
-- **Revisão de verdade.** Toda mudança é revisada por uma **família de modelo
-  diferente** antes de chegar em você. O coordenador continua julgando: a revisão
-  é evidência, não veredito.
-- **Um placar.** Cada parte recebe uma nota a partir das correções que precisou,
-  dos itens do pedido feitos / faltando / extras e de penalidades nomeadas. A nota
-  decai com o tempo, então um modelo que foi bom mês passado não fica com passe
-  livre para sempre.
-- **Nenhum modelo é descartado de vez.** Um executor sem histórico ou abaixo da
-  mediana ainda ganha uma segunda chance em trabalho de risco baixo
-  (`explore_rate`), de propósito.
+## Por que usar
+
+Você provavelmente tem mais poder de IA do que usa: modelos grátis no OpenCode, cota no Antigravity, assinatura do Codex, talvez uma chave de terceiro. Mesmo assim, um agente só faz tudo e queima a cota cara em trabalho braçal.
+
+O **agent-crew-chief** transforma o agente em que você já trabalha (Claude Code, Codex, OpenCode, Cursor, Antigravity…) num **chefe de equipe**:
+
+| | |
+|---|---|
+| 🆓 **Grátis primeiro** | Os modelos grátis pegam o trabalho. Os pagos só entram quando os grátis não dão conta, ou quando a tarefa é complexa demais para dividir. |
+| 🔍 **Revisão de verdade** | Toda entrega é lida por um modelo de **outra família** antes de chegar a você. A palavra final é do chefe. |
+| 🏆 **Placar que aprende** | Cada entrega ganha nota pelo número de correções e pela fidelidade ao pedido. As escolhas melhoram a cada trabalho, por projeto e por tipo de serviço. |
+| 🎲 **Ninguém fica para trás** | Modelos com nota baixa e modelos novos ainda ganham segunda chance em tarefa de risco baixo. Modelos melhoram, e o placar percebe. |
+| 🧱 **Seguro por construção** | Pasta git isolada, filtro de segredos em cada brief, escrita fora da pasta rejeitada na hora, alerta de deleção em massa, limite de tempo. |
+| 📒 **Tudo registrado** | Cada trabalho deixa um registro no seu repositório, com mensagem de commit e comentário de issue prontos para colar. |
+
+Sem servidor, sem processo de fundo, sem dependências: uma skill e um CLI Python puro que qualquer agente consegue usar.
 
 ## Como funciona
 
-O ciclo de um job:
+```mermaid
+flowchart LR
+    A([Seu pedido]) --> B[Chefe planeja<br/>e divide]
+    B --> C{pick}
+    C -->|grátis primeiro| D[Executor trabalha<br/>em pasta isolada]
+    D --> E[Outro modelo<br/>revisa]
+    E -->|correções| D
+    E --> F[Chefe dá a nota]
+    F --> G[(Placar)]
+    G -.->|escolhas melhores| C
+    F --> H([Merge + texto de<br/>commit e issue])
+```
 
-1. `job new` — o pedido do usuário é registrado literalmente como um job.
-2. `piece add` — o pedido é dividido em partes, cada uma com um tipo de trabalho
-   e um nível de risco.
-3. `pick` — um executor é escolhido para a parte: gratuito primeiro, melhor nota
-   com decaimento primeiro, um executor por tentativa.
-4. `dispatch` — o executor roda o brief em uma worktree nova com timeout rígido;
-   a tentativa é registrada qualquer que seja o status (`ok`, `failed`,
-   `timeout`, `quota`, `outside_write`, `brief_refused`).
-5. `dispatch --review` — uma família de modelo diferente revisa a worktree.
-6. `correction` + `grade` — as correções são registradas, a parte recebe a nota e
-   o placar é reescrito.
-7. `accept` / `discard` + `close` — o trabalho entra ou é descartado, e o
-   coordenador imprime a mensagem de commit e o comentário da issue.
-
-Não há servidor nem daemon: o coordenador comanda o CLI pelo próprio shell, e o
-projeto guarda todo o histórico.
+1. `job new`: o pedido é registrado palavra por palavra.
+2. `piece add`: ele é dividido em pedaços, cada um com tipo de trabalho e nível de risco.
+3. `pick`: o executor é escolhido. Os grátis vêm primeiro, ordenados pela nota com decaimento, e às vezes alguém ganha segunda chance.
+4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado.
+5. `dispatch --review`: um modelo de outra família revisa o trabalho.
+6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito.
+7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue.
 
 ## Instalação
 

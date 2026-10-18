@@ -1,58 +1,64 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="agent-crew-chief logo" width="128" height="128">
+
 # agent-crew-chief
 
-**[Leia em Português (pt-BR)](README.pt-BR.md)**
+**Your coding agent stops working alone and starts running a crew.**
 
-Turn any AI coding CLI into a crew chief: it splits a non-trivial task into
-pieces, dispatches each piece to the other coding CLIs you have installed (free
-ones first), has the result reviewed by a different model, grades it and keeps a
-scoreboard inside the project.
+It splits the job, hands each piece to the best *free* model you have, gets a second opinion from a different model, grades every delivery, and learns who to trust in each project.
 
-## What it is
+[![CI](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml/badge.svg)](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pauloroos/agent-crew-chief?color=f59e0b)](https://github.com/pauloroos/agent-crew-chief/releases/latest)
+[![Python](https://img.shields.io/badge/python-3.11%2B-0f766e)](#install)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-0f766e)](#install)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1e1b4b)](LICENSE)
 
-`agent-crew-chief` is a skill you install into a project. The CLI you already
-work in (Claude Code, Codex, OpenCode, Cursor…) becomes the **coordinator**: it
-plans the work, writes briefs, dispatches them to the other executor CLIs on your
-machine, checks the result and reports back to you.
+**English** · [Português](README.pt-BR.md)
 
-Executors run in throwaway git worktrees, so nothing lands in your branch until
-the coordinator accepts it. Everything the coordinator learns is written to
-`docs/crew-chief/` inside the project and committed with the delivery.
+</div>
 
-## Why
+---
 
-- **Free first.** `pick` ranks executors by their track record on that kind of
-  work, but free ones come first. You escalate to a paid model only when the free
-  ones could not deliver, following `strong_order`.
-- **A real review.** Every change is reviewed by a **different model family**
-  before you see it. The coordinator still judges: the review is evidence, not a
-  verdict.
-- **A scoreboard.** Each piece is scored from the corrections it needed, the
-  request items done / missing / extra, and named penalties. The score decays
-  over time, so a model that was good last month does not keep a free pass
-  forever.
-- **No model is ever dropped for good.** An unrated or below-median executor
-  still gets a second chance on low-risk work (`explore_rate`), on purpose.
+## Why you'd want this
+
+You probably have more AI firepower than you use. There are free models in OpenCode, a quota in Antigravity, a Codex subscription, maybe a third-party key or two. Yet one agent does everything and burns the expensive quota on boilerplate.
+
+**agent-crew-chief** turns the agent you already work in (Claude Code, Codex, OpenCode, Cursor, Antigravity…) into a **crew chief**:
+
+| | |
+|---|---|
+| 🆓 **Free first** | Free models get the work. Paid ones step in only when the free ones can't deliver, or the task is too complex to split. |
+| 🔍 **Real review** | Every delivery is read by a **different model family** before you see it. The chief has the final word. |
+| 🏆 **A scoreboard that learns** | Each delivery is graded on how many corrections it needed and how closely it matched the request. Picks improve with every job, per project and per kind of work. |
+| 🎲 **No model left behind** | Low scorers and newcomers still get a second chance on low-risk work. Models improve, and the scoreboard notices. |
+| 🧱 **Safe by construction** | Isolated git worktrees, a secret filter on every brief, writes outside the worktree auto-rejected, mass-deletion alerts, hard timeouts. |
+| 📒 **Everything on record** | Each job leaves a record in your repo, with a commit message and an issue comment ready to paste. |
+
+No server, no daemon, no dependencies: one skill plus a stdlib Python CLI that any agent can drive.
 
 ## How it works
 
-The job cycle:
+```mermaid
+flowchart LR
+    A([Your request]) --> B[Chief plans<br/>and splits]
+    B --> C{pick}
+    C -->|free first| D[Executor works in<br/>an isolated worktree]
+    D --> E[Different model<br/>reviews]
+    E -->|corrections| D
+    E --> F[Chief grades]
+    F --> G[(Scoreboard)]
+    G -.->|smarter picks| C
+    F --> H([Merged + commit<br/>and issue text])
+```
 
-1. `job new` — the user's request is recorded verbatim as a job.
-2. `piece add` — the request is split into pieces, each with a work type and a
-   risk level.
-3. `pick` — an executor is chosen for a piece: free first, best decayed score
-   first, one executor per attempt.
-4. `dispatch` — the executor runs the brief in a fresh worktree with a hard
-   timeout; the attempt is recorded whatever its status (`ok`, `failed`,
-   `timeout`, `quota`, `outside_write`, `brief_refused`).
-5. `dispatch --review` — a different model family reviews the worktree.
-6. `correction` + `grade` — the corrections are recorded and the piece is
-   scored; the scoreboard is rewritten.
-7. `accept` / `discard` + `close` — the work lands or is dropped, and the
-   coordinator prints the commit message and the issue comment.
-
-There is no server and no daemon: the coordinator drives the CLI from its own
-shell, and the project keeps the whole history.
+1. `job new`: your request is recorded verbatim.
+2. `piece add`: it is split into pieces, each with a work type and a risk level.
+3. `pick`: an executor is chosen. Free models come first, ranked by decayed score, with an occasional second chance.
+4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status.
+5. `dispatch --review`: a different model family reviews the work.
+6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten.
+7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment.
 
 ## Install
 
