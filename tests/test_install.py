@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from crew_chief.config import classify, load_prefs
+
 INSTALL = Path(__file__).resolve().parents[1] / "install.py"
 
 BEGIN = "<!-- BEGIN:agent-crew-chief -->"
@@ -196,6 +198,34 @@ def test_gemini_and_cursor_only_when_present(tmp_path):
     assert "alwaysApply: true" in rule
     assert "description:" in rule
     assert rule.count(BEGIN) == 1
+
+
+# --- the installed preferences template ------------------------------------
+
+
+def test_installed_template_does_not_shadow_global_scalars(tmp_path, monkeypatch):
+    project = _project(tmp_path)
+    assert _run(project).returncode == 0
+
+    global_file = tmp_path / "global.toml"
+    global_file.write_text(
+        'review_default = "x:y"\nstrong_order = ["a"]\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT_CREW_CHIEF_GLOBAL_PREFS", str(global_file))
+
+    prefs = load_prefs(project)
+
+    assert prefs.review_default == "x:y"
+    assert prefs.strong_order == ["a"]
+
+
+def test_installed_template_preview_free_still_trains(tmp_path):
+    project = _project(tmp_path)
+    assert _run(project).returncode == 0
+
+    prefs = load_prefs(project)
+
+    assert classify("opencode:opencode-go/foo-preview-free", prefs) == ("free", True)
 
 
 # --- the installed CLI -----------------------------------------------------
