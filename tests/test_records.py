@@ -10,6 +10,7 @@ import pytest
 
 from crew_chief.records import (
     RISKS,
+    JobLockTimeout,
     WORK_TYPES,
     RecordError,
     add_attempt,
@@ -25,6 +26,7 @@ from crew_chief.records import (
     set_grade,
     slug,
     summaries,
+    update_job,
 )
 
 NOW = datetime(2026, 10, 17, 14, 30)
@@ -334,3 +336,122 @@ def test_save_job_round_trips_accented_request(tmp_path):
     reloaded = load_job(tmp_path / "project", job["id"])
 
     assert reloaded == job
+
+
+# --- update_job: atomic read-modify-write under a cross-process lock -------
+
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skill" / "crew-chief" / "scripts"
+
+_APPEND_SCRIPT = """
+import sys, time
+sys.path.insert(0, sys.argv[1])
+from pathlib import Path
+from crew_chief.records import update_job
+
+def add(job):
+    piece = job["pieces"][0]
+    seen = len(piece.setdefault("picks", []))
+    time.sleep(0.05)  # widen the read-modify-write window
+    piece["picks"].append({"pick": sys.argv[4], "seen": seen})
+
+update_job(Path(sys.argv[2]), sys.argv[3], add)
+"""
+
+
+def test_update_job_applies_fn_and_saves(tmp_path):
+    job = _new_job(tmp_path)
+    add_piece(job, "Piece", "code", "low")
+    save_job(tmp_path / "project", job)
+
+    def rename(current):
+        current["title"] = "Novo título"
+        return "done"
+
+    result = update_job(tmp_path / "project", job["id"], rename)
+
+    assert result == "done"
+    assert load_job(tmp_path / "project", job["id"])["title"] == "Novo título"
+    assert "Novo título" in (
+        jobs_dir(tmp_path / "project") / f"{job['id']}.md"
+    ).read_text(encoding="utf-8")
+    assert not (jobs_dir(tmp_path / "project") / f"{job['id']}.lock").exists()
+
+
+def test_update_job_does_not_save_when_fn_raises(tmp_path):
+    job = _new_job(tmp_path)
+    project = tmp_path / "project"
+
+    def boom(current):
+        current["title"] = "changed"
+        raise ValueError("nope")
+
+    with pytest.raises(ValueError):
+        update_job(project, job["id"], boom)
+
+    assert load_job(project, job["id"])["title"] == job["title"]
+    assert not (jobs_dir(project) / f"{job['id']}.lock").exists()
+
+
+def test_update_job_parallel_processes_lose_nothing(tmp_path):
+    import subprocess
+    import sys
+
+    job = _new_job(tmp_path)
+    add_piece(job, "Piece", "code", "low")
+    project = tmp_path / "project"
+    save_job(project, job)
+
+    procs = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                _APPEND_SCRIPT,
+                str(_SCRIPTS_DIR),
+                str(project),
+                job["id"],
+                f"worker-{index}",
+            ]
+        )
+        for index in range(8)
+    ]
+    assert [proc.wait(timeout=120) for proc in procs] == [0] * 8
+
+    picks = load_job(project, job["id"])["pieces"][0]["picks"]
+    assert sorted(p["pick"] for p in picks) == sorted(
+        f"worker-{index}" for index in range(8)
+    )
+    assert sorted(p["seen"] for p in picks) == list(range(8))
+
+
+def test_update_job_times_out_with_a_clear_error(tmp_path):
+    job = _new_job(tmp_path)
+    project = tmp_path / "project"
+    lock = jobs_dir(project) / f"{job['id']}.lock"
+    lock.write_text("12345\n", encoding="utf-8")
+
+    with pytest.raises(JobLockTimeout) as info:
+        update_job(project, job["id"], lambda current: None, timeout_s=0.3)
+
+    assert str(lock) in str(info.value)
+    assert isinstance(info.value, RecordError)
+    assert lock.exists()
+
+
+def test_update_job_breaks_a_stale_lock(tmp_path):
+    import os
+    import time
+
+    job = _new_job(tmp_path)
+    project = tmp_path / "project"
+    lock = jobs_dir(project) / f"{job['id']}.lock"
+    lock.write_text("12345\n", encoding="utf-8")
+    old = time.time() - 11 * 60
+    os.utime(lock, (old, old))
+
+    update_job(
+        project, job["id"], lambda current: current.update(title="x"), timeout_s=2
+    )
+
+    assert load_job(project, job["id"])["title"] == "x"
+    assert not lock.exists()

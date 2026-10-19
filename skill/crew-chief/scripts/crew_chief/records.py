@@ -5,6 +5,13 @@ contains and the two files written per job inside
 ``docs/crew-chief/jobs/``: a ``.json`` (the machine-readable record) and a
 ``.md`` (the same record rendered for a human). Both are written atomically.
 
+Several ``crew-chief`` processes may touch the same job at once (parallel
+dispatches of one job are normal), so every change to a saved job goes through
+:func:`update_job`: it takes a lock file next to the record, re-reads the
+JSON, applies the change and writes it back before letting go. A plain
+:func:`load_job` + :func:`save_job` pair would silently drop whatever another
+process wrote in between.
+
 Nothing here imports another ``crew_chief`` module: the vocabularies live
 here and later tasks import them from this module.
 """
@@ -13,9 +20,12 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import tempfile
+import time
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,8 +75,19 @@ _COMMIT_TYPES = {
 _RECORD_RELATIVE_DIR = "docs/crew-chief/jobs"
 
 
+#: Seconds :func:`update_job` waits for another process's lock by default.
+LOCK_TIMEOUT_S = 60.0
+
+#: A lock file older than this (seconds) belongs to a dead process and is broken.
+LOCK_STALE_S = 600.0
+
+
 class RecordError(Exception):
     """Raised when a job record file is missing or unreadable; names the file."""
+
+
+class JobLockTimeout(RecordError):
+    """Raised when a job's lock file stays taken for longer than the timeout."""
 
 
 def crew_chief_dir(project: Path) -> Path:
@@ -186,6 +207,79 @@ def save_job(project: Path, job: dict) -> None:
     payload = json.dumps(job, indent=2, ensure_ascii=False) + "\n"
     write_atomic(directory / f"{job_id}.json", payload)
     write_atomic(directory / f"{job_id}.md", render_markdown(job))
+
+
+def _lock_age_s(lock: Path) -> float | None:
+    """Age of ``lock`` in seconds from its mtime; ``None`` when it is gone."""
+    try:
+        return time.time() - lock.stat().st_mtime
+    except OSError:
+        return None
+
+
+@contextmanager
+def job_lock(
+    project: Path,
+    job_id: str,
+    timeout_s: float = LOCK_TIMEOUT_S,
+    stale_s: float = LOCK_STALE_S,
+) -> Iterator[Path]:
+    """Hold ``docs/crew-chief/jobs/<job_id>.lock`` for the ``with`` block.
+
+    The lock is a file created with ``O_CREAT | O_EXCL`` (atomic on Windows
+    and POSIX) holding the owner's pid. A taken lock is retried with a
+    jittered exponential backoff; one whose mtime is older than ``stale_s``
+    was left by a dead process and is removed. After ``timeout_s`` a
+    :class:`JobLockTimeout` names the lock file.
+    """
+    lock = jobs_dir(project) / f"{job_id}.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout_s
+    delay = 0.01
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except (FileExistsError, PermissionError):
+            # PermissionError: Windows refuses a file that is being deleted.
+            age = _lock_age_s(lock)
+            if age is not None and age > stale_s:
+                lock.unlink(missing_ok=True)
+                continue
+            if time.monotonic() >= deadline:
+                raise JobLockTimeout(
+                    f"{lock}: job {job_id!r} is locked by another crew-chief "
+                    f"process (waited {timeout_s:g}s); if none is running, "
+                    "delete the lock file"
+                ) from None
+            time.sleep(delay * (0.5 + random.random()))
+            delay = min(delay * 2, 0.5)
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{os.getpid()}\n")
+        break
+    try:
+        yield lock
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def update_job(
+    project: Path,
+    job_id: str,
+    fn: Callable[[dict], object],
+    timeout_s: float = LOCK_TIMEOUT_S,
+) -> object:
+    """Apply ``fn`` to the saved job atomically and return what ``fn`` returns.
+
+    Under :func:`job_lock` the job is re-read from disk, ``fn(job)`` changes
+    it in place and the result is saved with :func:`save_job`. When ``fn``
+    raises, nothing is written and the exception propagates.
+    """
+    with job_lock(project, job_id, timeout_s=timeout_s):
+        job = load_job(project, job_id)
+        result = fn(job)
+        save_job(project, job)
+    return result
 
 
 def _find_piece(job: dict, number: int) -> dict:
