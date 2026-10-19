@@ -69,9 +69,14 @@ class RecordError(Exception):
     """Raised when a job record file is missing or unreadable; names the file."""
 
 
+def crew_chief_dir(project: Path) -> Path:
+    """Return ``project/docs/crew-chief``, the folder of every committed record."""
+    return Path(project) / "docs" / "crew-chief"
+
+
 def jobs_dir(project: Path) -> Path:
     """Return ``project/docs/crew-chief/jobs``."""
-    return Path(project) / "docs" / "crew-chief" / "jobs"
+    return crew_chief_dir(project) / "jobs"
 
 
 def slug(title: str) -> str:
@@ -92,7 +97,7 @@ def slug(title: str) -> str:
     return text.strip("-") or "job"
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def write_atomic(path: Path, text: str) -> None:
     """Write ``text`` to ``path`` through a temp file plus ``os.replace``."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(
@@ -179,8 +184,8 @@ def save_job(project: Path, job: dict) -> None:
     directory = jobs_dir(project)
     job_id = job["id"]
     payload = json.dumps(job, indent=2, ensure_ascii=False) + "\n"
-    _write_atomic(directory / f"{job_id}.json", payload)
-    _write_atomic(directory / f"{job_id}.md", render_markdown(job))
+    write_atomic(directory / f"{job_id}.json", payload)
+    write_atomic(directory / f"{job_id}.md", render_markdown(job))
 
 
 def _find_piece(job: dict, number: int) -> dict:
