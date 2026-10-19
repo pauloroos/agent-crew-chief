@@ -47,6 +47,7 @@ from .worktree import (
     commit_worktree,
     create_worktree,
     diffstat,
+    next_free_attempt,
     outside_writes,
     snapshot,
 )
@@ -99,7 +100,11 @@ def dispatch(
     if role == "review" and review_target is None:
         raise ValueError("role 'review' requires review_target")
 
-    number = update_job(project, job_id, lambda job: _reserve_attempt(job, piece))
+    number = update_job(
+        project,
+        job_id,
+        lambda job: _reserve_attempt(job, piece, project, role == "exec"),
+    )
     started = datetime.now(timezone.utc)
     start = time.monotonic()
 
@@ -146,7 +151,10 @@ def dispatch(
     if role == "review":
         worktree = Path(review_target)
     else:
-        worktree, branch = create_worktree(project, job_id, piece, number)
+        try:
+            worktree, branch = create_worktree(project, job_id, piece, number)
+        except RuntimeError as exc:
+            return finish("failed", f"cannot create worktree: {exc}")
         attempt["branch"] = branch
         attempt["worktree"] = str(worktree)
 
@@ -218,24 +226,34 @@ def dispatch(
         )
 
     if role == "exec":
-        rows, destructive = diffstat(worktree)
-        attempt["diffstat"] = rows
-        attempt["destructive_suspect"] = destructive
-        commit_worktree(worktree, f"crew: {job_id} piece {piece} attempt {number}")
+        try:
+            rows, destructive = diffstat(worktree)
+            attempt["diffstat"] = rows
+            attempt["destructive_suspect"] = destructive
+            commit_worktree(
+                worktree, f"crew: {job_id} piece {piece} attempt {number}"
+            )
+        except RuntimeError as exc:
+            note = f"broken worktree after the run: {exc}"
+            return finish("failed", f"{note}\n\n{attempt['note']}".rstrip())
     else:
         _remove_brief(role, brief_file)
 
     return finish(_status(timed_out, writes, proc.returncode, stderr, text))
 
 
-def _reserve_attempt(job: dict, piece: int) -> int:
+def _reserve_attempt(
+    job: dict, piece: int, project: Path, needs_worktree: bool
+) -> int:
     """Reserve and return the next attempt number of ``piece``.
 
     Called under the job lock. The number is ``1 +`` the attempts already
     recorded, whatever their role, but never below the piece's
     ``next_attempt`` counter, which is then advanced: two parallel dispatches
     of one piece get distinct numbers (and worktrees) even though neither has
-    recorded its attempt yet.
+    recorded its attempt yet. For an exec attempt the number also skips the
+    worktrees and branches that already exist (an attempt whose record was
+    lost still holds them).
     """
     for entry in job.get("pieces") or []:
         if entry.get("n") == piece:
@@ -243,6 +261,8 @@ def _reserve_attempt(job: dict, piece: int) -> int:
                 1 + len(entry.get("attempts") or []),
                 int(entry.get("next_attempt") or 1),
             )
+            if needs_worktree:
+                number = next_free_attempt(project, job["id"], piece, number)
             entry["next_attempt"] = number + 1
             return number
     raise ValueError(f"job {job.get('id')!r} has no piece {piece}")

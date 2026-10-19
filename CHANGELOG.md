@@ -16,6 +16,7 @@ All notable changes to this project are documented here. Versions follow
 
 ### Fixed
 - Parallel `dispatch` (and `pick`, `piece add`, `correction`, `grade`) no longer lose each other's writes: every change to a job goes through a lock file next to the record and re-reads the job before saving. Parallel attempts of one piece get distinct attempt numbers and worktrees. Windows sharing violations on the record are retried.
+- A new attempt skips numbers whose worktree or branch already exists (left by an attempt whose record was lost) instead of failing with `worktree path already exists`. An orphan folder at the worktree path (a removal that stopped half way on Windows) is pruned and removed before the worktree is created. A worktree that cannot be created, or is broken after the run, is recorded as a `failed` attempt with a note instead of a bare `error:` that recorded nothing.
 - `outside_write` no longer fires for the project's other worktrees in `<project>.crew/` (parallel attempts) or for the config folders agent CLIs write in the home directory (`.claude`, `.claude.json`, `.codex`, `.gemini`, `.antigravity`, `.config`, `.local`, `.cache`, ...). Unknown entries and writes to the main repo are still caught.
 - `pick` no longer sends every unrated piece to the same executor: ties go to the executor least used in the job, then to a different tool.
 

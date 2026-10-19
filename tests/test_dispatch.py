@@ -461,3 +461,62 @@ def test_refused_brief_has_no_metrics(git_repo, fake_bin):
     assert attempt["steps"] is None
     assert attempt["tokens_total"] is None
     assert attempt["tokens_estimated"] is False
+
+
+# --- leftovers and worktree failures ---------------------------------------
+
+
+def test_leftover_worktree_from_a_lost_attempt_is_skipped(git_repo, fake_bin):
+    fake_bin("stub", "print('ok')\n")
+    job = _seed_job(git_repo)
+    create_worktree(git_repo, job["id"], 1, 1)  # attempt 1 lost from the JSON
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "ok", attempt["note"]
+    assert attempt["branch"] == f"crew/{job['id']}-1-2"
+    assert attempt["n"] == 2
+
+
+def test_worktree_creation_failure_is_recorded_as_failed(
+    git_repo, fake_bin, monkeypatch
+):
+    import crew_chief.dispatch as dispatch_module
+
+    fake_bin("stub", "print('must not run')\n")
+    job = _seed_job(git_repo)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("git worktree add failed in somewhere: fatal: nope")
+
+    monkeypatch.setattr(dispatch_module, "create_worktree", boom)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "failed"
+    assert "cannot create worktree" in attempt["note"]
+    assert "fatal: nope" in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["status"] == "failed"
+
+
+def test_broken_worktree_after_the_run_is_recorded_as_failed(
+    git_repo, fake_bin, monkeypatch
+):
+    import crew_chief.dispatch as dispatch_module
+
+    fake_bin("stub", "print('ran')\n")
+    job = _seed_job(git_repo)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError(
+            "git merge-base HEAD HEAD failed in x: fatal: not a git repository"
+        )
+
+    monkeypatch.setattr(dispatch_module, "diffstat", boom)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "failed"
+    assert "not a git repository" in attempt["note"]
+    assert "ran" in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["status"] == "failed"
