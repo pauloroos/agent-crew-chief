@@ -10,6 +10,7 @@ import pytest
 from crew_chief.worktree import (
     NotAGitRepo,
     accept,
+    branch_exists,
     commit_worktree,
     create_worktree,
     diffstat,
@@ -527,3 +528,24 @@ def test_next_free_attempt_skips_existing_worktrees_and_branches(
     assert next_free_attempt(git_repo, "job1", 1, 1) == 3
     assert next_free_attempt(git_repo, "job1", 1, 4) == 4
     assert next_free_attempt(git_repo, "job1", 2, 1) == 1
+
+
+def test_create_worktree_starts_from_the_given_branch(
+    git_repo: Path, home_dir: Path
+):
+    first, first_branch = create_worktree(git_repo, "job1", 1, 1)
+    (first / "earlier.py").write_text("x = 1\n", encoding="utf-8")
+    commit_worktree(first, "earlier work")
+
+    second, branch = create_worktree(git_repo, "job1", 1, 2, start=first_branch)
+
+    assert branch == "crew/job1-1-2"
+    assert (second / "earlier.py").read_text(encoding="utf-8") == "x = 1\n"
+    assert not (git_repo / "earlier.py").exists()
+
+
+def test_branch_exists(git_repo: Path, home_dir: Path):
+    _worktree, branch = create_worktree(git_repo, "job1", 1, 1)
+
+    assert branch_exists(git_repo, branch)
+    assert not branch_exists(git_repo, "crew/job1-1-9")

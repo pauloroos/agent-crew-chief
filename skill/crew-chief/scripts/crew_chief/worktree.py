@@ -2,7 +2,8 @@
 
 Every attempt runs in a throwaway git worktree next to the project
 (``<project>.crew/<job_id>-<piece>-<attempt>``) on a branch
-``crew/<job_id>-<piece>-<attempt>`` created from ``HEAD``. This module owns
+``crew/<job_id>-<piece>-<attempt>`` created from ``HEAD`` (or, for a
+correction, from the branch of an earlier attempt). This module owns
 that worktree's whole life cycle and the two containment checks that decide
 whether an attempt is allowed to land:
 
@@ -117,12 +118,14 @@ def _git(args: list[str], cwd: Path, check: bool = True) -> str:
 
 
 def create_worktree(
-    project: Path, job_id: str, piece: int, attempt: int
+    project: Path, job_id: str, piece: int, attempt: int, start: str = "HEAD"
 ) -> tuple[Path, str]:
     """Create the worktree for one attempt and return ``(path, branch)``.
 
-    The branch is ``crew/<job_id>-<piece>-<attempt>``, created from ``HEAD``,
-    and the worktree lives in ``<project.parent>/<project.name>.crew/``. The
+    The branch is ``crew/<job_id>-<piece>-<attempt>``, created from ``start``
+    (``HEAD`` by default; a correction starts from the branch of the attempt
+    it corrects), and the worktree lives in
+    ``<project.parent>/<project.name>.crew/``. The
     two coordinator files are added to the worktree's own ``info/exclude`` so
     they never show up in ``git status``. Raises :class:`NotAGitRepo` when
     ``project`` is not a git repository, and :class:`RuntimeError` when the
@@ -147,7 +150,7 @@ def create_worktree(
         _remove_tree(worktree)
 
     worktree.parent.mkdir(parents=True, exist_ok=True)
-    _git(["worktree", "add", "-b", branch, str(worktree), "HEAD"], project)
+    _git(["worktree", "add", "-b", branch, str(worktree), start], project)
     _exclude_coordinator_files(worktree)
     return worktree, branch
 
@@ -155,6 +158,18 @@ def create_worktree(
 def _worktree_path(project: Path, job_id: str, piece: int, attempt: int) -> Path:
     """``<project.parent>/<project.name>.crew/<job_id>-<piece>-<attempt>``."""
     return project.parent / f"{project.name}.crew" / f"{job_id}-{piece}-{attempt}"
+
+
+def branch_exists(project: Path, branch: str) -> bool:
+    """Whether ``branch`` is a local branch of ``project``."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=Path(project),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return result.returncode == 0
 
 
 def next_free_attempt(project: Path, job_id: str, piece: int, start: int) -> int:
