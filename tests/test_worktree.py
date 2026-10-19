@@ -13,6 +13,7 @@ from crew_chief.worktree import (
     commit_worktree,
     create_worktree,
     diffstat,
+    next_free_attempt,
     discard,
     outside_writes,
     snapshot,
@@ -412,3 +413,46 @@ def test_write_in_main_repo_is_flagged_even_with_parallel_worktrees(
 
     after = snapshot(git_repo, worktree)
     assert outside_writes(before, after) == ["repo: ?? leak.txt"]
+
+
+# --- orphan folders and the next free attempt ------------------------------
+
+
+def test_create_worktree_replaces_an_orphan_folder(git_repo: Path, home_dir: Path):
+    orphan = git_repo.parent / f"{git_repo.name}.crew" / "job1-1-1"
+    orphan.mkdir(parents=True)
+    (orphan / "leftover.txt").write_text("half removed\n", encoding="utf-8")
+    (orphan / ".git").write_text("gitdir: /nowhere/at/all\n", encoding="utf-8")
+
+    worktree, branch = create_worktree(git_repo, "job1", 1, 1)
+
+    assert worktree == orphan
+    assert not (worktree / "leftover.txt").exists()
+    assert _git(worktree, "rev-parse", "--abbrev-ref", "HEAD").strip() == branch
+
+
+def test_create_worktree_prunes_a_registration_whose_folder_is_gone(
+    git_repo: Path, home_dir: Path
+):
+    import shutil
+
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    shutil.rmtree(worktree)
+    _git(git_repo, "update-ref", "-d", "refs/heads/crew/job1-1-1")
+
+    again, _ = create_worktree(git_repo, "job1", 1, 1)
+
+    assert (again / "README.md").is_file()
+
+
+def test_next_free_attempt_skips_existing_worktrees_and_branches(
+    git_repo: Path, home_dir: Path
+):
+    create_worktree(git_repo, "job1", 1, 1)
+    _git(git_repo, "branch", "crew/job1-1-2")
+    orphan = git_repo.parent / f"{git_repo.name}.crew" / "job1-1-3"
+    orphan.mkdir()
+
+    assert next_free_attempt(git_repo, "job1", 1, 1) == 3
+    assert next_free_attempt(git_repo, "job1", 1, 4) == 4
+    assert next_free_attempt(git_repo, "job1", 2, 1) == 1

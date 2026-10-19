@@ -110,7 +110,11 @@ def create_worktree(
     two coordinator files are added to the worktree's own ``info/exclude`` so
     they never show up in ``git status``. Raises :class:`NotAGitRepo` when
     ``project`` is not a git repository, and :class:`RuntimeError` when the
-    target path is already taken.
+    target path is a registered worktree already.
+
+    An orphan folder at the target path (left by a removal that stopped half
+    way, typically on Windows, and not in ``git worktree list``) is removed
+    after a ``git worktree prune``, then the worktree is created.
     """
     project = Path(project)
     try:
@@ -119,14 +123,49 @@ def create_worktree(
         raise NotAGitRepo(f"not a git repository: {project}") from exc
 
     branch = f"crew/{job_id}-{piece}-{attempt}"
-    worktree = project.parent / f"{project.name}.crew" / f"{job_id}-{piece}-{attempt}"
+    worktree = _worktree_path(project, job_id, piece, attempt)
+    _git(["worktree", "prune"], project, check=False)
     if worktree.exists():
-        raise RuntimeError(f"worktree path already exists: {worktree}")
+        if worktree.name in _registered_worktree_names(project, worktree.parent):
+            raise RuntimeError(f"worktree path already exists: {worktree}")
+        _remove_tree(worktree)
 
     worktree.parent.mkdir(parents=True, exist_ok=True)
     _git(["worktree", "add", "-b", branch, str(worktree), "HEAD"], project)
     _exclude_coordinator_files(worktree)
     return worktree, branch
+
+
+def _worktree_path(project: Path, job_id: str, piece: int, attempt: int) -> Path:
+    """``<project.parent>/<project.name>.crew/<job_id>-<piece>-<attempt>``."""
+    return project.parent / f"{project.name}.crew" / f"{job_id}-{piece}-{attempt}"
+
+
+def next_free_attempt(project: Path, job_id: str, piece: int, start: int) -> int:
+    """The first attempt number ``>= start`` whose worktree and branch are free.
+
+    A number is taken when its branch ``crew/<job_id>-<piece>-<n>`` exists or
+    its worktree path is a registered worktree (an attempt whose record was
+    lost still holds both). An orphan folder does not take a number:
+    :func:`create_worktree` clears it.
+    """
+    project = Path(project)
+    crew_dir = project.parent / f"{project.name}.crew"
+    registered = _registered_worktree_names(project, crew_dir)
+    prefix = f"crew/{job_id}-{piece}-"
+    branches = {
+        line.strip().lstrip("*+ ").strip()
+        for line in _git(
+            ["branch", "--list", f"{prefix}*"], project, check=False
+        ).splitlines()
+    }
+    number = start
+    while (
+        f"{prefix}{number}" in branches
+        or f"{job_id}-{piece}-{number}" in registered
+    ):
+        number += 1
+    return number
 
 
 def snapshot(
