@@ -342,3 +342,157 @@ def test_accept_merge_conflict_is_one_line_error_and_keeps_worktree(
     assert len(err.strip().splitlines()) == 1
     assert worktree.is_dir()
     assert branch in _git(repo, "branch", "--list", "--format=%(refname:short)")
+
+
+# --- models seen -----------------------------------------------------------
+
+
+def _models_prefs(*models: str, paid: tuple[str, ...] = ()) -> str:
+    """Prefs with a ``stub`` tool listing ``models``; ``*-free`` ones are free."""
+    listed = ", ".join(f'"{model}"' for model in models)
+    text = (
+        "[[tools]]\n"
+        'name = "stub"\n'
+        'kind = "generic"\n'
+        'bin = "stub"\n'
+        f"models = [{listed}]\n"
+        'run_cmd = ["stub", "{prompt}"]\n'
+    )
+    for model in paid:
+        text += f'\n[[models]]\nmatch = "stub:{model}"\ncost = "paid"\n'
+    text += '\n[[models]]\nmatch = "stub:*-free"\ncost = "free"\n'
+    return text
+
+
+def _seen_path(repo: Path) -> Path:
+    return repo / "docs" / "crew-chief" / "models-seen.json"
+
+
+def test_discover_records_a_baseline_then_reports_changes(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+
+    _write_prefs(repo, _models_prefs("a-free", "old-free"))
+    assert main(["discover", "--project", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "stub:a-free  cost=free  trains=no" in out
+    assert "models: baseline: 2 executors recorded" in out
+    seen = json.loads(_seen_path(repo).read_text(encoding="utf-8"))
+    assert set(seen["models"]) == {"stub:a-free", "stub:old-free"}
+    assert seen["models"]["stub:a-free"]["present"] is True
+
+    assert main(["discover", "--project", str(repo)]) == 0
+    assert f"models: no changes since {seen['last_run']}" in capsys.readouterr().out
+
+    _write_prefs(repo, _models_prefs("a-free", "new-free", "b", paid=("a-free",)))
+    assert main(["discover", "--project", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "new free: stub:new-free (trains=no)" in out
+    assert "new paid: stub:b (trains=no)" in out
+    assert "gone: stub:old-free (was free)" in out
+    assert "now paid: stub:a-free (was free, trains=no)" in out
+    seen = json.loads(_seen_path(repo).read_text(encoding="utf-8"))
+    assert seen["models"]["stub:old-free"]["present"] is False
+
+
+def test_discover_skipped_tool_keeps_its_models(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    _write_prefs(repo, _models_prefs("a-free"))
+    assert main(["discover", "--project", str(repo)]) == 0
+    capsys.readouterr()
+
+    _only_bins(monkeypatch, set())  # the stub bin disappears from PATH
+    assert main(["discover", "--project", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "gone:" not in out
+    seen = json.loads(_seen_path(repo).read_text(encoding="utf-8"))
+    assert seen["models"]["stub:a-free"]["present"] is True
+
+
+def test_discover_json_has_changes(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    _write_prefs(repo, _models_prefs("a-free"))
+    assert main(["discover", "--project", str(repo), "--json"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first["changes"]["baseline"] == 1
+    assert first["changes"]["since"] is None
+
+    _write_prefs(repo, _models_prefs("a-free", "b-free"))
+    assert main(["discover", "--project", str(repo), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert [e["id"] for e in payload["executors"]] == ["stub:a-free", "stub:b-free"]
+    changes = payload["changes"]
+    assert changes["added"] == [{"id": "stub:b-free", "cost": "free", "trains": False}]
+    assert changes["removed"] == [] and changes["changed"] == []
+    assert changes["baseline"] is None and changes["error"] is None
+    assert changes["since"]
+
+
+def test_job_new_checks_models_on_stderr(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    _write_prefs(repo, _models_prefs("a-free"))
+    assert main(["discover", "--project", str(repo)]) == 0
+    capsys.readouterr()
+
+    _write_prefs(repo, _models_prefs("a-free", "fresh-free"))
+    request = _write(repo / "request.md", "Do it.\n")
+    assert main(["job", "new", "--project", str(repo), "--title", "T",
+                 "--request-file", str(request)]) == 0
+    captured = capsys.readouterr()
+    job_id = captured.out.strip()
+    assert len(captured.out.strip().splitlines()) == 1
+    assert (records.jobs_dir(repo) / f"{job_id}.json").is_file()
+    assert "new free: stub:fresh-free (trains=no)" in captured.err
+
+
+def test_job_new_survives_a_broken_discovery(git_repo, monkeypatch, capsys):
+    from crew_chief import cli
+
+    repo = git_repo
+
+    def boom(prefs):
+        raise RuntimeError("discovery exploded")
+
+    monkeypatch.setattr(cli, "discover_full", boom)
+    request = _write(repo / "request.md", "Do it.\n")
+    assert main(["job", "new", "--project", str(repo), "--title", "T",
+                 "--request-file", str(request)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip()
+    assert "models: check skipped: discovery exploded" in captured.err
+    assert not _seen_path(repo).exists()
+
+
+def test_job_new_survives_invalid_preferences(git_repo, capsys):
+    repo = git_repo
+    _write_prefs(repo, '[[models]]\nmatch = "x:*"\ncost = "cheap"\n')
+    request = _write(repo / "request.md", "Do it.\n")
+    assert main(["job", "new", "--project", str(repo), "--title", "T",
+                 "--request-file", str(request)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip()
+    assert "models: check skipped:" in captured.err
+
+
+def test_pick_does_not_write_models_seen(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    job = records.new_job(repo, "Pick", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    capsys.readouterr()
+    assert not _seen_path(repo).exists()

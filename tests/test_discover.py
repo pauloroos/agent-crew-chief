@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from crew_chief.config import Prefs
-from crew_chief.discover import Executor, discover
+from crew_chief.discover import Discovery, Executor, discover, discover_full
 
 
 def _prefs(tools, models=()):
@@ -128,3 +128,20 @@ def test_discover_executor_carries_tool_dict(fake_bin):
     ex = executors[0]
     assert isinstance(ex, Executor) and ex.tool is not None
     assert ex.tool["kind"] == "opencode"
+
+
+def test_discover_full_lists_models_only_for_tools_that_listed(fake_bin):
+    fake_bin("opencode", "print('oc/free\noc/banned')\n")
+    prefs = _prefs(
+        [
+            {"name": "opencode", "kind": "opencode", "bin": "opencode"},
+            {"name": "ghost", "kind": "generic", "bin": "definitely-not-here"},
+        ],
+        models=[{"match": "opencode:oc/banned", "cost": "forbidden"}],
+    )
+    result = discover_full(prefs)
+    assert isinstance(result, Discovery)
+    assert [e.id for e in result.executors] == ["opencode:oc/free"]
+    assert result.listed == {"opencode": ["oc/free", "oc/banned"]}
+    assert any("ghost" in n for n in result.notes)
+    assert discover(prefs) == (result.executors, result.notes)
