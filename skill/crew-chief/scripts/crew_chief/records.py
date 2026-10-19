@@ -65,6 +65,7 @@ STATUSES = (
     "quota",
     "outside_write",
     "brief_refused",
+    "proof_failed",
 )
 
 #: First work type -> conventional commit type.

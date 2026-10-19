@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -849,3 +850,180 @@ def test_unknown_base_is_refused_before_anything_runs(git_repo, fake_bin):
     )
     assert stored["pieces"][0]["attempts"] == []
     assert not (git_repo.parent / f"{git_repo.name}.crew").exists()
+
+
+# --- proof and scope -------------------------------------------------------
+
+
+def _py(code: str) -> str:
+    """A shell command running ``code`` with this interpreter (no double quotes)."""
+    return f'"{sys.executable}" -c "{code}"'
+
+
+def test_proof_pass_keeps_ok_and_records_exit(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        proof=_py("import out"),
+    )
+
+    assert attempt["status"] == "ok"
+    assert attempt["proof"] == {"cmd": _py("import out"), "exit": 0, "passed": True}
+    assert _stored_attempt(git_repo, job["id"])["proof"]["passed"] is True
+
+
+def test_proof_runs_after_the_commit_and_leaves_its_files_alone(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        proof=_py("open('made-by-proof.txt', 'w').write('x')"),
+    )
+
+    worktree = Path(attempt["worktree"])
+    assert attempt["status"] == "ok"
+    assert (worktree / "made-by-proof.txt").is_file()
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=worktree, capture_output=True, text=True,
+        encoding="utf-8",
+    ).stdout.split()
+    assert "out.py" in tracked and "made-by-proof.txt" not in tracked
+
+
+def test_proof_failure_is_proof_failed_with_output_in_note(git_repo, fake_bin):
+    fake_bin("stub", _WRITES + "print('executor says hi')\n")
+    job = _seed_job(git_repo)
+    proof = _py("import sys; print('nope'); sys.exit(3)")
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(), proof=proof
+    )
+
+    assert attempt["status"] == "proof_failed"
+    assert attempt["proof"] == {"cmd": proof, "exit": 3, "passed": False}
+    assert attempt["note"].startswith(f"proof: {proof}\n")
+    assert "nope" in attempt["note"]
+    assert "executor says hi" in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["status"] == "proof_failed"
+    assert _branch_exists(git_repo, attempt["branch"])
+
+
+def test_proof_timeout_is_proof_failed(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    start = time.monotonic()
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(), timeout_s=3,
+        proof=_py("import time; time.sleep(30)"),
+    )
+    elapsed = time.monotonic() - start
+
+    assert attempt["status"] == "proof_failed"
+    assert attempt["proof"]["exit"] is None
+    assert attempt["proof"]["passed"] is False
+    assert "timed out" in attempt["note"]
+    assert elapsed < 20
+
+
+def test_missing_proof_command_is_proof_failed(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        proof="definitely-not-a-command-xyz",
+    )
+
+    assert attempt["status"] == "proof_failed"
+    assert attempt["proof"]["passed"] is False
+    assert attempt["proof"]["exit"] != 0
+    assert "definitely-not-a-command-xyz" in attempt["note"]
+
+
+def test_expect_text_missing_is_proof_failed(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    missing = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        proof=_py("print('3 passed')"), proof_expect="4 passed",
+    )
+    found = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        proof=_py("print('3 passed')"), proof_expect="3 passed",
+    )
+
+    assert missing["status"] == "proof_failed"
+    assert missing["proof"]["exit"] == 0 and missing["proof"]["passed"] is False
+    assert "4 passed" in missing["note"]
+    assert found["status"] == "ok" and found["proof"]["passed"] is True
+
+
+def test_proof_does_not_run_when_the_attempt_is_not_ok(git_repo, fake_bin):
+    fake_bin("stub", "print('nothing to do')\n")
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        proof=_py("import sys; sys.exit(3)"),
+    )
+
+    assert attempt["status"] == "no_change"
+    assert "proof" not in attempt
+
+
+def test_skipped_proof_is_recorded(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(), skip_proof=True
+    )
+
+    assert attempt["status"] == "ok"
+    assert attempt["proof"] == {"skipped": True}
+
+
+def test_attempt_without_proof_has_no_proof_or_scope_keys(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert "proof" not in attempt and "scope" not in attempt
+
+
+def test_scope_lists_files_outside_allowed(git_repo, fake_bin):
+    fake_bin(
+        "stub",
+        "from pathlib import Path\n"
+        "Path('src').mkdir()\n"
+        "Path('src/a.py').write_text('a = 1\\n', encoding='utf-8')\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        allowed_files=["src/*"],
+    )
+
+    assert attempt["status"] == "ok"
+    assert attempt["scope"] == ["out.py"]
+
+
+def test_scope_is_absent_when_everything_is_allowed(git_repo, fake_bin):
+    fake_bin("stub", _WRITES)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+        allowed_files=["out.py"],
+    )
+
+    assert attempt["status"] == "ok"
+    assert "scope" not in attempt

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1186,12 +1187,14 @@ def test_accept_on_a_stale_piece_merges_and_warns(
     brief = _write(repo.parent / "brief.md", "Create out.py.\n")
     job = records.new_job(repo, "Stale", "do it", True, "parts")
     records.add_piece(job, "T012 old text", "code", "low", ref="T012")
-    job["pieces"][0]["stale"] = True
     records.save_job(repo, job)
     assert main(["dispatch", "--project", str(repo), "--job", job["id"],
                  "--piece", "1", "--executor", "stub:m",
                  "--brief-file", str(brief)]) == 0
     capsys.readouterr()
+    records.update_job(
+        repo, job["id"], lambda stored: stored["pieces"][0].update(stale=True)
+    )
 
     assert main(["accept", "--project", str(repo), "--job", job["id"],
                  "--piece", "1"]) == 0
@@ -1200,3 +1203,178 @@ def test_accept_on_a_stale_piece_merges_and_warns(
     assert "piece 1 is stale (task T012 changed); tasks.md not marked" in captured.err
     assert (repo / "out.py").is_file()
     assert _stored_job(repo, job["id"])["pieces"][0]["accepted"]["attempt"] == 1
+
+
+# --- spec proof ------------------------------------------------------------
+
+
+def _spec_job(repo: Path, **meta) -> str:
+    """A job with one spec piece (T012, code) whose sidecar carries ``meta``."""
+    from crew_chief.sidecar import Sidecar, TaskMeta, save_sidecar
+
+    folder = repo / "specs" / "001-x"
+    folder.mkdir(parents=True)
+    (folder / "tasks.md").write_text("- [ ] T012 Make out.py\n", encoding="utf-8")
+    save_sidecar(folder, Sidecar(
+        spec_dir="specs/001-x",
+        tasks={"T012": TaskMeta(meta.pop("type", "code"), "low", **meta)},
+    ))
+    job = records.new_job(repo, "Spec", "do it", True, "parts")
+    records.add_piece(job, "T012 Make out.py", "code", "low", ref="T012")
+    job["spec_dir"] = "specs/001-x"
+    records.save_job(repo, job)
+    return job["id"]
+
+
+def _dispatch_argv(repo: Path, job_id: str, brief: Path, *extra: str) -> list[str]:
+    return ["dispatch", "--project", str(repo), "--job", job_id, "--piece", "1",
+            "--executor", "stub:m", "--brief-file", str(brief), *extra]
+
+
+def _stub_repo(repo, fake_bin, monkeypatch) -> Path:
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", _STUB)
+    _only_bins(monkeypatch, {"stub"})
+    return _write(repo.parent / "brief.md", "Create out.py.\n")
+
+
+def _py(code: str) -> str:
+    return f'"{sys.executable}" -c "{code}"'
+
+
+def test_cli_dispatch_refuses_spec_piece_without_proof(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job_id = _spec_job(repo)
+
+    assert main(_dispatch_argv(repo, job_id, brief)) == 2
+    captured = capsys.readouterr()
+    assert captured.err.strip() == (
+        "piece 1 (T012) has no proof in crew.toml; "
+        "add one or pass --no-proof"
+    )
+    assert _stored_job(repo, job_id)["pieces"][0]["attempts"] == []
+
+
+def test_cli_dispatch_no_proof_flag_records_skip(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job_id = _spec_job(repo)
+
+    assert main(_dispatch_argv(repo, job_id, brief, "--no-proof")) == 0
+    attempt = _stored_job(repo, job_id)["pieces"][0]["attempts"][0]
+    assert attempt["status"] == "ok"
+    assert attempt["proof"] == {"skipped": True}
+
+
+def test_cli_dispatch_runs_the_sidecar_proof(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job_id = _spec_job(
+        repo, proof=_py("import out; print('imported')"), expect="imported"
+    )
+
+    assert main(_dispatch_argv(repo, job_id, brief, "--json")) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["proof"]["passed"] is True
+    attempt = _stored_job(repo, job_id)["pieces"][0]["attempts"][0]
+    assert attempt["proof"]["exit"] == 0
+
+
+def test_cli_dispatch_failed_proof_exits_1_and_flags_scope(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job_id = _spec_job(
+        repo, proof=_py("import sys; sys.exit(4)"), files=["src/*"]
+    )
+
+    assert main(_dispatch_argv(repo, job_id, brief)) == 1
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "status: proof_failed"
+    assert "scope: out.py" in out
+    attempt = _stored_job(repo, job_id)["pieces"][0]["attempts"][0]
+    assert attempt["proof"]["exit"] == 4
+    assert attempt["scope"] == ["out.py"]
+
+
+def test_cli_dispatch_think_piece_without_proof_is_not_refused(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job_id = _spec_job(repo, type="design")
+
+    assert main(_dispatch_argv(repo, job_id, brief)) == 0
+
+
+def test_cli_dispatch_piece_without_ref_keeps_v020_behaviour(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job = records.new_job(repo, "Plain", "do it", True, "parts")
+    records.add_piece(job, "One", "code", "low")
+    records.save_job(repo, job)
+
+    assert main(_dispatch_argv(repo, job["id"], brief)) == 0
+    assert "proof" not in _stored_job(repo, job["id"])["pieces"][0]["attempts"][0]
+
+
+def test_cli_dispatch_refuses_a_stale_piece_exec_and_review(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job_id = _spec_job(repo, proof=_py("pass"))
+    records.update_job(
+        repo, job_id, lambda stored: stored["pieces"][0].update(stale=True)
+    )
+    message = "piece 1 is stale (task T012 changed); re-import the spec"
+
+    assert main(_dispatch_argv(repo, job_id, brief)) == 2
+    assert capsys.readouterr().err.strip() == message
+    assert main(_dispatch_argv(
+        repo, job_id, brief, "--review", "--target", str(repo)
+    )) == 2
+    assert capsys.readouterr().err.strip() == message
+    assert _stored_job(repo, job_id)["pieces"][0]["attempts"] == []
+
+
+def test_pick_excludes_executor_with_proof_failed(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS.replace('models = ["m"]', 'models = ["m", "n"]'))
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    job = records.new_job(repo, "Exclude", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+    records.add_attempt(job, 1, {"executor": "stub:m", "role": "exec",
+                                 "status": "proof_failed", "cost": "free"})
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "stub:n"
+
+
+def test_accept_refuses_a_piece_whose_only_attempt_is_proof_failed(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    brief = _stub_repo(repo, fake_bin, monkeypatch)
+    job_id = _spec_job(repo, proof=_py("import sys; sys.exit(1)"))
+    assert main(_dispatch_argv(repo, job_id, brief)) == 1
+    capsys.readouterr()
+
+    assert main(["accept", "--project", str(repo), "--job", job_id,
+                 "--piece", "1"]) == 1
+    assert "nothing to accept" in capsys.readouterr().out
+    assert not (repo / "out.py").exists()

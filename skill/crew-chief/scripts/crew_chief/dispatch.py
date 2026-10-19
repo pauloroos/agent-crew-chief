@@ -34,6 +34,7 @@ its diffstat is measured against that starting point.
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import signal
 import subprocess
@@ -95,6 +96,9 @@ def build_prompt(brief_file: Path, worktree: Path, review: bool = False) -> str:
 #: How many trailing characters of executor output are kept in the note.
 MAX_NOTE = 4000
 
+#: How many trailing characters of a proof's output go into the note.
+MAX_PROOF_NOTE = 2000
+
 
 def dispatch(
     project: Path,
@@ -109,6 +113,10 @@ def dispatch(
     review_target: Path | None = None,
     base: str | None = None,
     fresh: bool = False,
+    proof: str = "",
+    proof_expect: str = "",
+    allowed_files: list[str] | None = None,
+    skip_proof: bool = False,
 ) -> dict:
     """Run one attempt, record it in the job and return the attempt dict.
 
@@ -119,10 +127,20 @@ def dispatch(
     The returned dict is also appended to ``piece`` of the job and the job is
     saved, whatever the status: ``ok``, ``no_change`` (an exec that exited
     cleanly without changing the worktree), ``failed``, ``timeout``,
-    ``quota``, ``outside_write`` or ``brief_refused``.
+    ``quota``, ``outside_write``, ``proof_failed`` or ``brief_refused``.
 
     An exec attempt starts from what :func:`resolve_base` returns for
     ``base`` and ``fresh``; a review takes neither.
+
+    An exec that would be ``ok`` runs ``proof`` afterwards (a shell command in
+    the worktree, after the commit, with the same timeout as the executor and
+    no stdin). A non-zero exit, a timeout, a command that cannot run or output
+    that lacks ``proof_expect`` makes the status ``proof_failed``; the note then
+    starts with ``proof: <command>`` and the end of the output, and the attempt
+    records ``proof: {"cmd", "exit", "passed"}`` (``exit`` is ``None`` for a
+    timeout). ``skip_proof`` records ``proof: {"skipped": true}`` instead. When
+    ``allowed_files`` is given, the attempt lists the changed files that match
+    none of its patterns under ``scope``; that never changes the status.
 
     Precondition: ``piece`` must exist in the job and ``base`` must name an
     existing branch; otherwise ValueError is raised and nothing is recorded.
@@ -284,6 +302,14 @@ def dispatch(
             rows = [row for row in rows if row["file"] not in EXCLUDED_FILES]
             attempt["diffstat"] = rows
             attempt["destructive_suspect"] = destructive
+            if allowed_files is not None:
+                outside = [
+                    row["file"]
+                    for row in rows
+                    if not _in_scope(row["file"], allowed_files)
+                ]
+                if outside:
+                    attempt["scope"] = outside
             changed = bool(rows) or head_commit(worktree) != start_head
             commit_worktree(
                 worktree, f"crew: {job_id} piece {piece} attempt {number}"
@@ -294,9 +320,87 @@ def dispatch(
     else:
         _remove_brief(role, brief_file)
 
-    return finish(
-        _status(timed_out, writes, proc.returncode, stderr, text, changed)
-    )
+    status = _status(timed_out, writes, proc.returncode, stderr, text, changed)
+    if skip_proof:
+        attempt["proof"] = {"skipped": True}
+    elif role == "exec" and status == "ok" and proof:
+        result, proof_note = _run_proof(
+            proof, proof_expect, worktree, timeout_s or prefs.dispatch_timeout_s
+        )
+        attempt["proof"] = result
+        if not result["passed"]:
+            status = "proof_failed"
+            attempt["note"] = f"{proof_note}\n\n{attempt['note']}".rstrip()
+    return finish(status)
+
+
+def _in_scope(path: str, allowed: list[str]) -> bool:
+    """Whether ``path`` matches one of the ``allowed`` patterns.
+
+    A pattern is an :mod:`fnmatch` pattern on the ``/``-separated path; one
+    that ends with ``/`` stands for the whole folder.
+    """
+    for pattern in allowed:
+        if pattern.endswith("/"):
+            if path.startswith(pattern):
+                return True
+        elif fnmatch.fnmatchcase(path, pattern):
+            return True
+    return False
+
+
+def _run_proof(
+    proof: str, expect: str, worktree: Path, timeout_s: int
+) -> tuple[dict, str]:
+    """Run the proof command in ``worktree``; return its record and note.
+
+    The record is ``{"cmd", "exit", "passed"}``: ``exit`` is ``None`` when the
+    command timed out or could not start. The note is ``proof: <command>``
+    followed by the end of the output and, when relevant, why the proof
+    failed. Never raises and never waits past ``timeout_s`` (plus a short
+    grace to collect the output of the killed tree).
+    """
+    result: dict = {"cmd": proof, "exit": None, "passed": False}
+    header = f"proof: {proof}"
+    try:
+        proc = subprocess.Popen(
+            proof,
+            shell=True,
+            cwd=worktree,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            start_new_session=(os.name != "nt"),
+        )
+    except OSError as exc:
+        return result, f"{header}\ncannot run the proof: {exc}"
+
+    timed_out = False
+    try:
+        output, _ = proc.communicate(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _kill_process_tree(proc)
+        try:
+            output, _ = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:  # a stray holder of the pipe
+            output = ""
+    output = output or ""
+    tail = output[-MAX_PROOF_NOTE:]
+    body = f"{header}\n{tail}".rstrip("\n")
+    if timed_out:
+        return result, f"{body}\ntimed out after {timeout_s}s"
+
+    result["exit"] = proc.returncode
+    if proc.returncode != 0:
+        return result, f"{body}\nexit {proc.returncode}"
+    if expect and expect not in output:
+        return result, f"{body}\nexpected text not found: {expect}"
+    result["passed"] = True
+    return result, body
 
 
 def resolve_base(

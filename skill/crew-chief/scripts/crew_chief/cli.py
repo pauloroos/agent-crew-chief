@@ -400,6 +400,9 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         raise ValueError("--review requires --target")
     if args.review and (args.base or args.fresh):
         raise ValueError("--base and --fresh are for exec attempts, not --review")
+    if args.review and args.no_proof:
+        raise ValueError("--no-proof is for exec attempts, not --review")
+    proof, expect, files = _spec_proof(project, args)
 
     prefs = load_prefs(project)
     found = discover_full(prefs)
@@ -426,6 +429,10 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         ),
         base=args.base,
         fresh=args.fresh,
+        proof=proof,
+        proof_expect=expect,
+        allowed_files=files,
+        skip_proof=args.no_proof,
     )
 
     status = attempt["status"]
@@ -441,6 +448,10 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         f"steps: {'-' if attempt['steps'] is None else attempt['steps']}",
         f"tokens: {_tokens_text(attempt)}",
     ]
+    if "proof" in attempt:
+        lines.append(f"proof: {_proof_text(attempt['proof'])}")
+    if attempt.get("scope"):
+        lines.append("scope: " + ", ".join(attempt["scope"]))
     payload = {
         "status": status,
         "branch": attempt["branch"],
@@ -455,8 +466,56 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         "tokens_total": attempt["tokens_total"],
         "tokens_estimated": attempt["tokens_estimated"],
     }
+    if "proof" in attempt:
+        payload["proof"] = attempt["proof"]
+    if attempt.get("scope"):
+        payload["scope"] = attempt["scope"]
     _emit(args, "\n".join(lines), payload)
     return 0 if status == "ok" else 1
+
+
+def _proof_text(proof: dict) -> str:
+    """``skipped``, ``passed``, ``failed (exit 3)`` or ``failed (no exit)``."""
+    if proof.get("skipped"):
+        return "skipped"
+    if proof.get("passed"):
+        return "passed"
+    code = proof.get("exit")
+    return "failed (no exit)" if code is None else f"failed (exit {code})"
+
+
+def _spec_proof(
+    project: Path, args: argparse.Namespace
+) -> tuple[str, str, list[str] | None]:
+    """The proof, expected text and allowed files a ``dispatch`` runs with.
+
+    Only a piece bound to a spec task (``ref``) of a job with a ``spec_dir``
+    has any: they come from the task's ``crew.toml`` entry. A stale piece is
+    refused for exec and review alike. An exec of a hands-on task (see
+    :data:`records.EXEC_TYPES`) without a proof is refused unless
+    ``--no-proof`` was given. Anything else keeps the v0.2.0 behaviour.
+    """
+    job = records.load_job(project, args.job)
+    piece = _piece(job, args.piece)
+    ref = piece.get("ref")
+    if piece.get("stale"):
+        raise ValueError(
+            f"piece {args.piece} is stale (task {ref} changed); re-import the spec"
+        )
+    spec_dir = job.get("spec_dir")
+    if args.review or not ref or not spec_dir:
+        return "", "", None
+    meta = load_sidecar(project / spec_dir).tasks.get(ref)
+    work_type = meta.type if meta else piece.get("type")
+    proof = meta.proof if meta else ""
+    if not proof and work_type in records.EXEC_TYPES and not args.no_proof:
+        raise ValueError(
+            f"piece {args.piece} ({ref}) has no proof in crew.toml; "
+            "add one or pass --no-proof"
+        )
+    expect = meta.expect if meta else ""
+    files = list(meta.files) if meta and meta.files else None
+    return proof, expect, files
 
 
 def _cmd_correction(args: argparse.Namespace) -> int:
@@ -1021,6 +1080,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--fresh",
         action="store_true",
         help="start the worktree from HEAD even after a correction",
+    )
+    dispatch_parser.add_argument(
+        "--no-proof",
+        action="store_true",
+        help="dispatch a spec piece without running its proof (recorded as skipped)",
     )
     dispatch_parser.add_argument("--effort", default=None, help="effort/reasoning")
     dispatch_parser.add_argument(
