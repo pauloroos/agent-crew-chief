@@ -65,7 +65,11 @@ def test_build_opencode_command(tmp_path):
         tool, "oc/m", tmp_path, "p", tmp_path / "b.md", tmp_path / "o.json",
         None, False,
     )
-    assert cmd[1:] == ["run", "--format", "json", "-m", "oc/m", "p"]
+    # --standalone: without it `opencode run` hands the prompt to the
+    # background service, which works in its own directory, not the worktree.
+    assert cmd[1:] == [
+        "run", "--standalone", "--format", "json", "-m", "oc/m", "p",
+    ]
 
 
 def test_build_antigravity_review_uses_plan_mode(tmp_path):

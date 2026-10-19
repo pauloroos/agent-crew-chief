@@ -157,6 +157,28 @@ def test_successful_attempt_records_diffstat_and_branch(git_repo, fake_bin):
     assert attempt["model_mismatch"] is False
 
 
+def test_executor_stdin_is_closed(git_repo, fake_bin, monkeypatch):
+    # An executor left waiting on the coordinator's stdin hangs until the
+    # timeout (`opencode run` does this in the background).
+    fake_bin("stub", "print('done')\n")
+    job = _seed_job(git_repo)
+    seen = {}
+    real_popen = subprocess.Popen
+
+    def spy(cmd, *args, **kwargs):
+        # git runs through Popen too; keep only the executor's own call.
+        if "stub" in str(cmd[0]):
+            seen["stdin"] = kwargs.get("stdin")
+        return real_popen(cmd, *args, **kwargs)
+
+    monkeypatch.setattr("crew_chief.dispatch.subprocess.Popen", spy)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "Go\n", _prefs())
+
+    assert attempt["status"] == "ok"
+    assert seen["stdin"] is subprocess.DEVNULL
+
+
 def test_second_attempt_is_numbered_two(git_repo, fake_bin):
     fake_bin("stub", "print('ok')\n")
     job = _seed_job(git_repo)
@@ -430,7 +452,7 @@ def test_opencode_attempt_records_steps_tokens_and_readable_note(
     fake_bin(
         "ocstub",
         "import sys\n"
-        "assert sys.argv[1:4] == ['run', '--format', 'json'], sys.argv\n"
+        "assert sys.argv[1:5] == ['run', '--standalone', '--format', 'json'], sys.argv\n"
         f"sys.stdout.write({lines!r})\n",
     )
     job = _seed_job(git_repo)

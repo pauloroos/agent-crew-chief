@@ -188,6 +188,7 @@ def dispatch(
             cmd,
             cwd=worktree,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

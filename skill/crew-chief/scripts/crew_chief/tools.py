@@ -135,8 +135,10 @@ def build_command(
 
     if kind == "opencode":
         # JSON events carry the step count and the tokens (parse_metrics);
-        # output_text turns them back into the readable answer.
-        return [exe, "run", "--format", "json", "-m", model, prompt]
+        # output_text turns them back into the readable answer. --standalone
+        # keeps the run in the worktree: without it the prompt goes to the
+        # background service, which works in its own directory.
+        return [exe, "run", "--standalone", "--format", "json", "-m", model, prompt]
 
     if kind == "codex":
         cmd = [
