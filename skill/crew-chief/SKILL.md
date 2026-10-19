@@ -27,6 +27,19 @@ Start with `CC discover --project .`: it lists the executors available on this
 machine as `<tool>:<model>  cost=<free|paid>  trains=<yes|no>`, plus a line for
 every tool it skipped and why.
 
+After the list, `discover` prints what changed in the models since the last
+check (`docs/crew-chief/models-seen.json`, committed with the jobs):
+`new free: ...`, `new paid: ...`, `gone: ...`, `now paid: ...`/`now free: ...`,
+or `models: no changes since <when>`; the first run only prints
+`models: baseline: N executors recorded`. `CC job new` runs the same check on
+stderr every time, and `pick`/`dispatch` run it on stderr when the last check
+is older than `model_check_hours` (24 by default). Whenever one of these lines
+shows up, **tell the user** which free models are new and which ones are gone
+(paid changes matter less; mention them briefly). A new model enters with no
+score: do not hand-pick or avoid it, `pick` gives it its chance on low-risk
+work on its own. A tool that was skipped never makes its models "gone", and a
+`models: check skipped` line never blocks the job.
+
 ## The job cycle
 
 Seven steps, in order.
@@ -38,7 +51,9 @@ Seven steps, in order.
    CC job new --project . --title "Add CSV export" --request-file .crew-chief-request.md
    ```
 
-   It prints the job id (use it everywhere below). If the work stays with you
+   It prints the job id (use it everywhere below) on stdout and the models
+   check on stderr: relay any new or gone free models to the user (see
+   **The CLI**). If the work stays with you
    because it must not be distributed, add `--not-distributed --reason "<why>"`.
    Add `--issue <ref>` when the request came from an issue tracker.
 

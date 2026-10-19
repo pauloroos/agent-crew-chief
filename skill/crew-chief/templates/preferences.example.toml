@@ -38,6 +38,12 @@
 # example "codex:gpt-5-codex". Empty means "choose one yourself".
 # review_default = ""
 
+# Hours between automatic checks for new, gone or re-priced models. `discover`
+# and `job new` always check; `pick` and `dispatch` check (and update
+# docs/crew-chief/models-seen.json) only when the last check is this old.
+# 0 means every time.
+# model_check_hours = 24
+
 # --- models ----------------------------------------------------------------
 #
 # `match` is an fnmatch glob tested against the executor id "<tool>:<model>".
