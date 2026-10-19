@@ -44,6 +44,19 @@
 # 0 means every time.
 # model_check_hours = 24
 
+# Minutes an executor stays out of `pick` after an attempt ended in `quota`, in
+# any job of this project. With every free executor cooling down, `pick`
+# escalates to the paid ones as usual.
+# quota_cooldown_min = 60
+
+# Extra top-level entries of your home directory that the containment check
+# ignores (fnmatch patterns), for agent CLIs that keep their config there. They
+# add to the built-in list (.claude, .claude.json*, .codex, .gemini,
+# .antigravity*, .opencode, .local, .config, .cache, .cursor, ...; see
+# AGENT_HOME_ENTRIES in scripts/crew_chief/worktree.py). Global and project
+# lists add up.
+# ignore_home_entries = [".aider*", ".kiro"]
+
 # --- models ----------------------------------------------------------------
 #
 # `match` is an fnmatch glob tested against the executor id "<tool>:<model>".

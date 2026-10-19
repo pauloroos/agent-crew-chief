@@ -162,7 +162,8 @@ def dispatch(
         names = ", ".join(str(name) for name in tool.get("env", []))
         return finish("failed", f"missing env: {names}")
 
-    before = snapshot(project, worktree)
+    ignore_home = prefs.ignore_home_entries
+    before = snapshot(project, worktree, ignore_home)
     try:
         proc = subprocess.Popen(
             cmd,
@@ -187,7 +188,7 @@ def dispatch(
         _kill_process_tree(proc)
         stdout, stderr = proc.communicate()
 
-    after = snapshot(project, worktree)
+    after = snapshot(project, worktree, ignore_home)
     writes = outside_writes(before, after)
     attempt["outside_writes"] = writes
 

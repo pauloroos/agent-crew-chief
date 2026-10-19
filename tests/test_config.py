@@ -176,3 +176,42 @@ def test_model_check_hours_must_be_a_non_negative_number(tmp_path, value):
         f"model_check_hours = {value}\n", encoding="utf-8")
     with pytest.raises(PrefsError, match="model_check_hours"):
         load_prefs(tmp_path, tmp_path / "n.toml")
+
+
+def test_ignore_home_entries_defaults_to_empty_and_unions_global_and_project(
+    tmp_path,
+):
+    assert load_prefs(tmp_path, tmp_path / "n.toml").ignore_home_entries == []
+    g = tmp_path / "g.toml"
+    g.write_text('ignore_home_entries = [".aider*", ".kiro"]\n', encoding="utf-8")
+    proj = tmp_path / "proj"
+    (proj / "docs/crew-chief").mkdir(parents=True)
+    (proj / "docs/crew-chief/preferences.toml").write_text(
+        'ignore_home_entries = [".kiro", ".grok"]\n', encoding="utf-8")
+    assert load_prefs(proj, g).ignore_home_entries == [".aider*", ".kiro", ".grok"]
+
+
+@pytest.mark.parametrize("value", ['".kiro"', "[1, 2]", "true"])
+def test_ignore_home_entries_must_be_a_list_of_names(tmp_path, value):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        f"ignore_home_entries = {value}\n", encoding="utf-8")
+    with pytest.raises(PrefsError, match="ignore_home_entries"):
+        load_prefs(tmp_path, tmp_path / "n.toml")
+
+
+def test_quota_cooldown_min_defaults_to_60_and_can_be_set(tmp_path):
+    assert load_prefs(tmp_path, tmp_path / "n.toml").quota_cooldown_min == 60
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        "quota_cooldown_min = 15\n", encoding="utf-8")
+    assert load_prefs(tmp_path, tmp_path / "n.toml").quota_cooldown_min == 15
+
+
+@pytest.mark.parametrize("value", ["-1", '"hour"', "true"])
+def test_quota_cooldown_min_must_be_a_non_negative_number(tmp_path, value):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        f"quota_cooldown_min = {value}\n", encoding="utf-8")
+    with pytest.raises(PrefsError, match="quota_cooldown_min"):
+        load_prefs(tmp_path, tmp_path / "n.toml")

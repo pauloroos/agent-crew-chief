@@ -348,3 +348,49 @@ def test_review_requires_review_target(git_repo, fake_bin):
         )
 
     assert not (git_repo.parent / f"{git_repo.name}.crew").exists()
+
+
+# --- containment preferences -----------------------------------------------
+
+
+def test_home_entries_from_preferences_are_not_outside_write(
+    git_repo, fake_bin, home_dir
+):
+    fake_bin(
+        "stub",
+        "import os\n"
+        "from pathlib import Path\n"
+        "home = Path(os.environ['USERPROFILE' if os.name == 'nt' else 'HOME'])\n"
+        "(home / '.claude.json').write_text('{}', encoding='utf-8')\n"
+        "(home / '.my-agent').mkdir()\n"
+        "print('ok')\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo,
+        job["id"],
+        1,
+        _executor(),
+        "go\n",
+        _prefs(ignore_home_entries=[".my-agent"]),
+    )
+
+    assert attempt["status"] == "ok", attempt["outside_writes"]
+
+
+def test_parallel_attempts_do_not_flag_each_other(git_repo, fake_bin):
+    fake_bin("stub", "print('ok')\n")
+    job = _seed_job(git_repo)
+    other, _ = create_worktree(git_repo, job["id"], 1, 99)
+    fake_bin(
+        "stub",
+        "from pathlib import Path\n"
+        f"Path(r'{other}', 'parallel.py').write_text('x', encoding='utf-8')\n"
+        f"Path(r'{other.parent}', '{job['id']}-2-1').mkdir()\n"
+        "print('ok')\n",
+    )
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "ok", attempt["outside_writes"]

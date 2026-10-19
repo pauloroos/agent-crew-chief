@@ -11,7 +11,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,8 @@ DEFAULT_EXPLORE_RATE = 0.1
 DEFAULT_DISPATCH_TIMEOUT_S = 900
 #: Hours after which ``pick`` and ``dispatch`` re-check the models seen.
 DEFAULT_MODEL_CHECK_HOURS = 24
+#: Minutes an executor stays out of ``pick`` after a ``quota`` attempt.
+DEFAULT_QUOTA_COOLDOWN_MIN = 60
 
 #: Default tool definitions. Preferences merge over these by ``name``
 #: (project over global over defaults).
@@ -78,6 +80,10 @@ class Prefs:
     dispatch_timeout_s: int
     review_default: str
     model_check_hours: float = DEFAULT_MODEL_CHECK_HOURS
+    quota_cooldown_min: float = DEFAULT_QUOTA_COOLDOWN_MIN
+    #: Extra home entries (fnmatch patterns) the containment check ignores, on
+    #: top of ``worktree.AGENT_HOME_ENTRIES``; global and project lists add up.
+    ignore_home_entries: list[str] = field(default_factory=list)
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
@@ -138,16 +144,24 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
                 f"{path}: explore_rate must be between 0 and 1, got {explore_rate!r}"
             )
 
-    check_hours = data.get("model_check_hours")
-    if check_hours is not None:
-        if isinstance(check_hours, bool) or not isinstance(check_hours, (int, float)):
-            raise PrefsError(
-                f"{path}: model_check_hours must be a number, got {check_hours!r}"
-            )
-        if check_hours < 0:
-            raise PrefsError(
-                f"{path}: model_check_hours must be 0 or more, got {check_hours!r}"
-            )
+    for key in ("model_check_hours", "quota_cooldown_min"):
+        value = data.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise PrefsError(f"{path}: {key} must be a number, got {value!r}")
+        if value < 0:
+            raise PrefsError(f"{path}: {key} must be 0 or more, got {value!r}")
+
+    ignore_home = data.get("ignore_home_entries")
+    if ignore_home is not None and (
+        not isinstance(ignore_home, list)
+        or not all(isinstance(name, str) and name for name in ignore_home)
+    ):
+        raise PrefsError(
+            f"{path}: ignore_home_entries must be a list of entry names, "
+            f"got {ignore_home!r}"
+        )
 
     issue_tracker = data.get("issue_tracker")
     if issue_tracker is not None and issue_tracker not in ISSUE_TRACKERS:
@@ -251,6 +265,15 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         dispatch_timeout_s=pick("dispatch_timeout_s", DEFAULT_DISPATCH_TIMEOUT_S),
         review_default=pick("review_default", ""),
         model_check_hours=pick("model_check_hours", DEFAULT_MODEL_CHECK_HOURS),
+        quota_cooldown_min=pick("quota_cooldown_min", DEFAULT_QUOTA_COOLDOWN_MIN),
+        ignore_home_entries=list(
+            dict.fromkeys(
+                [
+                    *global_data.get("ignore_home_entries", []),
+                    *project_data.get("ignore_home_entries", []),
+                ]
+            )
+        ),
     )
 
 
