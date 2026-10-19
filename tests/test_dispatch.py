@@ -571,7 +571,7 @@ def test_prompt_names_the_absolute_brief_and_worktree(git_repo, fake_bin):
 
     worktree = Path(attempt["worktree"]).resolve()
     brief = worktree / ".crew-chief-brief.md"
-    assert attempt["note"].strip() == (
+    assert attempt["note"].strip().startswith(
         f"Read the file {brief} and carry out exactly what it asks. "
         f"Work only inside {worktree}."
     )
@@ -653,3 +653,36 @@ def test_review_that_changes_nothing_stays_ok(git_repo, fake_bin):
     )
 
     assert attempt["status"] == "ok"
+
+
+def test_prompt_tells_the_executor_not_to_coordinate(git_repo, fake_bin):
+    # AGENTS.md in the worktree tells every agent to use crew-chief; an
+    # executor that obeys it starts coordinating instead of doing its piece.
+    fake_bin(
+        "stub",
+        "import sys\n"
+        "from pathlib import Path\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+        "print(sys.argv[1])\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    note = attempt["note"]
+    assert attempt["status"] == "ok"
+    assert "do not use the crew-chief skill" in note
+    assert "do not dispatch other agents" in note
+
+
+def test_silent_failure_keeps_stderr_in_the_note(git_repo, fake_bin):
+    fake_bin(
+        "stub",
+        "import sys\nsys.stderr.write('boom: no model\\n')\nsys.exit(3)\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "failed"
+    assert "boom: no model" in attempt["note"]

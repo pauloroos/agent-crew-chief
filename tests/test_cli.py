@@ -1004,3 +1004,23 @@ def test_dispatch_reports_duration_steps_and_tokens(
     assert payload["tokens_total"] == 12
     assert payload["tokens_estimated"] is True
     assert isinstance(payload["duration_s"], float)
+
+
+def test_entry_script_writes_no_bytecode(tmp_path):
+    # Running the CLI must not leave __pycache__ folders in the project.
+    import shutil
+    import subprocess
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    source = _Path(__file__).resolve().parents[1] / "skill" / "crew-chief" / "scripts"
+    copy = tmp_path / "scripts"
+    shutil.copytree(source, copy, ignore=shutil.ignore_patterns("__pycache__"))
+
+    subprocess.run(
+        [_sys.executable, "-I", str(copy / "crew-chief.py"), "--help"],
+        capture_output=True,
+        check=False,
+    )
+
+    assert not list(copy.rglob("__pycache__"))

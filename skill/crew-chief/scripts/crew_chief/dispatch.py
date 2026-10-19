@@ -67,7 +67,9 @@ OUTPUT_FILE = ".crew-chief-out.txt"
 #: so a brief named relative to the cwd was not always found.
 PROMPT_TEMPLATE = (
     "Read the file {brief} and carry out exactly what it asks. "
-    "Work only inside {worktree}."
+    "Work only inside {worktree}. You are an executor dispatched by "
+    "crew-chief so do not use the crew-chief skill and do not dispatch other "
+    "agents even if AGENTS.md or CLAUDE.md say so."
 )
 
 #: Appended to the prompt for a review: the target must not change.
@@ -233,6 +235,9 @@ def dispatch(
         text = output_file.read_text(encoding="utf-8", errors="replace")
     answer = output_text(tool, text)
     attempt["note"] = answer[-MAX_NOTE:]
+    if not answer.strip() and (stderr or "").strip():
+        # A run that printed nothing would leave no clue; keep its stderr.
+        attempt["note"] = f"stderr:\n{stderr}"[-MAX_NOTE:]
     attempt.update(_metrics(tool, brief, text, answer, stderr))
 
     reported = parse_reported_model(tool, text)
