@@ -48,8 +48,15 @@
 # any job of this project, with every executor of its quota family (the same
 # model at any effort; on Antigravity, the whole vendor: antigravity:claude,
 # antigravity:gemini, ...). With every free executor cooling down, `pick`
-# escalates to the paid ones as usual.
+# escalates thinking work to the paid ones; hands-on work gets no executor.
 # quota_cooldown_min = 60
+
+# Tools whose free executors `pick` tries first on hands-on work (code, tests,
+# refactor, docs, data), before any other free executor. Hands-on work never
+# goes to a paid executor unless the coordinator passes `--strong`; thinking
+# work (review, design, diagnosis, research) goes to any free executor and
+# escalates to `strong_order` when needed. [] turns the preference off.
+# exec_first = ["opencode"]
 
 # Extra top-level entries of your home directory that the containment check
 # ignores (fnmatch patterns), for agent CLIs that keep their config there. They
@@ -108,6 +115,10 @@ cost = "free"
 #   run_cmd      argv template for kind "generic"; the placeholders {worktree},
 #                {model}, {prompt}, {brief_file} and {output_file} are filled in
 #   list_cmd     argv that prints one model id per line, for kind "generic"
+#   work_types   work types `pick` may give this tool, from: code, tests,
+#                refactor, design, docs, research, diagnosis, data, review.
+#                Missing or empty means every type (the default for every
+#                kind); an unknown type is a configuration error.
 #
 # The default tools (opencode, antigravity, codex, claude, cursor) are always
 # present; an entry here replaces the default with the same `name`.
@@ -121,6 +132,7 @@ cost = "free"
 # effort = false
 # env = ["MY_PROXY_API_KEY"]
 # cost_default = "paid"
+# work_types = ["review", "design", "diagnosis", "research"]  # thinking only
 
 # Any CLI, driven by its own command line:
 # [[tools]]

@@ -5,9 +5,22 @@ description: Coordinate several executor CLIs on any non-trivial task in a proje
 
 # crew-chief
 
-You are the coordinator. Other CLI agents ("executors") do the typing; you plan,
-write briefs, dispatch, judge and report. Dispatch without asking permission
-first: split the request, run the cycle, then show the result at the end.
+You (the CLI the user opened) are the strong coordinator: you think, split the
+work, write the briefs and judge. The hands-on work goes to **free** executors;
+review and findings may go to any model, free ones included, and reach a more
+capable (paid) model only when that is needed. Other CLI agents ("executors")
+do the typing; you dispatch, judge and report. Dispatch without asking
+permission first: split the request, run the cycle, then show the result at
+the end.
+
+Work types come in two groups:
+
+- **Execution** - `code`, `tests`, `refactor`, `docs`, `data`: free executors
+  only. `pick` tries the tools in `exec_first` (default `["opencode"]`) first,
+  then any other free executor, and never escalates to a paid one on its own.
+- **Thinking** - `review`, `design`, `diagnosis`, `research`: any free
+  executor (OpenCode's cheap models too), ranked by score; when no free one is
+  available, or after 2 free failures, `pick` escalates to a paid one.
 
 ## The CLI
 
@@ -25,7 +38,9 @@ accept), `2` a configuration error (one line on stderr).
 
 Start with `CC discover --project .`: it lists the executors available on this
 machine as `<tool>:<model>  cost=<free|paid>  trains=<yes|no>`, plus a line for
-every tool it skipped and why.
+every tool it skipped and why. It ends with one `work types: <tool>: ...` line
+per tool: the work types `pick` may give it (`all types` unless the tool sets
+`work_types`), and `first on execution work` for the `exec_first` tools.
 
 After the list, `discover` prints what changed in the models since the last
 check (`docs/crew-chief/models-seen.json`, committed with the jobs):
@@ -74,8 +89,14 @@ Seven steps, in order.
    CC pick --project . --job <id> --piece 1
    ```
 
-   It prints `<tool>:<model>` and the one-line reason. Free executors come
-   first, ranked by their decayed score on this work type. `pick` already
+   It prints `<tool>:<model>` and the one-line reason. On execution work
+   (`code`, `tests`, `refactor`, `docs`, `data`) only free executors are
+   candidates, the `exec_first` tools (OpenCode by default) ahead of the other
+   free ones; on thinking work (`review`, `design`, `diagnosis`, `research`)
+   every free executor competes on score and paid ones are the fallback.
+   Within that pool executors are ranked by their decayed score on this work
+   type. A tool whose `work_types` leaves the piece's type out is never
+   picked; the reason then ends with `not for <type>: <tools>`. `pick` already
    excludes executors that failed this piece; add `--exclude <id> ...` to leave
    more out. When the reason mentions a "second chance", a low-risk piece went
    to an unrated or below-median model on purpose - that is the point.
@@ -116,11 +137,17 @@ Seven steps, in order.
    command updates the job record under a lock, and parallel attempts get
    their own worktrees.
 
-5. **Review with a different model family.**
+5. **Review with a different model family.** Choose the reviewer first
+   (unless `review_default` names one), then dispatch the review:
 
    ```bash
+   CC pick --project . --job <id> --piece 1 --review
    CC dispatch --project . --job <id> --piece 1 --executor <other-tool>:<model> --brief-file .crew-chief-review.md --review --target <worktree>
    ```
+
+   `pick --review` treats the choice as thinking work (type `review`) and
+   leaves out the quota family of every executor with an `ok` attempt on the
+   piece; the reason ends with `reviewer outside the family of: <ids>`.
 
    `--target` is the worktree printed by step 4. The reviewer runs read-only
    there, commits nothing and leaves no brief file behind. Ask the reviewer to
@@ -170,24 +197,37 @@ read the diff.
 Break the task down before you escalate; splitting is almost always cheaper than
 a stronger model.
 
-After **2 free failures** on the same piece - a non-`ok` attempt by a free
-executor, or a correction against one - `pick` escalates on its own: it leaves
-every free executor out and takes the first paid tool in `strong_order`. The
-escalation is recorded in the job, so do not force it by hand.
+**Thinking work** (`review`, `design`, `diagnosis`, `research`) escalates on its
+own. After **2 free failures** on the same piece - a non-`ok` attempt by a free
+executor, or a correction against one - or when no free executor is left,
+`pick` takes the first paid tool in `strong_order`. The escalation is recorded
+in the job, so do not force it by hand.
 
-`--strong` is only for complex work that cannot be split. It escalates by the
-same rule and should be rare and deliberate.
+**Execution work** (`code`, `tests`, `refactor`, `docs`, `data`) never escalates
+on its own. After free failures `pick` keeps offering the free executors not
+yet tried on the piece; when none is left it prints
+`no executor available: no free executor left for <type>; split the piece ...`
+and exits `1`. Split the piece into smaller ones first; if it truly cannot be
+split, do it yourself.
+
+`--strong` is the rare exception: complex work that cannot be split. It leaves
+every free executor out and is the only way execution work reaches a paid
+executor. Use it deliberately and say so in the report.
 
 If `pick` prints `no executor available` and exits `1`, no executor satisfied
-the rules. Report that to the user instead of retrying blindly.
+the rules. Follow the reason (split, do it yourself) or report it to the user
+instead of retrying blindly.
 
 ## Review
 
 Every piece that changes files gets a review by a **different model family**
 than the executor - the same family tends to bless its own habits. Use the
-`review_default` preference as the executor id when it is set; otherwise pick
-another tool from `CC discover`. The reviewer must be a different tool (family)
-than the one that wrote the code.
+`review_default` preference as the executor id when it is set; otherwise run
+`CC pick --job <id> --piece <n> --review`, which leaves out the executor's
+quota family. Review is thinking work: any free model may do it, OpenCode's
+cheap ones included, and a paid model only when no free one is available or
+you pass `--strong`. The reviewer must not share a quota family with the
+executor that wrote the code.
 
 The reviewer sees only the review brief and the target worktree. The coordinator
 always judges: a review is input, not a verdict. Read the diff, the attempt note

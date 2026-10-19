@@ -54,9 +54,9 @@ flowchart TB
 
 1. `job new`: your request is recorded verbatim.
 2. `piece add`: it is split into pieces, each with a work type and a risk level.
-3. `pick`: an executor is chosen. Free models come first, ranked by decayed score, with an occasional second chance. Ties are spread over the job, and a model that just hit its quota sits out for a while.
+3. `pick`: an executor is chosen. Hands-on work (`code`, `tests`, `refactor`, `docs`, `data`) only goes to free models, OpenCode first; thinking work (`review`, `design`, `diagnosis`, `research`) goes to any free model and escalates to a paid one only when needed. Within that, decayed score decides, with an occasional second chance. Ties are spread over the job, and a model that just hit its quota sits out for a while.
 4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status, with its duration, agent steps and tokens. An attempt that exits cleanly without changing anything is `no_change`, a failure, not `ok`. Independent pieces can be dispatched in parallel.
-5. `dispatch --review`: a different model family reviews the work.
+5. `pick --review` + `dispatch --review`: a model outside the executor's quota family reviews the work.
 6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten.
 7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment.
 
@@ -158,6 +158,9 @@ model_check_hours = 24
 # Minutes an executor sits out of pick after an attempt ended in `quota`.
 quota_cooldown_min = 60
 
+# Tools whose free executors come first on hands-on work.
+exec_first = ["opencode"]
+
 # Extra home entries (fnmatch) the outside-write check ignores, on top of the
 # built-in list of agent CLI folders (.claude, .codex, .gemini, .config, ...).
 ignore_home_entries = []
@@ -195,7 +198,8 @@ Every key:
 | `sensitive_paths` | fnmatch patterns for paths a brief must never point at, for example `[".env", "secrets/*"]`. A brief that names one is refused as `brief_refused`. |
 | `issue_tracker` | `none`, `github`, `plane`, `linear` or `other`; used by `close`. |
 | `dispatch_timeout_s` | Hard limit for one attempt, in seconds. On overrun the process tree is killed and the attempt is recorded as `timeout`. Default `900`. |
-| `review_default` | Executor id used for reviews when the coordinator has no better idea, for example `codex:gpt-5-codex`. Empty means "choose one yourself". |
+| `review_default` | Executor id used for reviews when the coordinator has no better idea, for example `codex:gpt-5-codex`. Empty means "choose one yourself" (`pick --review`). |
+| `exec_first` | Tools whose free executors `pick` tries first on hands-on work (`code`, `tests`, `refactor`, `docs`, `data`), before the other free ones. Default `["opencode"]`; `[]` turns it off. |
 
 `[[models]]` rules classify an executor id with fnmatch; the first matching rule
 wins:
@@ -221,6 +225,7 @@ the same `name` replaces the built-in):
 | `cost_default` | Cost given to a model that no `[[models]]` rule matched. |
 | `run_cmd` | argv template for `kind = "generic"`; the placeholders `{worktree}`, `{model}`, `{prompt}`, `{brief_file}` and `{output_file}` are filled in. |
 | `list_cmd` | argv that prints one model id per line, for `kind = "generic"`. |
+| `work_types` | Work types the tool may be picked for, for example `["docs", "research"]`. Missing or empty means every type, for every kind. An unknown type is a configuration error. |
 
 ## Adding a custom CLI
 
@@ -309,6 +314,20 @@ adherence term is a full 100.
 History is weighted by age with a 30-day half-life: a grade from 30 days ago
 counts half as much as today's, one from 60 days ago a quarter as much. The
 score shown per executor and work type is the weighted mean of its grades.
+
+Work is split between executing and thinking. The coordinator (the CLI you
+opened) is the strong model: it thinks, splits and judges. Hands-on work
+(`code`, `tests`, `refactor`, `docs`, `data`) only ever goes to free
+executors: the `exec_first` tools (OpenCode by default) first, then any other
+free one, and never to a paid model unless the coordinator passes `--strong`.
+When the free ones run out, `pick` says to split the piece or have the
+coordinator do it. Thinking work (`review`, `design`, `diagnosis`, `research`)
+goes to any free executor, OpenCode's cheap models included, and escalates to
+the paid tools in `strong_order` when no free one is left or after 2 free
+failures. A tool whose `work_types` leaves a type out is never picked for it,
+and the reason says so (`not for review: <tool>`). `pick --review` picks a
+reviewer outside the quota family of the executor that did the piece.
+`discover` ends with each tool's effective work types.
 
 Picking is free-first: the best decayed score wins. Ties (including "nobody is
 rated yet") go to the executor used least in the current job, then to a tool

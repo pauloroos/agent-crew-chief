@@ -47,7 +47,7 @@ WORK_TYPES = (
 EXEC_TYPES = ("code", "tests", "refactor", "docs", "data")
 
 #: Work types that are thinking (judging, designing, diagnosing, reading up):
-#: free fit executors first, then automatic escalation to paid ones.
+#: free executors first, then automatic escalation to paid ones.
 THINK_TYPES = ("design", "research", "diagnosis", "review")
 
 #: Fixed risk vocabulary (see global constraints).

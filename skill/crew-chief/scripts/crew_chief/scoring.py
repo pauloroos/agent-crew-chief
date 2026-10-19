@@ -19,7 +19,7 @@ Three jobs live here:
   paid executor unless the coordinator asks (``strong``).
 
 :func:`free_failures` counts the free-executor failures on one piece, which is
-the signal the coordinator uses to stop retrying free executors and escalate.
+the signal that stops free retries and escalates thinking work.
 """
 
 from __future__ import annotations
@@ -654,8 +654,9 @@ def free_failures(job: dict, piece: int) -> int:
 
     Counts attempts with role ``exec``, cost ``free`` and a status other than
     ``ok``, plus corrections drawn by the executor of such a free attempt.
-    At 2 the coordinator calls :func:`pick` with every free executor excluded,
-    so the choice escalates (see SKILL.md).
+    At 2, on thinking work, the CLI calls :func:`pick` with every free
+    executor excluded, so the choice escalates; execution work stays free
+    (see SKILL.md).
     """
     target = _find_piece(job, piece)
     attempts = target.get("attempts") or []

@@ -54,9 +54,9 @@ flowchart TB
 
 1. `job new`: o pedido é registrado palavra por palavra.
 2. `piece add`: ele é dividido em pedaços, cada um com tipo de trabalho e nível de risco.
-3. `pick`: o executor é escolhido. Os grátis vêm primeiro, ordenados pela nota com decaimento, e às vezes alguém ganha segunda chance. Empates são espalhados pelo job, e um modelo que acabou de bater cota fica de fora por um tempo.
+3. `pick`: o executor é escolhido. O trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`) só vai para modelos grátis, OpenCode primeiro; o trabalho de pensar (`review`, `design`, `diagnosis`, `research`) vai para qualquer modelo grátis e só sobe para um pago quando é preciso. Dentro disso decide a nota com decaimento, e às vezes alguém ganha segunda chance. Empates são espalhados pelo job, e um modelo que acabou de bater cota fica de fora por um tempo.
 4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado, com duração, passos do agente e tokens. Uma tentativa que termina sem erro mas não muda nada fica `no_change`, que conta como falha, não como `ok`. Peças independentes podem ser despachadas em paralelo.
-5. `dispatch --review`: um modelo de outra família revisa o trabalho.
+5. `pick --review` + `dispatch --review`: um modelo fora da família de cota do executor revisa o trabalho.
 6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito.
 7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue.
 
@@ -158,6 +158,9 @@ model_check_hours = 24
 # Minutos que um executor fica fora do pick depois de uma tentativa `quota`.
 quota_cooldown_min = 60
 
+# Ferramentas cujos executores grátis vêm primeiro no trabalho braçal.
+exec_first = ["opencode"]
+
 # Entradas extras do home (fnmatch) que a checagem de escrita externa ignora,
 # além da lista embutida de pastas de CLIs de agente (.claude, .codex, .gemini,
 # .config, ...).
@@ -196,7 +199,8 @@ Todas as chaves:
 | `sensitive_paths` | Padrões fnmatch de caminhos que um brief nunca pode citar, por exemplo `[".env", "secrets/*"]`. Um brief que cita um deles é recusado como `brief_refused`. |
 | `issue_tracker` | `none`, `github`, `plane`, `linear` ou `other`; usado pelo `close`. |
 | `dispatch_timeout_s` | Limite rígido de uma tentativa, em segundos. Ao estourar, a árvore de processos é morta e a tentativa é registrada como `timeout`. Padrão `900`. |
-| `review_default` | Id de executor usado nas revisões quando o coordenador não tem ideia melhor, por exemplo `codex:gpt-5-codex`. Vazio significa "escolha um você mesmo". |
+| `review_default` | Id de executor usado nas revisões quando o coordenador não tem ideia melhor, por exemplo `codex:gpt-5-codex`. Vazio significa "escolha um você mesmo" (`pick --review`). |
+| `exec_first` | Ferramentas cujos executores grátis o `pick` tenta primeiro no trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`), antes dos outros grátis. Padrão `["opencode"]`; `[]` desliga. |
 
 As regras `[[models]]` classificam um id de executor com fnmatch; a primeira
 regra que casa vence:
@@ -222,6 +226,7 @@ mesmo `name` substitui a embutida):
 | `cost_default` | Custo dado a um modelo que nenhuma regra `[[models]]` casou. |
 | `run_cmd` | Modelo de argv para `kind = "generic"`; os marcadores `{worktree}`, `{model}`, `{prompt}`, `{brief_file}` e `{output_file}` são preenchidos. |
 | `list_cmd` | argv que imprime um id de modelo por linha, para `kind = "generic"`. |
+| `work_types` | Tipos de trabalho para os quais a ferramenta pode ser escolhida, por exemplo `["docs", "research"]`. Ausente ou vazio significa todos os tipos, para qualquer kind. Tipo desconhecido é erro de configuração. |
 
 ## Adicionando um CLI próprio
 
@@ -309,6 +314,21 @@ de aderência vale 100.
 O histórico é ponderado pela idade com meia-vida de 30 dias: uma nota de 30
 dias atrás vale metade da de hoje, uma de 60 dias atrás vale um quarto. A nota
 mostrada por executor e tipo de trabalho é a média ponderada das notas dele.
+
+O trabalho se divide entre executar e pensar. O coordenador (a CLI que você
+abriu) é o modelo forte: pensa, divide e julga. O braçal (`code`, `tests`,
+`refactor`, `docs`, `data`) só vai para executores grátis: primeiro as
+ferramentas de `exec_first` (OpenCode por padrão), depois qualquer outro
+grátis, e nunca para um modelo pago a não ser que o coordenador passe
+`--strong`. Quando os grátis acabam, o `pick` manda dividir a peça ou o
+coordenador fazer ele mesmo. O trabalho de pensar (`review`, `design`,
+`diagnosis`, `research`) vai para qualquer executor grátis, inclusive os
+modelos baratos do OpenCode, e sobe para as ferramentas pagas de
+`strong_order` quando não sobra nenhum grátis ou depois de 2 falhas grátis.
+Uma ferramenta cujo `work_types` deixa um tipo de fora nunca é escolhida para
+ele, e o motivo diz isso (`not for review: <ferramenta>`). `pick --review`
+escolhe um revisor fora da família de cota do executor que fez a peça. O
+`discover` termina com os tipos de trabalho efetivos de cada ferramenta.
 
 A escolha é free primeiro: a melhor nota com decaimento ganha. Empates
 (inclusive "ninguém tem nota ainda") vão para o executor menos usado no job
