@@ -13,6 +13,10 @@ to ``.crew-chief-out.txt`` instead of stdout; that file is read only when
 stdout came back empty. Both files are listed in the worktree's
 ``info/exclude`` by :mod:`crew_chief.worktree`.
 
+Every attempt also records how much work it took: ``duration_s``, the agent
+``steps`` and the tokens (``tokens_in``, ``tokens_out``, ``tokens_total``)
+the CLI reported, or a characters / 4 estimate flagged ``tokens_estimated``.
+
 A review is the same run without a worktree of its own: it uses the
 ``review_target`` it was given, commits nothing and removes its brief file
 afterwards.
@@ -33,6 +37,8 @@ from .tools import (
     QUOTA_PATTERNS,
     Executor,
     build_command,
+    output_text,
+    parse_metrics,
     parse_reported_model,
     tool_env,
     wants_effort,
@@ -113,6 +119,11 @@ def dispatch(
         "outside_writes": [],
         "branch": None,
         "worktree": None,
+        "steps": None,
+        "tokens_in": None,
+        "tokens_out": None,
+        "tokens_total": None,
+        "tokens_estimated": False,
     }
 
     def finish(status: str, note: str | None = None) -> dict:
@@ -195,7 +206,9 @@ def dispatch(
     text = stdout or ""
     if text == "" and output_file.exists():
         text = output_file.read_text(encoding="utf-8", errors="replace")
-    attempt["note"] = text[-MAX_NOTE:]
+    answer = output_text(tool, text)
+    attempt["note"] = answer[-MAX_NOTE:]
+    attempt.update(_metrics(tool, brief, text, answer, stderr))
 
     reported = parse_reported_model(tool, text)
     attempt["reported_model"] = reported
@@ -233,6 +246,30 @@ def _reserve_attempt(job: dict, piece: int) -> int:
             entry["next_attempt"] = number + 1
             return number
     raise ValueError(f"job {job.get('id')!r} has no piece {piece}")
+
+
+def _metrics(
+    tool: dict, brief: str, text: str, answer: str, stderr: str | None
+) -> dict:
+    """Steps and tokens of the run, estimated when the CLI reported none.
+
+    Without a reported token total the tokens are estimated as one per four
+    characters (rounded up) of the brief (in) and of the readable answer
+    (out), and ``tokens_estimated`` is set; steps stay ``None`` unless the
+    CLI reported them.
+    """
+    metrics = parse_metrics(tool, text, stderr or "")
+    metrics["tokens_estimated"] = False
+    if metrics["tokens_total"] is None:
+        tokens_in = -(-len(brief) // 4)
+        tokens_out = -(-len(answer) // 4)
+        metrics.update(
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            tokens_total=tokens_in + tokens_out,
+            tokens_estimated=True,
+        )
+    return metrics
 
 
 def _status(

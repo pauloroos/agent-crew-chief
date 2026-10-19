@@ -394,3 +394,70 @@ def test_parallel_attempts_do_not_flag_each_other(git_repo, fake_bin):
     attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
 
     assert attempt["status"] == "ok", attempt["outside_writes"]
+
+
+# --- metrics ---------------------------------------------------------------
+
+
+def test_generic_attempt_estimates_tokens_and_has_no_steps(git_repo, fake_bin):
+    fake_bin("stub", "print('x' * 40)\n")
+    job = _seed_job(git_repo)
+    brief = "b" * 80
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), brief, _prefs())
+
+    assert attempt["steps"] is None
+    assert attempt["tokens_estimated"] is True
+    assert attempt["tokens_in"] == 20  # 80 brief chars / 4
+    assert attempt["tokens_out"] == 11  # 41 output chars / 4, rounded up
+    assert attempt["tokens_total"] == 31
+    stored = _stored_attempt(git_repo, job["id"])
+    assert stored["tokens_total"] == 31 and stored["steps"] is None
+
+
+def test_opencode_attempt_records_steps_tokens_and_readable_note(
+    git_repo, fake_bin
+):
+    events = [
+        {"type": "step_start", "part": {"type": "step-start"}},
+        {"type": "step_finish", "part": {"type": "step-finish", "tokens": {
+            "input": 100, "output": 20, "reasoning": 5,
+            "cache": {"read": 1000, "write": 0}}}},
+        {"type": "step_start", "part": {"type": "step-start"}},
+        {"type": "text", "part": {"type": "text", "text": "Feito."}},
+    ]
+    lines = "".join(json.dumps(event) + "\n" for event in events)
+    fake_bin(
+        "ocstub",
+        "import sys\n"
+        "assert sys.argv[1:4] == ['run', '--format', 'json'], sys.argv\n"
+        f"sys.stdout.write({lines!r})\n",
+    )
+    job = _seed_job(git_repo)
+    tool = {"name": "ocstub", "kind": "opencode", "bin": "ocstub"}
+    executor = Executor(
+        id="ocstub:m", tool=tool, model="m", cost="free", trains=False
+    )
+
+    attempt = dispatch(git_repo, job["id"], 1, executor, "go\n", _prefs())
+
+    assert attempt["status"] == "ok", attempt["note"]
+    assert attempt["steps"] == 2
+    assert attempt["tokens_in"] == 1100
+    assert attempt["tokens_out"] == 25
+    assert attempt["tokens_total"] == 1125
+    assert attempt["tokens_estimated"] is False
+    assert attempt["note"] == "Feito."
+
+
+def test_refused_brief_has_no_metrics(git_repo, fake_bin):
+    fake_bin("stub", "print('must not run')\n")
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "sk-" + "a" * 24, _prefs()
+    )
+
+    assert attempt["steps"] is None
+    assert attempt["tokens_total"] is None
+    assert attempt["tokens_estimated"] is False
