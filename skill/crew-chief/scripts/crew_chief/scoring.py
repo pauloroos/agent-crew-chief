@@ -350,8 +350,9 @@ def _rank_key(
 ) -> tuple:
     """Sort key for a pool.
 
-    Score desc; on a tie, the executor least used in the job, then the one
-    whose tool the job used least; then duration asc (missing last), id asc.
+    Score desc; on a tie, the quota family (see :func:`quota_family`) least
+    used in the job, then the executor least used, then the one whose tool
+    the job used least; then duration asc (missing last), id asc.
     """
     stat = stats.get((executor.id, type))
     score = _UNRATED_SCORE
@@ -362,8 +363,15 @@ def _rank_key(
         duration = stat.mean_duration_s
     by_executor, by_tool = usage
     tool = executor.id.split(":", 1)[0]
+    family = quota_family(executor.id)
+    family_use = sum(
+        count
+        for other, count in by_executor.items()
+        if quota_family(other) == family
+    )
     return (
         -score,
+        family_use,
         by_executor.get(executor.id, 0),
         by_tool.get(tool, 0),
         duration,

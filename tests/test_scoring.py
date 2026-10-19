@@ -864,6 +864,19 @@ def test_pick_counts_attempts_without_a_pick_as_use():
     assert chosen is b
 
 
+def test_pick_spread_prefers_an_unused_quota_family():
+    # Two Antigravity Claude models share one quota: after opus-high is in
+    # use, opus-low is no spread at all; gemini is.
+    opus_low = _ex("antigravity:claude-opus-5-5-low")
+    gemini = _ex("antigravity:gemini-4-argon-high")
+    job = _job_with_picks(["antigravity:claude-opus-5-5-high"])
+
+    chosen, _ = pick([opus_low, gemini], {}, "code", "medium", _prefs(), set(),
+                     _Rng(0.9), job=job)
+
+    assert chosen is gemini
+
+
 def test_pick_spread_never_beats_a_better_score():
     best = _ex("opencode:best")
     other = _ex("opencode:other")
