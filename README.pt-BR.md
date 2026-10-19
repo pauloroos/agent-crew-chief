@@ -63,11 +63,11 @@ flowchart TB
 ## Instalação
 
 ```bash
-git clone --branch v0.1.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.2.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe o `agent-crew-chief-v0.1.0.zip` da
+Sem git? Baixe o `agent-crew-chief-v0.2.0.zip` da
 [última release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 descompacte e rode `python install.py /caminho/do/projeto` de dentro da pasta.
 Fixe uma tag (`--branch vX.Y.Z`) para nunca instalar código no meio de uma mudança;

@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-19
 
 ### Added
 - **Model changes:** `docs/crew-chief/models-seen.json` records every executor discovery has seen (`cost`, `trains`, `first_seen`, `last_seen`, `present`, plus a top-level `last_check`). `discover` always updates it and prints, after the list, the free and paid models that are new, gone or changed cost (`new free: ...`, `gone: ...`, `now paid: ...`), or `models: no changes since <when>`. The first run only records a baseline, and a skipped tool never marks its models as gone. `--json` adds a `changes` object.
@@ -29,6 +29,14 @@ All notable changes to this project are documented here. Versions follow
 - `outside_write` no longer fires for the project's other worktrees in `<project>.crew/` (parallel attempts) or for the config folders agent CLIs write in the home directory (`.claude`, `.claude.json`, `.codex`, `.gemini`, `.antigravity`, `.config`, `.local`, `.cache`, ...). Unknown entries and writes to the main repo are still caught.
 - Parallel `dispatch` of one project no longer flags `outside_write` when another crew-chief process updates the job record, its lock file, `models-seen.json` or `scoreboard.md` in the main repo during the attempt. Creating a worktree no longer rewrites the repository's shared `info/exclude` once it lists the brief and output files (and writes it atomically when it must), which made a parallel `git status` die on Windows with `cannot use .git/info/exclude as an exclude file`; the containment snapshot also retries that `git status` for a moment.
 - `pick` no longer sends every unrated piece to the same executor: ties go to the executor least used in the job, then to a different tool.
+
+- `pick` spreads tied executors over quota families first (two Antigravity Claude models share one quota), and an executor that hit a quota in the last `quota_cooldown_min` (default 60) sits out with its whole quota family.
+- `pick` hands the fix for a correction to another executor: the one whose work drew the correction is left out on that piece.
+- An exec attempt that changes nothing is `no_change`, not `ok` (an executor that only answered "brief not found" used to pass).
+- OpenCode runs with `--standalone`: without it `opencode run` handed the prompt to the background service, which worked in its own directory, and an attempt wrote and committed in the main repository. Executors also get no stdin.
+- The executor prompt tells the executor it was dispatched by crew-chief and must not use the crew-chief skill or dispatch other agents (an executor that obeyed the snippet in `AGENTS.md` ran the CLI itself).
+- The attempt note keeps the readable answer of Antigravity (`response`) and Claude Code (`result`) instead of the raw JSON tail, and a run that printed nothing keeps its stderr.
+- The CLI never writes `__pycache__` inside the project.
 
 ## [0.1.0] - 2026-10-17
 
