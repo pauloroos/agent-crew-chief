@@ -3,9 +3,25 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass, field
 
 from crew_chief.config import Prefs, classify
 from crew_chief.tools import Executor, list_models, missing_env, tool_env
+
+
+@dataclass
+class Discovery:
+    """Everything one discovery pass learned.
+
+    ``listed`` maps the name of every tool whose model listing succeeded to
+    all the models it listed, ``forbidden`` ones included. A tool skipped for
+    a missing bin, a missing env var or an empty listing is absent from it,
+    so callers can tell "the model is gone" from "the tool was not asked".
+    """
+
+    executors: list[Executor]
+    notes: list[str]
+    listed: dict[str, list[str]] = field(default_factory=dict)
 
 
 def discover(prefs: Prefs) -> tuple[list[Executor], list[str]]:
@@ -16,8 +32,15 @@ def discover(prefs: Prefs) -> tuple[list[Executor], list[str]]:
     is not classified as ``forbidden``. Each executor's cost is
     ``classify("<tool>:<model>", prefs, cost_default)``.
     """
+    result = discover_full(prefs)
+    return result.executors, result.notes
+
+
+def discover_full(prefs: Prefs) -> Discovery:
+    """Like :func:`discover`, plus the models each listed tool advertised."""
     executors: list[Executor] = []
     notes: list[str] = []
+    listed: dict[str, list[str]] = {}
 
     for tool in prefs.tools:
         name = tool["name"]
@@ -36,6 +59,7 @@ def discover(prefs: Prefs) -> tuple[list[Executor], list[str]]:
         if not models:
             notes.append(f"{name}: no models listed")
             continue
+        listed[name] = list(models)
 
         blocked = 0
         for model in models:
@@ -52,4 +76,4 @@ def discover(prefs: Prefs) -> tuple[list[Executor], list[str]]:
         if blocked == len(models):
             notes.append(f"{name}: all models are forbidden")
 
-    return executors, notes
+    return Discovery(executors=executors, notes=notes, listed=listed)
