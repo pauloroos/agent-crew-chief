@@ -36,6 +36,11 @@ DEFAULT_DISPATCH_TIMEOUT_S = 900
 DEFAULT_MODEL_CHECK_HOURS = 24
 #: Minutes an executor stays out of ``pick`` after a ``quota`` attempt.
 DEFAULT_QUOTA_COOLDOWN_MIN = 60
+#: Economy alerts (``0`` turns each off): coordinator share of the tokens,
+#: attempts per piece and minutes a job may take before ``close`` warns.
+DEFAULT_ALERT_COORDINATOR_SHARE = 0.5
+DEFAULT_ALERT_ATTEMPTS_PER_PIECE = 2.5
+DEFAULT_ALERT_JOB_MINUTES = 180
 
 #: Tools whose free executors come first on execution work (``exec_first``).
 DEFAULT_EXEC_FIRST = ["opencode"]
@@ -105,6 +110,10 @@ class Prefs:
     review_default: str
     model_check_hours: float = DEFAULT_MODEL_CHECK_HOURS
     quota_cooldown_min: float = DEFAULT_QUOTA_COOLDOWN_MIN
+    #: Economy alert limits; ``0`` disables the alert (see ``economy.py``).
+    alert_coordinator_share: float = DEFAULT_ALERT_COORDINATOR_SHARE
+    alert_attempts_per_piece: float = DEFAULT_ALERT_ATTEMPTS_PER_PIECE
+    alert_job_minutes: float = DEFAULT_ALERT_JOB_MINUTES
     #: Extra home entries (fnmatch patterns) the containment check ignores, on
     #: top of ``worktree.AGENT_HOME_ENTRIES``; global and project lists add up.
     ignore_home_entries: list[str] = field(default_factory=list)
@@ -202,7 +211,13 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
                 f"{path}: explore_rate must be between 0 and 1, got {explore_rate!r}"
             )
 
-    for key in ("model_check_hours", "quota_cooldown_min"):
+    for key in (
+        "model_check_hours",
+        "quota_cooldown_min",
+        "alert_coordinator_share",
+        "alert_attempts_per_piece",
+        "alert_job_minutes",
+    ):
         value = data.get(key)
         if value is None:
             continue
@@ -348,6 +363,13 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         review_default=pick("review_default", ""),
         model_check_hours=pick("model_check_hours", DEFAULT_MODEL_CHECK_HOURS),
         quota_cooldown_min=pick("quota_cooldown_min", DEFAULT_QUOTA_COOLDOWN_MIN),
+        alert_coordinator_share=pick(
+            "alert_coordinator_share", DEFAULT_ALERT_COORDINATOR_SHARE
+        ),
+        alert_attempts_per_piece=pick(
+            "alert_attempts_per_piece", DEFAULT_ALERT_ATTEMPTS_PER_PIECE
+        ),
+        alert_job_minutes=pick("alert_job_minutes", DEFAULT_ALERT_JOB_MINUTES),
         exec_first=list(pick("exec_first", DEFAULT_EXEC_FIRST)),
         changelog=pick("changelog", DEFAULT_CHANGELOG),
         changelog_path=pick("changelog_path", DEFAULT_CHANGELOG_PATH),

@@ -12,8 +12,10 @@ JSON, applies the change and writes it back before letting go. A plain
 :func:`load_job` + :func:`save_job` pair would silently drop whatever another
 process wrote in between.
 
-Nothing here imports another ``crew_chief`` module: the vocabularies live
-here and later tasks import them from this module.
+Nothing here imports another ``crew_chief`` module at import time: the
+vocabularies live here and later tasks import them from this module. The one
+exception is :func:`render_markdown`, which imports ``economy`` when it runs
+(``economy`` itself imports this module).
 """
 
 from __future__ import annotations
@@ -52,6 +54,9 @@ THINK_TYPES = ("design", "research", "diagnosis", "review")
 
 #: Fixed risk vocabulary (see global constraints).
 RISKS = ("low", "medium", "high")
+
+#: Roles that can report their own token spend with :func:`add_usage`.
+USAGE_ROLES = ("coordinator", "central")
 
 #: Valid attempt roles.
 ROLES = ("exec", "review")
@@ -445,6 +450,45 @@ def add_ruling(job: dict, text: str) -> int:
     return number
 
 
+def _token_count(name: str, value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer, got {value!r}")
+    return value
+
+
+def add_usage(
+    job: dict,
+    role: str,
+    tokens_in: int,
+    tokens_out: int,
+    estimated: bool,
+    note: str = "",
+) -> None:
+    """Append the coordinator's (or central's) own token spend to the job.
+
+    ``role`` must be in :data:`USAGE_ROLES` and the token counts non-negative
+    integers; the entry lands in ``job["usage"]`` with ``tokens_total`` and
+    the UTC timestamp.
+    """
+    if role not in USAGE_ROLES:
+        raise ValueError(
+            f"unknown usage role {role!r} (expected one of {', '.join(USAGE_ROLES)})"
+        )
+    tokens_in = _token_count("tokens_in", tokens_in)
+    tokens_out = _token_count("tokens_out", tokens_out)
+    job.setdefault("usage", []).append(
+        {
+            "role": role,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "tokens_total": tokens_in + tokens_out,
+            "estimated": bool(estimated),
+            "note": note,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
+
 def piece_grades(piece: dict) -> dict[str, dict]:
     """Every grade of the piece, keyed by executor id, in grading order.
 
@@ -745,6 +789,14 @@ def render_markdown(job: dict) -> str:
             f"({piece.get('type', '')}, risk {piece.get('risk', '')})"
         )
         lines.extend(_render_piece(piece))
+
+    from . import economy  # lazy: economy imports this module
+
+    if economy.has_data(job):
+        # No prefs here: the alerts are printed by the CLI, not stored.
+        figures = economy.job_economy(job, None)
+        lines.extend(["", "## Economy", "", economy.summary_line(figures)])
+        lines.extend(economy.detail_lines(figures))
 
     lines.extend(
         [

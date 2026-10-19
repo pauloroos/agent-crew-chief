@@ -14,6 +14,10 @@ turns one spec piece into the minimal brief an executor or reviewer receives.
 ``ruling add`` records a one-line ruling in the job; ``decision add`` promotes a
 ruling (or a title) to an ADR file in ``docs/decisions``.
 
+``usage add`` records the coordinator's (or central's) own token spend in the job;
+``economy`` prints the job's economy summary and alerts, and ``close`` prints the
+same block before the commit message.
+
 All commands take ``--project PATH`` (default: the current directory) and
 ``--json`` (structured output instead of text). A ``PrefsError``,
 ``RecordError``, ``NotAGitRepo`` or ``ValueError`` prints one line to stderr
@@ -42,7 +46,7 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import records
+from . import economy, records
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
 from .config import Prefs, PrefsError, load_prefs, tool_work_types
@@ -765,10 +769,44 @@ def _cmd_close(args: argparse.Namespace) -> int:
     _write_scoreboard(project, render_scoreboard(project))
     text = f"{commit}\n\n---\n\n{issue}"
     payload = {"commit": commit, "issue": issue}
+    if economy.has_data(job):
+        figures = economy.job_economy(job, load_prefs(project))
+        text = "\n".join([*economy.report_lines(figures), text])
+        payload["economy"] = figures.as_dict()
     if written:
         text = f"changelog: {written[0]} ({written[1]})\n{text}"
         payload["changelog"] = {"path": written[0], "category": written[1]}
     _emit(args, text, payload)
+    return 0
+
+
+def _cmd_usage_add(args: argparse.Namespace) -> int:
+    project = _project(args)
+    records.update_job(
+        project,
+        args.job,
+        lambda job: records.add_usage(
+            job, args.role, args.tokens_in, args.tokens_out, args.estimated, args.note
+        ),
+    )
+    _emit(
+        args,
+        f"usage recorded: {args.role} {args.tokens_in + args.tokens_out} tokens",
+        {
+            "role": args.role,
+            "tokens_in": args.tokens_in,
+            "tokens_out": args.tokens_out,
+            "estimated": args.estimated,
+        },
+    )
+    return 0
+
+
+def _cmd_economy(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    figures = economy.job_economy(job, load_prefs(project))
+    _emit(args, "\n".join(economy.report_lines(figures)), figures.as_dict())
     return 0
 
 
@@ -1420,6 +1458,33 @@ def build_parser() -> argparse.ArgumentParser:
     decision_add.add_argument("--alternatives", default="", help="what was weighed")
     decision_add.add_argument("--consequences", default="", help="what follows")
     decision_add.set_defaults(handler=_cmd_decision_add)
+
+    usage_parser = subcommands.add_parser(
+        "usage", help="the coordinator's own token spend"
+    )
+    usage_commands = usage_parser.add_subparsers(dest="usage_command", required=True)
+    usage_add = usage_commands.add_parser(
+        "add", parents=[common], help="record the coordinator's or central's tokens"
+    )
+    usage_add.add_argument("--job", required=True, help="job id")
+    usage_add.add_argument(
+        "--role", required=True, choices=records.USAGE_ROLES, help="who spent them"
+    )
+    usage_add.add_argument("--tokens-in", type=int, required=True, help="input tokens")
+    usage_add.add_argument(
+        "--tokens-out", type=int, required=True, help="output tokens"
+    )
+    usage_add.add_argument(
+        "--estimated", action="store_true", help="the counts are an estimate"
+    )
+    usage_add.add_argument("--note", default="", help="what the tokens were for")
+    usage_add.set_defaults(handler=_cmd_usage_add)
+
+    economy_parser = subcommands.add_parser(
+        "economy", parents=[common], help="free share, coordinator share, rework, time"
+    )
+    economy_parser.add_argument("--job", required=True, help="job id")
+    economy_parser.set_defaults(handler=_cmd_economy)
 
     scoreboard_parser = subcommands.add_parser(
         "scoreboard", parents=[common], help="regenerate and print the scoreboard"

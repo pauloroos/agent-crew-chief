@@ -61,6 +61,16 @@
 # escalates thinking work to the paid ones; hands-on work gets no executor.
 # quota_cooldown_min = 60
 
+# Economy alerts printed by `economy` and `close` (0 turns an alert off). They
+# answer "did the free work really save paid tokens, rework and time?":
+# - coordinator share: the coordinator's (and central's) own tokens, as a share
+#   of every token the job spent, above which `close` warns;
+# - attempts per piece: execution attempts divided by pieces tried;
+# - job minutes: from the job's creation to its last finished attempt.
+# alert_coordinator_share = 0.5
+# alert_attempts_per_piece = 2.5
+# alert_job_minutes = 180
+
 # Tools whose free executors `pick` tries first on hands-on work (code, tests,
 # refactor, docs, data), before any other free executor. Hands-on work never
 # goes to a paid executor unless the coordinator passes `--strong`; thinking
