@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from crew_chief.records import (
     slug,
     summaries,
     update_job,
+    write_atomic,
 )
 
 NOW = datetime(2026, 10, 17, 14, 30)
@@ -455,3 +457,43 @@ def test_update_job_breaks_a_stale_lock(tmp_path):
 
     assert load_job(project, job["id"])["title"] == "x"
     assert not lock.exists()
+
+
+def test_write_atomic_retries_a_replace_refused_by_a_reader(tmp_path, monkeypatch):
+    import crew_chief.records as records_module
+
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError(13, "Access is denied")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(records_module.os, "replace", flaky_replace)
+    target = tmp_path / "file.json"
+
+    write_atomic(target, "{}\n")
+
+    assert target.read_text(encoding="utf-8") == "{}\n"
+    assert calls["n"] == 3
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_load_job_retries_a_read_refused_during_a_replace(tmp_path, monkeypatch):
+    job = _new_job(tmp_path)
+    real_read_text = Path.read_text
+    calls = {"n": 0}
+
+    def flaky_read_text(self, *args, **kwargs):
+        if self.suffix == ".json":
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise PermissionError(13, "Permission denied")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    assert load_job(tmp_path / "project", job["id"])["id"] == job["id"]
+    assert calls["n"] == 3

@@ -81,6 +81,10 @@ LOCK_TIMEOUT_S = 60.0
 #: A lock file older than this (seconds) belongs to a dead process and is broken.
 LOCK_STALE_S = 600.0
 
+#: Seconds a Windows sharing violation on a record is retried (see
+#: :func:`_sharing_retry`).
+SHARING_RETRY_S = 2.0
+
 
 class RecordError(Exception):
     """Raised when a job record file is missing or unreadable; names the file."""
@@ -118,6 +122,26 @@ def slug(title: str) -> str:
     return text.strip("-") or "job"
 
 
+def _sharing_retry(action: Callable[[], object]) -> object:
+    """Run ``action``, retrying a :class:`PermissionError` for a short while.
+
+    On Windows a file that another process is reading cannot be replaced, and
+    a file in the middle of being replaced cannot be opened; both surface as
+    ``PermissionError`` for a few milliseconds. After
+    :data:`SHARING_RETRY_S` the error propagates.
+    """
+    deadline = time.monotonic() + SHARING_RETRY_S
+    delay = 0.005
+    while True:
+        try:
+            return action()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.1)
+
+
 def write_atomic(path: Path, text: str) -> None:
     """Write ``text`` to ``path`` through a temp file plus ``os.replace``."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,7 +152,7 @@ def write_atomic(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
-        os.replace(temp, path)
+        _sharing_retry(lambda: os.replace(temp, path))
     except BaseException:
         temp.unlink(missing_ok=True)
         raise
@@ -176,7 +200,7 @@ def new_job(
 def _read_job(path: Path) -> dict:
     """Read one job JSON file, converting every failure to :class:`RecordError`."""
     try:
-        text = path.read_text(encoding="utf-8")
+        text = _sharing_retry(lambda: path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise RecordError(f"{path}: cannot read job record: {exc}") from exc
     try:
