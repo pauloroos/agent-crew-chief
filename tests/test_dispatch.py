@@ -4,6 +4,12 @@ Each test drives one attempt with a stub CLI installed by ``fake_bin``: the
 stub is a ``generic`` tool whose command is ``[stub, "{prompt}"]``. The stub
 runs with the worktree as its working directory, so ``out.py`` lands inside
 the worktree and ``../escaped.txt`` lands in the ``.crew`` sibling area.
+
+The home directory is redirected to an empty folder for every test: the
+containment snapshot compares the top level of ``Path.home()``, and on a
+developer machine other programs (an agent CLI running the test suite, for
+one) rewrite files there at any moment, which made ``ok`` attempts come back
+as ``outside_write`` now and then.
 """
 
 from __future__ import annotations
@@ -20,6 +26,16 @@ from crew_chief.config import Prefs
 from crew_chief.dispatch import dispatch
 from crew_chief.tools import Executor
 from crew_chief.worktree import create_worktree
+
+
+@pytest.fixture(autouse=True)
+def home_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect ``Path.home()`` to an empty temporary directory."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return home
 
 
 def _prefs(**overrides) -> Prefs:
