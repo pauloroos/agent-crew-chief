@@ -8,7 +8,8 @@ coordinator uses them: ``discover`` lists the executors present right now,
 
 ``spec new``/``spec import``/``spec status`` connect spec-kit folders: ``import``
 turns the open tasks of ``tasks.md`` into pieces (``ref`` = task id) and keeps the
-``crew.toml`` sidecar; ``status`` lists what is ready or blocked.
+``crew.toml`` sidecar; ``status`` lists what is ready or blocked. ``brief render``
+turns one spec piece into the minimal brief an executor or reviewer receives.
 
 All commands take ``--project PATH`` (default: the current directory) and
 ``--json`` (structured output instead of text). A ``PrefsError``,
@@ -39,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import records
+from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .config import Prefs, PrefsError, load_prefs, tool_work_types
 from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
@@ -60,8 +62,10 @@ from .speckit import (
     find_spec_dir,
     guess_risk,
     guess_type,
+    parse_spec_refs,
     parse_tasks,
     readiness,
+    resolve_refs,
 )
 from .worktree import NotAGitRepo
 from .worktree import accept as accept_branch
@@ -843,6 +847,69 @@ def _cmd_spec_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_brief_render(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    if args.review and args.converge:
+        raise ValueError("--review and --converge cannot be combined")
+    number = args.piece
+    if args.converge:
+        folder = find_spec_dir(project, job.get("spec_dir") or None)
+        kind = "converge"
+        brief = render_converge_brief(_spec_relative(project, folder))
+    else:
+        if number is None:
+            raise ValueError("brief render needs --piece (or --converge)")
+        piece = _piece(job, number)
+        ref = piece.get("ref")
+        if not ref:
+            print(
+                f"piece {number} has no spec task; write the brief yourself",
+                file=sys.stderr,
+            )
+            return 1
+        if piece.get("stale"):
+            print(
+                f"piece {number} is stale (task {ref} changed); re-import the spec",
+                file=sys.stderr,
+            )
+            return 1
+        folder, relative, tasks, sidecar = _load_spec(project, job, None)
+        task = next((t for t in tasks if t.id == ref), None)
+        if task is None:
+            raise ValueError(
+                f"task {ref} not found in {relative}/tasks.md; re-import the spec"
+            )
+        meta = sidecar.tasks.get(ref) or TaskMeta(
+            piece.get("type") or "code", piece.get("risk") or "medium"
+        )
+        spec_path = folder / "spec.md"
+        index = (
+            parse_spec_refs(_read_text(spec_path, "spec.md"))
+            if spec_path.is_file()
+            else {}
+        )
+        found, missing = resolve_refs(list(dict.fromkeys(meta.accept)), index)
+        refs = found + [f"UNRESOLVED: {item}" for item in missing]
+        if args.review:
+            kind, brief = "review", render_review_brief(task, meta, refs)
+        else:
+            kind = "exec"
+            brief = render_exec_brief(
+                task, meta, refs, sidecar.global_constraints, folder.name
+            )
+    payload = {"job": args.job, "piece": number, "kind": kind, "brief": brief}
+    if args.out:
+        target = Path(args.out).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(brief, encoding="utf-8", newline="\n")
+        payload["out"] = str(target)
+        _emit(args, f"wrote {target}", payload)
+    else:
+        _emit(args, brief.rstrip("\n"), payload)
+    return 0
+
+
 # --- parser ----------------------------------------------------------------
 
 
@@ -1043,6 +1110,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--spec-dir", default=None, metavar="PATH", help="spec folder"
     )
     spec_status.set_defaults(handler=_cmd_spec_status)
+
+    brief_parser = subcommands.add_parser(
+        "brief", help="briefs for spec tasks: exec, review, converge"
+    )
+    brief_commands = brief_parser.add_subparsers(dest="brief_command", required=True)
+    brief_render = brief_commands.add_parser(
+        "render", parents=[common], help="render the brief of a spec piece"
+    )
+    brief_render.add_argument("--job", required=True, help="job id")
+    brief_render.add_argument(
+        "--piece", type=int, default=None, help="piece number (not needed with --converge)"
+    )
+    brief_render.add_argument(
+        "--review", action="store_true", help="the reviewer brief (two verdicts)"
+    )
+    brief_render.add_argument(
+        "--converge", action="store_true", help="the final spec-vs-code comparison brief"
+    )
+    brief_render.add_argument(
+        "--out", default=None, metavar="FILE", help="write the brief here, not to stdout"
+    )
+    brief_render.set_defaults(handler=_cmd_brief_render)
 
     scoreboard_parser = subcommands.add_parser(
         "scoreboard", parents=[common], help="regenerate and print the scoreboard"
