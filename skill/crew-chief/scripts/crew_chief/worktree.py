@@ -10,6 +10,9 @@ whether an attempt is allowed to land:
   worktree's sibling directory and the top level of the home directory before
   and after an attempt, so a write outside the worktree is caught. Files that
   were already dirty in the main repo appear in both snapshots and are ignored.
+  The sibling directory is ``<project>.crew/`` itself, so the worktrees of
+  parallel attempts living there are not writes; neither are the entries agent
+  CLIs keep in the home directory (:data:`AGENT_HOME_ENTRIES`).
 * :func:`diffstat` reports what the attempt changed and calls out deletions
   that look destructive, so a merge can be refused before it happens.
 
@@ -19,7 +22,9 @@ nothing else is imported from the package.
 
 from __future__ import annotations
 
+import fnmatch
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -28,6 +33,41 @@ from pathlib import Path
 
 #: Files the coordinator writes inside the worktree; they never count as work.
 EXCLUDED_FILES: tuple[str, ...] = (".crew-chief-brief.md", ".crew-chief-out.txt")
+
+#: Top-level home entries that agent CLIs write on every run (config, auth,
+#: caches, session state) plus OS noise; fnmatch patterns, matched without
+#: regard to case on Windows. This is the one place the default list lives;
+#: the ``ignore_home_entries`` preference adds to it.
+AGENT_HOME_ENTRIES: tuple[str, ...] = (
+    # Claude Code (also behind antigravity and Claude-like proxies).
+    ".claude",
+    ".claude.json",
+    ".claude.json.*",
+    # Codex.
+    ".codex",
+    # Gemini / Antigravity.
+    ".gemini",
+    ".antigravity",
+    ".antigravity-ide",
+    # OpenCode: .local/share/opencode, .config/opencode, .cache/opencode.
+    ".opencode",
+    ".local",
+    ".config",
+    ".cache",
+    # Cursor agent.
+    ".cursor",
+    # Package caches the CLIs fill when they install helpers.
+    ".npm",
+    ".bun",
+    # Windows registry hive of the user, rewritten by any process.
+    "NTUSER.DAT*",
+    "ntuser.dat*",
+    "ntuser.ini",
+)
+
+#: Directory names :func:`create_worktree` gives attempts:
+#: ``<job_id>-<piece>-<attempt>`` with a job id ``<YYYYmmdd-HHMM>-<slug>[-N]``.
+_WORKTREE_NAME = re.compile(r"^\d{8}-\d{4}-[a-z0-9-]+-\d+-\d+$")
 
 #: A deletion is called destructive when it removes many lines and mostly
 #: deletes: at least this many lines gone with more than twice the added lines.
@@ -89,24 +129,62 @@ def create_worktree(
     return worktree, branch
 
 
-def snapshot(project: Path, worktree: Path) -> dict:
+def snapshot(
+    project: Path, worktree: Path, ignore_home: list[str] | tuple[str, ...] = ()
+) -> dict:
     """A containment snapshot: main repo status, siblings and home entries.
 
     ``repo`` is the set of ``git status --porcelain=v1 -uall`` lines of the
     main repo; ``sibling`` and ``home`` map each top-level entry name to its
-    ``st_mtime_ns``, for ``worktree.parent`` (minus the worktree itself) and
-    for ``Path.home()``. Nothing is walked recursively.
+    ``st_mtime_ns``, for ``worktree.parent`` and for ``Path.home()``. Nothing
+    is walked recursively.
+
+    ``sibling`` leaves out the worktree itself and every other worktree of the
+    project (registered in ``git worktree list`` or named like one
+    :func:`create_worktree` makes), so parallel attempts do not see each
+    other. ``home`` leaves out :data:`AGENT_HOME_ENTRIES` plus the fnmatch
+    patterns in ``ignore_home``.
     """
     project = Path(project)
     worktree = Path(worktree)
     status = _git(["status", "--porcelain=v1", "-uall"], project)
-    siblings = _entry_mtimes(worktree.parent)
-    siblings.pop(worktree.name, None)
+    registered = _registered_worktree_names(project, worktree.parent)
+    siblings = {
+        name: mtime
+        for name, mtime in _entry_mtimes(worktree.parent).items()
+        if name != worktree.name
+        and name not in registered
+        and not _WORKTREE_NAME.match(name)
+    }
+    patterns = (*AGENT_HOME_ENTRIES, *ignore_home)
+    home = {
+        name: mtime
+        for name, mtime in _entry_mtimes(Path.home()).items()
+        if not any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
+    }
     return {
         "repo": set(status.splitlines()),
         "sibling": siblings,
-        "home": _entry_mtimes(Path.home()),
+        "home": home,
     }
+
+
+def _registered_worktree_names(project: Path, directory: Path) -> set[str]:
+    """Names of the project's registered worktrees that live in ``directory``."""
+    target = os.path.normcase(str(Path(directory).resolve()))
+    names: set[str] = set()
+    listing = _git(["worktree", "list", "--porcelain"], project, check=False)
+    for line in listing.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = Path(line[len("worktree "):])
+        try:
+            parent = os.path.normcase(str(path.resolve().parent))
+        except OSError:
+            continue
+        if parent == target:
+            names.add(path.name)
+    return names
 
 
 def outside_writes(before: dict, after: dict) -> list[str]:

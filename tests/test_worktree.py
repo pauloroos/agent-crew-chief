@@ -302,3 +302,113 @@ def test_discard_removes_worktree_and_branch(git_repo: Path, home_dir: Path):
     assert not (git_repo / "unwanted.txt").exists()
     assert _git(git_repo, "branch", "--list", branch).strip() == ""
     assert _git(git_repo, "status", "--porcelain") == ""
+
+
+# --- parallel worktrees and agent home entries -----------------------------
+
+
+def test_parallel_worktree_appearing_is_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "20261019-1200-job", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    other, _ = create_worktree(git_repo, "20261019-1200-job", 2, 1)
+    (other / "work.py").write_text("x = 1\n", encoding="utf-8")
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == []
+
+
+def test_parallel_worktree_changing_is_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "20261019-1200-job", 1, 1)
+    other, _ = create_worktree(git_repo, "20261019-1200-job", 2, 1)
+    before = snapshot(git_repo, worktree)
+
+    (other / "new-file.py").write_text("x = 1\n", encoding="utf-8")
+    (other / "README.md").unlink()
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == []
+
+
+def test_registered_worktree_with_any_name_is_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    custom = worktree.parent / "hand-made"
+    _git(git_repo, "worktree", "add", "-b", "hand", str(custom), "HEAD")
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == []
+
+
+def test_unknown_folder_in_crew_dir_is_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "20261019-1200-job", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    (worktree.parent / "loot").mkdir()
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == ["sibling: loot"]
+
+
+def test_agent_tool_entries_in_home_are_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    (home_dir / ".claude").mkdir()
+    (home_dir / ".claude.json").write_text("{}", encoding="utf-8")
+    (home_dir / ".claude.json.tmp.4242.abcdef").write_text("{}", encoding="utf-8")
+    (home_dir / ".codex").mkdir()
+    (home_dir / ".gemini").mkdir()
+    (home_dir / ".local").mkdir()
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == []
+
+
+def test_unknown_home_entry_is_still_outside_write(git_repo: Path, home_dir: Path):
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    (home_dir / ".claude").mkdir()
+    (home_dir / "stolen.txt").write_text("x", encoding="utf-8")
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == ["home: stolen.txt"]
+
+
+def test_extra_home_ignores_are_merged_with_the_defaults(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree, ignore_home=[".my-agent*"])
+
+    (home_dir / ".my-agent-cache").mkdir()
+    (home_dir / ".claude").mkdir()
+    (home_dir / ".other").mkdir()
+
+    after = snapshot(git_repo, worktree, ignore_home=[".my-agent*"])
+    assert outside_writes(before, after) == ["home: .other"]
+
+
+def test_write_in_main_repo_is_flagged_even_with_parallel_worktrees(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "20261019-1200-job", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    create_worktree(git_repo, "20261019-1200-job", 2, 1)
+    (git_repo / "leak.txt").write_text("leak\n", encoding="utf-8")
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == ["repo: ?? leak.txt"]
