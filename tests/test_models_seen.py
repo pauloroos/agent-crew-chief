@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 
 import pytest
 
 from crew_chief.discover import Discovery
 from crew_chief.models_seen import (
     changes_payload,
+    check_due,
     check_models,
     diff_models,
     load_seen,
@@ -62,7 +64,7 @@ def test_first_run_is_a_baseline_not_a_flood_of_new_models():
     assert changes.added == [] and changes.removed == [] and changes.changed == []
     assert changes.baseline == 2
     assert changes.since is None
-    assert snapshot["last_run"] == T0
+    assert snapshot["last_check"] == T0
     assert snapshot["models"]["oc:a-free"] == _entry()
     assert snapshot["models"]["oc:b"] == _entry(cost="paid")
     assert render_changes(changes) == ["models: baseline: 2 executors recorded"]
@@ -70,7 +72,7 @@ def test_first_run_is_a_baseline_not_a_flood_of_new_models():
 
 def test_new_model_of_a_known_tool_is_added():
     a, b = _ex("oc:a-free"), _ex("oc:new-free", trains=True)
-    previous = {"last_run": T0, "models": {"oc:a-free": _entry()}}
+    previous = {"last_check": T0, "models": {"oc:a-free": _entry()}}
 
     snapshot, changes = diff_models(previous, [a, b], _listed(a, b), T1)
 
@@ -85,7 +87,7 @@ def test_new_model_of_a_known_tool_is_added():
 
 def test_model_missing_from_a_listed_tool_is_removed():
     a = _ex("oc:a-free")
-    previous = {"last_run": T0, "models": {"oc:a-free": _entry(), "oc:gone-free": _entry()}}
+    previous = {"last_check": T0, "models": {"oc:a-free": _entry(), "oc:gone-free": _entry()}}
 
     snapshot, changes = diff_models(previous, [a], _listed(a), T1)
 
@@ -99,7 +101,7 @@ def test_model_missing_from_a_listed_tool_is_removed():
 def test_removed_model_is_not_reported_twice():
     a = _ex("oc:a-free")
     previous = {
-        "last_run": T0,
+        "last_check": T0,
         "models": {"oc:a-free": _entry(), "oc:gone": _entry(present=False)},
     }
 
@@ -111,7 +113,7 @@ def test_removed_model_is_not_reported_twice():
 def test_model_that_comes_back_is_added_again():
     a, back = _ex("oc:a-free"), _ex("oc:back-free")
     previous = {
-        "last_run": T0,
+        "last_check": T0,
         "models": {"oc:a-free": _entry(), "oc:back-free": _entry(present=False)},
     }
 
@@ -126,7 +128,7 @@ def test_model_that_comes_back_is_added_again():
 
 def test_cost_change_is_reported_as_changed():
     a = _ex("oc:a", cost="paid")
-    previous = {"last_run": T0, "models": {"oc:a": _entry(cost="free")}}
+    previous = {"last_check": T0, "models": {"oc:a": _entry(cost="free")}}
 
     snapshot, changes = diff_models(previous, [a], _listed(a), T1)
 
@@ -143,7 +145,7 @@ def test_cost_change_is_reported_as_changed():
 
 def test_trains_change_is_reported_as_changed():
     a = _ex("oc:a", trains=True)
-    previous = {"last_run": T0, "models": {"oc:a": _entry(trains=False)}}
+    previous = {"last_check": T0, "models": {"oc:a": _entry(trains=False)}}
 
     _snapshot_after, changes = diff_models(previous, [a], _listed(a), T1)
 
@@ -154,7 +156,7 @@ def test_trains_change_is_reported_as_changed():
 def test_skipped_tool_does_not_mark_its_models_removed():
     a = _ex("oc:a-free")
     previous = {
-        "last_run": T0,
+        "last_check": T0,
         "models": {"oc:a-free": _entry(), "agy:m": _entry(cost="paid")},
     }
 
@@ -167,7 +169,7 @@ def test_skipped_tool_does_not_mark_its_models_removed():
 
 def test_forbidden_model_of_a_listed_tool_is_not_removed():
     a = _ex("oc:a-free")
-    previous = {"last_run": T0, "models": {"oc:a-free": _entry(), "oc:banned": _entry()}}
+    previous = {"last_check": T0, "models": {"oc:a-free": _entry(), "oc:banned": _entry()}}
     listed = {"oc": ["a-free", "banned"]}  # listed, but filtered out as forbidden
 
     snapshot, changes = diff_models(previous, [a], listed, T1)
@@ -178,7 +180,7 @@ def test_forbidden_model_of_a_listed_tool_is_not_removed():
 
 def test_first_models_of_a_new_tool_are_a_baseline():
     a, n = _ex("oc:a-free"), _ex("newtool:m", cost="paid")
-    previous = {"last_run": T0, "models": {"oc:a-free": _entry()}}
+    previous = {"last_check": T0, "models": {"oc:a-free": _entry()}}
 
     snapshot, changes = diff_models(previous, [a, n], _listed(a, n), T1)
 
@@ -191,9 +193,9 @@ def test_first_models_of_a_new_tool_are_a_baseline():
     ]
 
 
-def test_no_changes_line_names_the_last_run():
+def test_no_changes_line_names_the_last_check():
     a = _ex("oc:a-free")
-    previous = {"last_run": T0, "models": {"oc:a-free": _entry()}}
+    previous = {"last_check": T0, "models": {"oc:a-free": _entry()}}
 
     _snapshot_after, changes = diff_models(previous, [a], _listed(a), T1)
 
@@ -205,7 +207,7 @@ def test_render_puts_free_models_first():
     new_paid, new_free = _ex("oc:np", cost="paid"), _ex("oc:nf")
     now_free = _ex("oc:cheap")
     previous = {
-        "last_run": T0,
+        "last_check": T0,
         "models": {
             "oc:keep": _entry(),
             "oc:cheap": _entry(cost="paid"),
@@ -227,7 +229,7 @@ def test_render_puts_free_models_first():
 
 def test_changes_payload_shape():
     a, b = _ex("oc:a-free"), _ex("oc:b-free")
-    previous = {"last_run": T0, "models": {"oc:a-free": _entry()}}
+    previous = {"last_check": T0, "models": {"oc:a-free": _entry()}}
 
     _snapshot_after, changes = diff_models(previous, [a, b], _listed(a, b), T1)
     payload = changes_payload(changes)
@@ -247,7 +249,7 @@ def test_changes_payload_shape():
 
 
 def test_save_is_deterministic_sorted_lf(tmp_path):
-    snapshot = {"models": {"z:m": _entry(), "a:m": _entry(cost="paid")}, "last_run": T0}
+    snapshot = {"models": {"z:m": _entry(), "a:m": _entry(cost="paid")}, "last_check": T0}
 
     save_seen(tmp_path, snapshot)
     path = models_seen_path(tmp_path)
@@ -282,7 +284,7 @@ def test_check_models_writes_and_reports(tmp_path):
     b = _ex("oc:b-free")
     second = check_models(tmp_path, Discovery([a, b], [], _listed(a, b)), now=T1)
     assert [item["id"] for item in second.added] == ["oc:b-free"]
-    assert load_seen(tmp_path)["last_run"] == T1
+    assert load_seen(tmp_path)["last_check"] == T1
 
 
 def test_check_models_keeps_an_unreadable_file(tmp_path):
@@ -296,3 +298,28 @@ def test_check_models_keeps_an_unreadable_file(tmp_path):
     assert changes.error and "models-seen.json" in changes.error
     assert path.read_text(encoding="utf-8") == "{oops"
     assert render_changes(changes)[0].startswith("models: not updated: ")
+
+
+# --- daily check ------------------------------------------------------------
+
+
+def test_check_due_without_a_file(tmp_path):
+    assert check_due(tmp_path, 24) is True
+
+
+def test_check_due_by_age(tmp_path):
+    save_seen(tmp_path, {"last_check": T0, "models": {}})
+    t0 = datetime.fromisoformat(T0)
+
+    assert check_due(tmp_path, 24, now=t0 + timedelta(hours=23)) is False
+    assert check_due(tmp_path, 24, now=t0 + timedelta(hours=25)) is True
+    assert check_due(tmp_path, 1, now=t0 + timedelta(hours=2)) is True
+    assert check_due(tmp_path, 0, now=t0) is True
+
+
+def test_check_due_with_a_broken_file_or_stamp(tmp_path):
+    save_seen(tmp_path, {"last_check": "not a date", "models": {}})
+    assert check_due(tmp_path, 24) is True
+
+    models_seen_path(tmp_path).write_text("{oops", encoding="utf-8")
+    assert check_due(tmp_path, 24) is True

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from crew_chief import records
@@ -385,7 +386,7 @@ def test_discover_records_a_baseline_then_reports_changes(
     assert seen["models"]["stub:a-free"]["present"] is True
 
     assert main(["discover", "--project", str(repo)]) == 0
-    assert f"models: no changes since {seen['last_run']}" in capsys.readouterr().out
+    assert f"models: no changes since {seen['last_check']}" in capsys.readouterr().out
 
     _write_prefs(repo, _models_prefs("a-free", "new-free", "b", paid=("a-free",)))
     assert main(["discover", "--project", str(repo)]) == 0
@@ -483,16 +484,132 @@ def test_job_new_survives_invalid_preferences(git_repo, capsys):
     assert "models: check skipped:" in captured.err
 
 
-def test_pick_does_not_write_models_seen(git_repo, fake_bin, monkeypatch, capsys):
+def _seed_seen(repo: Path, hours_ago: float, models: dict | None = None) -> str:
+    """Write a registry whose ``last_check`` is ``hours_ago`` hours old."""
+    stamp = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat(
+        timespec="seconds"
+    )
+    entry = {"cost": "free", "trains": False, "first_seen": stamp,
+             "last_seen": stamp, "present": True}
+    data = {"last_check": stamp, "models": models or {"stub:m": entry}}
+    path = _seen_path(repo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    path.write_text(text, encoding="utf-8")
+    return text
+
+
+def _pick_job(repo: Path) -> str:
+    job = records.new_job(repo, "Pick", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+    records.save_job(repo, job)
+    return job["id"]
+
+
+def _stub_with_extra_model(prefs_extra: str = "") -> str:
+    """``_STUB_PREFS`` with a second model, so a due check has news to report."""
+    return prefs_extra + _STUB_PREFS.replace('models = ["m"]', 'models = ["m", "n"]')
+
+
+def test_pick_with_a_fresh_check_does_not_write(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    _write_prefs(repo, _stub_with_extra_model())
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    job_id = _pick_job(repo)
+    before = _seed_seen(repo, hours_ago=1)
+
+    assert main(["pick", "--project", str(repo), "--job", job_id, "--piece", "1"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines()[0].startswith("stub:")
+    assert "models:" not in captured.err
+    assert _seen_path(repo).read_text(encoding="utf-8") == before
+
+
+def test_pick_with_a_stale_check_writes_and_reports(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _stub_with_extra_model())
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    job_id = _pick_job(repo)
+    before = _seed_seen(repo, hours_ago=25)
+
+    assert main(["pick", "--project", str(repo), "--job", job_id, "--piece", "1"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines()[0].startswith("stub:")
+    assert "new free: stub:n (trains=no)" in captured.err
+    after = json.loads(_seen_path(repo).read_text(encoding="utf-8"))
+    assert after["last_check"] > json.loads(before)["last_check"]
+    assert "stub:n" in after["models"]
+
+
+def test_pick_without_a_registry_records_a_baseline(
+    git_repo, fake_bin, monkeypatch, capsys
+):
     repo = git_repo
     _write_prefs(repo, _STUB_PREFS)
     fake_bin("stub", "print('x')\n")
     _only_bins(monkeypatch, {"stub"})
-    job = records.new_job(repo, "Pick", "do it", True, "one part")
-    records.add_piece(job, "One", "code", "low")
-    records.save_job(repo, job)
+    job_id = _pick_job(repo)
 
-    assert main(["pick", "--project", str(repo), "--job", job["id"],
-                 "--piece", "1"]) == 0
-    capsys.readouterr()
-    assert not _seen_path(repo).exists()
+    assert main(["pick", "--project", str(repo), "--job", job_id, "--piece", "1"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines()[0] == "stub:m"
+    assert "models: baseline: 1 executors recorded" in captured.err
+    assert _seen_path(repo).is_file()
+
+
+def test_model_check_hours_changes_the_window(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    job_id = _pick_job(repo)
+
+    _write_prefs(repo, _stub_with_extra_model("model_check_hours = 48\n"))
+    before = _seed_seen(repo, hours_ago=30)
+    assert main(["pick", "--project", str(repo), "--job", job_id, "--piece", "1"]) == 0
+    assert "models:" not in capsys.readouterr().err
+    assert _seen_path(repo).read_text(encoding="utf-8") == before
+
+    _write_prefs(repo, _stub_with_extra_model("model_check_hours = 1\n"))
+    _seed_seen(repo, hours_ago=2)
+    assert main(["pick", "--project", str(repo), "--job", job_id, "--piece", "1"]) == 0
+    assert "new free: stub:n (trains=no)" in capsys.readouterr().err
+
+
+def test_pick_survives_a_broken_check(git_repo, fake_bin, monkeypatch, capsys):
+    from crew_chief import cli
+
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    job_id = _pick_job(repo)
+
+    def boom(project, discovery, now=None):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cli, "check_models", boom)
+    assert main(["pick", "--project", str(repo), "--job", job_id, "--piece", "1"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines()[0] == "stub:m"
+    assert "models: check skipped: disk full" in captured.err
+
+
+def test_dispatch_with_a_stale_check_writes(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    _write_prefs(repo, _stub_with_extra_model())
+    fake_bin("stub", _STUB)
+    _only_bins(monkeypatch, {"stub"})
+    job_id = _pick_job(repo)
+    brief = _write(repo / "brief.md", "Create out.py.\n")
+    _seed_seen(repo, hours_ago=25)
+
+    assert main(["dispatch", "--project", str(repo), "--job", job_id,
+                 "--piece", "1", "--executor", "stub:m",
+                 "--brief-file", str(brief)]) == 0
+    captured = capsys.readouterr()
+    assert "status: ok" in captured.out
+    assert "new free: stub:n (trains=no)" in captured.err

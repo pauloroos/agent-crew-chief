@@ -159,3 +159,20 @@ def test_prefs_is_a_dataclass_with_expected_fields(tmp_path):
     assert p.sensitive_paths == []
     assert p.issue_tracker == "none"
     assert p.review_default == ""
+
+
+def test_model_check_hours_defaults_to_24_and_can_be_set(tmp_path):
+    assert load_prefs(tmp_path, tmp_path / "n.toml").model_check_hours == 24
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        "model_check_hours = 6\n", encoding="utf-8")
+    assert load_prefs(tmp_path, tmp_path / "n.toml").model_check_hours == 6
+
+
+@pytest.mark.parametrize("value", ["-1", '"daily"', "true"])
+def test_model_check_hours_must_be_a_non_negative_number(tmp_path, value):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        f"model_check_hours = {value}\n", encoding="utf-8")
+    with pytest.raises(PrefsError, match="model_check_hours"):
+        load_prefs(tmp_path, tmp_path / "n.toml")
