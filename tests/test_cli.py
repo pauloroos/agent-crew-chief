@@ -695,3 +695,31 @@ def test_parallel_picks_keep_every_pick(git_repo, fake_bin, monkeypatch):
     assert codes == [0] * 6
     pieces = _stored_job(repo, job["id"])["pieces"]
     assert all(len(piece.get("picks", [])) == 1 for piece in pieces)
+
+
+def test_pick_skips_an_executor_that_hit_quota_in_another_job(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _ESCALATION_PREFS)
+    fake_bin("freebie", "print('x')\n")
+    fake_bin("strong", "print('x')\n")
+    _only_bins(monkeypatch, {"freebie", "strong"})
+
+    earlier = records.new_job(repo, "Earlier", "do it", True, "parts")
+    records.add_piece(earlier, "Bit", "code", "low")
+    records.add_attempt(earlier, 1, {
+        "executor": "freebie:m", "role": "exec", "status": "quota",
+        "cost": "free", "duration_s": 5.0,
+        "started": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+    })
+    records.save_job(repo, earlier)
+    job = records.new_job(repo, "Now", "do it", True, "parts")
+    records.add_piece(job, "Other bit", "code", "low")
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "strong:s"
+    assert "skipped for quota: freebie:m" in lines[1]

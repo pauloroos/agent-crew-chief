@@ -42,6 +42,7 @@ from .scoring import (
     free_failures,
     grade as score_piece,
     pick as pick_executor,
+    quota_cooldown,
     render_scoreboard,
 )
 from .worktree import NotAGitRepo
@@ -220,6 +221,7 @@ def _cmd_pick(args: argparse.Namespace) -> int:
     _piece(records.load_job(project, args.job), args.piece)
     _check_models_to_stderr(project, prefs, found, due_only=True)
     stats = build_stats(project)
+    cooling = quota_cooldown(project, prefs.quota_cooldown_min)
 
     def choose(job: dict) -> tuple:
         """Pick under the job lock, so parallel picks see each other's picks."""
@@ -250,6 +252,8 @@ def _cmd_pick(args: argparse.Namespace) -> int:
             prefs,
             exclude,
             random.Random(),
+            job=job,
+            cooling=cooling,
         )
 
         if escalation:

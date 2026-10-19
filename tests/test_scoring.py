@@ -24,6 +24,7 @@ from crew_chief.scoring import (
     free_failures,
     grade,
     pick,
+    quota_cooldown,
     render_scoreboard,
 )
 from crew_chief.tools import Executor
@@ -772,3 +773,166 @@ def test_scoreboard_of_an_empty_project_is_still_markdown(tmp_path):
 
     assert text.startswith("# Scoreboard")
     assert "—" not in text
+
+
+# --- pick: spread over a job and quota cooldown ----------------------------
+
+
+def _job_with_picks(*picks_per_piece: list[str]) -> dict:
+    """A job dict whose pieces carry ``picks`` for the given executor ids."""
+    return {
+        "id": "job",
+        "pieces": [
+            {
+                "n": index,
+                "type": "code",
+                "attempts": [],
+                "picks": [{"pick": executor} for executor in picks],
+            }
+            for index, picks in enumerate(picks_per_piece, start=1)
+        ],
+    }
+
+
+def test_pick_spreads_unrated_executors_over_the_job():
+    a = _ex("antigravity:opus")
+    b = _ex("antigravity:sonnet")
+    c = _ex("opencode:flash")
+    job = _job_with_picks(["antigravity:opus"])
+
+    chosen, reason = pick(
+        [a, b, c], {}, "code", "medium", _prefs(), set(), _Rng(0.9), job=job
+    )
+
+    # b and c are both unused; c's tool has not been used in the job yet.
+    assert chosen is c
+    assert reason.startswith("unrated, no history")
+
+
+def test_pick_spreads_nine_pieces_in_a_row():
+    pool = [
+        _ex("antigravity:opus"),
+        _ex("antigravity:sonnet"),
+        _ex("opencode:flash"),
+    ]
+    job = _job_with_picks(*([] for _ in range(9)))
+
+    chosen_ids = []
+    for piece in job["pieces"]:
+        chosen, _ = pick(
+            pool, {}, "code", "medium", _prefs(), set(), _Rng(0.9), job=job
+        )
+        piece["picks"].append({"pick": chosen.id})
+        chosen_ids.append(chosen.id)
+
+    assert {executor.id: chosen_ids.count(executor.id) for executor in pool} == {
+        "antigravity:opus": 3,
+        "antigravity:sonnet": 3,
+        "opencode:flash": 3,
+    }
+    assert chosen_ids[:2] == ["antigravity:opus", "opencode:flash"]
+
+
+def test_pick_counts_attempts_without_a_pick_as_use():
+    a = _ex("opencode:a")
+    b = _ex("opencode:b")
+    job = {
+        "id": "job",
+        "pieces": [
+            {"n": 1, "type": "code", "picks": [],
+             "attempts": [_attempt("opencode:a")]},
+        ],
+    }
+
+    chosen, _ = pick([a, b], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+                     job=job)
+
+    assert chosen is b
+
+
+def test_pick_spread_never_beats_a_better_score():
+    best = _ex("opencode:best")
+    other = _ex("opencode:other")
+    stats = _stats(
+        ("opencode:best", "code", 90.0, 10.0),
+        ("opencode:other", "code", 50.0, 10.0),
+    )
+    job = _job_with_picks(["opencode:best"] * 5)
+
+    chosen, _ = pick([best, other], stats, "code", "medium", _prefs(), set(),
+                     _Rng(0.9), job=job)
+
+    assert chosen is best
+
+
+def test_pick_skips_executors_cooling_down_after_quota():
+    a = _ex("antigravity:opus")
+    b = _ex("opencode:flash")
+
+    chosen, reason = pick(
+        [a, b], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+        cooling={"antigravity:opus"},
+    )
+
+    assert chosen is b
+    assert "skipped for quota: antigravity:opus" in reason
+
+
+def test_pick_escalates_when_every_free_executor_is_cooling():
+    free = _ex("opencode:flash")
+    paid = _ex("codex:c1", cost="paid")
+
+    chosen, reason = pick(
+        [free, paid], {}, "code", "medium", _prefs(), set(), _Rng(0.0),
+        cooling={"opencode:flash"},
+    )
+
+    assert chosen is paid
+    assert reason.startswith("escalated: no free executor available")
+    assert "skipped for quota: opencode:flash" in reason
+
+
+def test_pick_with_everything_cooling_has_no_executor():
+    free = _ex("opencode:flash")
+
+    chosen, reason = pick(
+        [free], {}, "code", "medium", _prefs(), set(), _Rng(0.0),
+        cooling={"opencode:flash"},
+    )
+
+    assert chosen is None
+    assert reason.startswith("no executor available")
+    assert "skipped for quota: opencode:flash" in reason
+
+
+def _quota_attempt(executor: str, ended_min_ago: float, status: str = "quota"):
+    started = NOW - timedelta(minutes=ended_min_ago, seconds=30)
+    return {
+        "executor": executor,
+        "role": "exec",
+        "status": status,
+        "cost": "free",
+        "started": started.isoformat(),
+        "duration_s": 30.0,
+    }
+
+
+def test_quota_cooldown_reads_every_job_of_the_project(tmp_path):
+    project = _project(
+        tmp_path,
+        [{"type": "code", "attempts": [
+            _quota_attempt("antigravity:opus", 10),
+            _quota_attempt("antigravity:old", 61),
+            _quota_attempt("opencode:fail", 5, status="failed"),
+        ]}],
+    )
+    other = new_job(project, "Other", "x", True, "y",
+                    now=datetime(2026, 10, 2, 9, 0))
+    add_piece(other, "P", "docs", "low")
+    add_attempt(other, 1, _quota_attempt("opencode:docs", 59))
+    save_job(project, other)
+
+    cooling = quota_cooldown(project, 60, now=NOW)
+
+    assert cooling == {"antigravity:opus", "opencode:docs"}
+    assert quota_cooldown(project, 0, now=NOW) == set()

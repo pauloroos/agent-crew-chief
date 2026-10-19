@@ -10,7 +10,9 @@ Three jobs live here:
   is (a half-life decay, so a stale 100 fades against a fresh 20).
 * :func:`pick` chooses the next executor, free-first, by decayed score, with
   a small exploration chance that gives an unrated or below-median executor
-  a second chance on low-risk work.
+  a second chance on low-risk work. Executors tied on score are spread over
+  the job (least used first, then a tool the job has used least), and an
+  executor that hit its quota recently (:func:`quota_cooldown`) sits out.
 
 :func:`free_failures` counts the free-executor failures on one piece, which is
 the signal the coordinator uses to stop retrying free executors and escalate.
@@ -21,7 +23,7 @@ from __future__ import annotations
 import random
 import statistics
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import Prefs
@@ -254,8 +256,52 @@ def build_stats(
     return _collect(Path(project), half_life_days, now)[0]
 
 
-def _rank_key(executor: Executor, stats: dict, type: str) -> tuple:
-    """Sort key for a pool: score desc, duration asc (missing last), id asc."""
+def job_usage(job: dict | None) -> tuple[dict[str, int], dict[str, int]]:
+    """How much each executor and each tool is already used in ``job``.
+
+    Returns ``(by_executor, by_tool)``. On each piece an executor counts
+    ``max(picks, exec attempts)`` there, so a pick followed by its dispatch is
+    one use while a dispatch made without ``pick`` still counts. The tool is
+    the part of the executor id before the first ``:``.
+    """
+    by_executor: dict[str, int] = {}
+    for piece in (job or {}).get("pieces") or []:
+        if not isinstance(piece, dict):
+            continue
+        picks: dict[str, int] = {}
+        for entry in piece.get("picks") or []:
+            executor = entry.get("pick") if isinstance(entry, dict) else None
+            if isinstance(executor, str) and executor:
+                picks[executor] = picks.get(executor, 0) + 1
+        attempts: dict[str, int] = {}
+        for attempt in piece.get("attempts") or []:
+            if not isinstance(attempt, dict) or attempt.get("role") != "exec":
+                continue
+            executor = attempt.get("executor")
+            if isinstance(executor, str) and executor:
+                attempts[executor] = attempts.get(executor, 0) + 1
+        for executor in {*picks, *attempts}:
+            by_executor[executor] = by_executor.get(executor, 0) + max(
+                picks.get(executor, 0), attempts.get(executor, 0)
+            )
+    by_tool: dict[str, int] = {}
+    for executor, count in by_executor.items():
+        tool = executor.split(":", 1)[0]
+        by_tool[tool] = by_tool.get(tool, 0) + count
+    return by_executor, by_tool
+
+
+def _rank_key(
+    executor: Executor,
+    stats: dict,
+    type: str,
+    usage: tuple[dict[str, int], dict[str, int]] = ({}, {}),
+) -> tuple:
+    """Sort key for a pool.
+
+    Score desc; on a tie, the executor least used in the job, then the one
+    whose tool the job used least; then duration asc (missing last), id asc.
+    """
     stat = stats.get((executor.id, type))
     score = _UNRATED_SCORE
     if stat is not None and stat.score is not None:
@@ -263,7 +309,15 @@ def _rank_key(executor: Executor, stats: dict, type: str) -> tuple:
     duration = float("inf")
     if stat is not None and stat.mean_duration_s is not None:
         duration = stat.mean_duration_s
-    return (-score, duration, executor.id)
+    by_executor, by_tool = usage
+    tool = executor.id.split(":", 1)[0]
+    return (
+        -score,
+        by_executor.get(executor.id, 0),
+        by_tool.get(tool, 0),
+        duration,
+        executor.id,
+    )
 
 
 def _second_chance_candidates(
@@ -319,16 +373,58 @@ def pick(
     prefs: Prefs,
     exclude: set[str],
     rng: random.Random,
+    job: dict | None = None,
+    cooling: set[str] | None = None,
 ) -> tuple[Executor | None, str]:
     """Choose the next executor and return ``(choice, one-line reason)``.
 
     Free executors come first, ranked by decayed score descending (unrated
-    get ``-1``, ties break by mean duration ascending with ``None`` last, then
-    by id). On ``low`` risk, ``prefs.explore_rate`` of the time an executor
-    that is unrated or below the pool median is given a second chance and
-    picked uniformly. With no free executor the paid ones are tried in
-    ``prefs.strong_order``; with neither pool populated there is no choice.
+    get ``-1``). Ties go to the executor least used in ``job`` (picks and
+    exec attempts on its pieces, see :func:`job_usage`), then to a tool the
+    job has used least, then by mean duration ascending with ``None`` last,
+    then by id. On ``low`` risk, ``prefs.explore_rate`` of the time an
+    executor that is unrated or below the pool median is given a second
+    chance and picked uniformly. With no free executor the paid ones are
+    tried in ``prefs.strong_order``; with neither pool populated there is no
+    choice.
+
+    Executors in ``cooling`` (see :func:`quota_cooldown`) are left out like
+    excluded ones, and the reason ends with ``; skipped for quota: <ids>``.
     """
+    skipped = sorted(
+        executor.id
+        for executor in candidates
+        if cooling
+        and executor.id in cooling
+        and executor.id not in exclude
+        and executor.cost != "forbidden"
+    )
+    choice, reason = _pick(
+        [executor for executor in candidates if executor.id not in skipped],
+        stats,
+        type,
+        risk,
+        prefs,
+        exclude,
+        rng,
+        job_usage(job),
+    )
+    if skipped:
+        reason += f"; skipped for quota: {', '.join(skipped)}"
+    return choice, reason
+
+
+def _pick(
+    candidates: list[Executor],
+    stats: dict,
+    type: str,
+    risk: str,
+    prefs: Prefs,
+    exclude: set[str],
+    rng: random.Random,
+    usage: tuple[dict[str, int], dict[str, int]],
+) -> tuple[Executor | None, str]:
+    """:func:`pick` once the executors cooling down are left out."""
     available = [
         executor for executor in candidates if executor.id not in exclude
     ]
@@ -338,7 +434,7 @@ def pick(
 
     if free:
         pool = sorted(
-            free, key=lambda executor: _rank_key(executor, stats, type)
+            free, key=lambda executor: _rank_key(executor, stats, type, usage)
         )
 
         # Second chance. This uses rng.random() once for the explore check and
@@ -367,6 +463,54 @@ def pick(
         return chosen, f"escalated: no free executor available ({chosen.id})"
 
     return None, "no executor available"
+
+
+def quota_cooldown(
+    project: Path, minutes: float, now: datetime | None = None
+) -> set[str]:
+    """Executors with an attempt that ended in ``quota`` in the last ``minutes``.
+
+    Every job of the project counts, whatever the role of the attempt. An
+    attempt ends at ``started + duration_s``; one without a parseable
+    ``started`` cannot be aged and is ignored. ``minutes <= 0`` turns the
+    cooldown off. Corrupt jobs are skipped.
+    """
+    if minutes <= 0:
+        return set()
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    window = timedelta(minutes=minutes)
+
+    cooling: set[str] = set()
+    for job, _path, _error in iter_jobs(Path(project)):
+        if job is None:
+            continue
+        for piece in job.get("pieces") or []:
+            if not isinstance(piece, dict):
+                continue
+            for attempt in piece.get("attempts") or []:
+                if not isinstance(attempt, dict):
+                    continue
+                if attempt.get("status") != "quota":
+                    continue
+                executor = attempt.get("executor")
+                started = attempt.get("started")
+                if not isinstance(executor, str) or not executor:
+                    continue
+                if not isinstance(started, str):
+                    continue
+                ended = _parse_iso(started)
+                if ended is None:
+                    continue
+                duration = attempt.get("duration_s")
+                if isinstance(duration, (int, float)) and not isinstance(
+                    duration, bool
+                ):
+                    ended += timedelta(seconds=duration)
+                if now - ended <= window:
+                    cooling.add(executor)
+    return cooling
 
 
 def _find_piece(job: dict, piece: int) -> dict:
