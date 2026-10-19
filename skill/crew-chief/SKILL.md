@@ -82,8 +82,14 @@ Seven steps, in order.
    Executors tied on score are spread over the job (the least used one first,
    then a different tool), so pick every piece with `pick` rather than reusing
    one id. An executor whose attempt ended in `quota` in the last
-   `quota_cooldown_min` minutes (default 60), in any job, sits out; the reason
-   then ends with `skipped for quota: <ids>`.
+   `quota_cooldown_min` minutes (default 60), in any job, sits out together
+   with its whole quota family; the reason then ends with
+   `skipped for quota: <ids>`. The family drops a trailing effort suffix
+   (`-minimal`, `-low`, `-medium`, `-high`, `-xhigh`, `-max`) from the model;
+   on Antigravity, whose quota is shared by vendor, it is
+   `antigravity:<model up to the first '-'>` (so `claude-opus-5-5-high` in
+   quota also benches `claude-opus-5-5-medium` and `claude-sonnet-5`, but not
+   `gemini-*`); on any other tool it is `<tool>:<model>`.
 
 4. **Write the brief and dispatch.**
 

@@ -45,7 +45,9 @@
 # model_check_hours = 24
 
 # Minutes an executor stays out of `pick` after an attempt ended in `quota`, in
-# any job of this project. With every free executor cooling down, `pick`
+# any job of this project, with every executor of its quota family (the same
+# model at any effort; on Antigravity, the whole vendor: antigravity:claude,
+# antigravity:gemini, ...). With every free executor cooling down, `pick`
 # escalates to the paid ones as usual.
 # quota_cooldown_min = 60
 

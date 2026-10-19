@@ -316,8 +316,16 @@ atual, depois para uma ferramenta que o job usou menos, depois para a menor
 duração média. Só em trabalho de risco baixo há 1 chance em 10 (`explore_rate`,
 padrão `0.1`) de um executor sem nota ou abaixo da mediana ganhar uma segunda
 chance. Um executor com tentativa `quota` nos últimos `quota_cooldown_min`
-minutos (padrão 60), em qualquer job do projeto, fica de fora, e o motivo do
-pick avisa. Nenhum modelo é descartado para sempre.
+minutos (padrão 60), em qualquer job do projeto, fica de fora junto com toda a
+sua família de cota, e o motivo do pick lista cada id pulado. A família é o
+modelo sem o sufixo de esforço final (`-minimal`, `-low`, `-medium`, `-high`,
+`-xhigh`, `-max`); no Antigravity, que divide a cota por fornecedor, ela é
+`antigravity:<modelo até o primeiro '-'>`, então
+`antigravity:claude-opus-5-5-high` em `quota` também tira
+`antigravity:claude-opus-5-5-medium` e `antigravity:claude-sonnet-5`, mas não
+`antigravity:gemini-*`. Nas outras ferramentas ela é `<ferramenta>:<modelo>`:
+um modelo do OpenCode em `quota` não afeta os outros. Nenhum modelo é
+descartado para sempre.
 
 Ao lado da nota, cada linha mostra quanto uma entrega custa àquele executor
 naquele tipo de trabalho:

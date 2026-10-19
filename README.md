@@ -316,8 +316,14 @@ the job has used least, then to the shorter mean duration. On low-risk work
 only there is a 1-in-10 chance (`explore_rate`, default `0.1`) that an unrated
 or below-median executor gets a second chance. An executor whose attempt ended
 in `quota` within `quota_cooldown_min` minutes (default 60), in any job of the
-project, sits out, and the pick reason says so. No model is ever dropped for
-good.
+project, sits out with its whole quota family, and the pick reason lists every
+id it skipped. The family is the model without a trailing effort suffix
+(`-minimal`, `-low`, `-medium`, `-high`, `-xhigh`, `-max`); on Antigravity,
+which shares its quota by vendor, it is `antigravity:<model up to the first
+'-'>`, so `antigravity:claude-opus-5-5-high` in quota also benches
+`antigravity:claude-opus-5-5-medium` and `antigravity:claude-sonnet-5`, but not
+`antigravity:gemini-*`. On other tools it is `<tool>:<model>`: one OpenCode
+model in quota leaves the others alone. No model is ever dropped for good.
 
 Next to the score, each row shows what a pass costs that executor on that work
 type:

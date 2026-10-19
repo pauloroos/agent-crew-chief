@@ -12,7 +12,8 @@ Three jobs live here:
   a small exploration chance that gives an unrated or below-median executor
   a second chance on low-risk work. Executors tied on score are spread over
   the job (least used first, then a tool the job has used least), and an
-  executor that hit its quota recently (:func:`quota_cooldown`) sits out.
+  executor that hit its quota recently (:func:`quota_cooldown`) sits out with
+  every executor of its :func:`quota_family`.
 
 :func:`free_failures` counts the free-executor failures on one piece, which is
 the signal the coordinator uses to stop retrying free executors and escalate.
@@ -21,6 +22,7 @@ the signal the coordinator uses to stop retrying free executors and escalate.
 from __future__ import annotations
 
 import random
+import re
 import statistics
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -437,14 +439,15 @@ def pick(
     tried in ``prefs.strong_order``; with neither pool populated there is no
     choice.
 
-    Executors in ``cooling`` (see :func:`quota_cooldown`) are left out like
-    excluded ones, and the reason ends with ``; skipped for quota: <ids>``.
+    Executors whose :func:`quota_family` matches one in ``cooling`` (see
+    :func:`quota_cooldown`) are left out like excluded ones, and the reason
+    ends with ``; skipped for quota: <ids>``.
     """
+    families = {quota_family(executor_id) for executor_id in cooling or ()}
     skipped = sorted(
         executor.id
         for executor in candidates
-        if cooling
-        and executor.id in cooling
+        if quota_family(executor.id) in families
         and executor.id not in exclude
         and executor.cost != "forbidden"
     )
@@ -512,6 +515,26 @@ def _pick(
         return chosen, f"escalated: no free executor available ({chosen.id})"
 
     return None, "no executor available"
+
+
+#: Trailing effort suffix of a model id, dropped by :func:`quota_family`.
+_EFFORT_SUFFIX = re.compile(r"-(minimal|low|medium|high|xhigh|max)$")
+
+
+def quota_family(executor_id: str) -> str:
+    """The group of executors that share one quota with ``executor_id``.
+
+    The model's trailing effort suffix (``-minimal`` ... ``-max``) is dropped,
+    since every effort of a model draws on the same quota. Antigravity shares
+    its quota across a whole vendor, so there the family is
+    ``antigravity:<model up to the first '-'>`` (``antigravity:claude``,
+    ``antigravity:gemini``); any other tool keeps ``<tool>:<model>``.
+    """
+    tool, _, model = executor_id.partition(":")
+    model = _EFFORT_SUFFIX.sub("", model)
+    if tool == "antigravity":
+        model = model.split("-", 1)[0]
+    return f"{tool}:{model}"
 
 
 def quota_cooldown(

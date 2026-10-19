@@ -25,6 +25,7 @@ from crew_chief.scoring import (
     grade,
     pick,
     quota_cooldown,
+    quota_family,
     render_scoreboard,
 )
 from crew_chief.tools import Executor
@@ -677,6 +678,7 @@ def test_free_failures_counts_free_exec_attempts_that_did_not_succeed(tmp_path):
     assert free_failures(job, number) == 2
 
 
+
 def test_free_failures_counts_no_change_attempts(tmp_path):
     job, number = _job_with_piece(
         tmp_path,
@@ -915,6 +917,57 @@ def test_pick_with_everything_cooling_has_no_executor():
     assert chosen is None
     assert reason.startswith("no executor available")
     assert "skipped for quota: opencode:flash" in reason
+
+
+
+@pytest.mark.parametrize(
+    "executor_id, family",
+    [
+        ("antigravity:claude-opus-5-5-high", "antigravity:claude"),
+        ("antigravity:claude-sonnet-5", "antigravity:claude"),
+        ("antigravity:gemini-3-pro-low", "antigravity:gemini"),
+        ("antigravity:gpt-oss-120b-medium", "antigravity:gpt"),
+        ("antigravity:opus", "antigravity:opus"),
+        ("opencode:x-free", "opencode:x-free"),
+        ("codex:gpt-5.5-xhigh", "codex:gpt-5.5"),
+        ("claude:opus-max", "claude:opus"),
+        ("ghost:astra-minimal", "ghost:astra"),
+        ("opencode:deepseek-flash", "opencode:deepseek-flash"),
+    ],
+)
+def test_quota_family(executor_id, family):
+    assert quota_family(executor_id) == family
+
+
+def test_pick_skips_the_whole_antigravity_family_in_quota():
+    high = _ex("antigravity:claude-opus-5-5-high")
+    medium = _ex("antigravity:claude-opus-5-5-medium")
+    sonnet = _ex("antigravity:claude-sonnet-5")
+    gemini = _ex("antigravity:gemini-3-pro-high")
+
+    chosen, reason = pick(
+        [high, medium, sonnet, gemini], {}, "code", "medium", _prefs(), set(),
+        _Rng(0.9), cooling={"antigravity:claude-opus-5-5-high"},
+    )
+
+    assert chosen is gemini
+    assert reason.endswith(
+        "skipped for quota: antigravity:claude-opus-5-5-high, "
+        "antigravity:claude-opus-5-5-medium, antigravity:claude-sonnet-5"
+    )
+
+
+def test_pick_quota_on_one_opencode_model_spares_the_others():
+    x = _ex("opencode:x-free")
+    y = _ex("opencode:y-free")
+
+    chosen, reason = pick(
+        [x, y], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+        cooling={"opencode:x-free"},
+    )
+
+    assert chosen is y
+    assert reason.endswith("skipped for quota: opencode:x-free")
 
 
 def _quota_attempt(executor: str, ended_min_ago: float, status: str = "quota"):
