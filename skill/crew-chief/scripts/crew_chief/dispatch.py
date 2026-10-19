@@ -22,6 +22,14 @@ the CLI reported, or a characters / 4 estimate flagged ``tokens_estimated``.
 A review is the same run without a worktree of its own: it uses the
 ``review_target`` it was given, commits nothing and removes its brief file
 afterwards.
+
+An exec attempt starts from ``HEAD``, except a correction: when the piece's
+last ``ok`` exec attempt drew a correction after it started, the new worktree
+starts from that attempt's branch, so the executor finds the earlier work and
+the brief only has to describe the adjustment. ``base`` names the starting
+point explicitly (an attempt number of the piece or a branch) and ``fresh``
+forces ``HEAD``; the attempt records its ``base`` (``None`` for ``HEAD``) and
+its diffstat is measured against that starting point.
 """
 
 from __future__ import annotations
@@ -50,6 +58,7 @@ from .worktree import (
     commit_worktree,
     create_worktree,
     diffstat,
+    branch_exists,
     head_commit,
     next_free_attempt,
     outside_writes,
@@ -98,6 +107,8 @@ def dispatch(
     effort: str | None = None,
     timeout_s: int | None = None,
     review_target: Path | None = None,
+    base: str | None = None,
+    fresh: bool = False,
 ) -> dict:
     """Run one attempt, record it in the job and return the attempt dict.
 
@@ -110,18 +121,27 @@ def dispatch(
     cleanly without changing the worktree), ``failed``, ``timeout``,
     ``quota``, ``outside_write`` or ``brief_refused``.
 
-    Precondition: ``piece`` must exist in the job; otherwise ValueError is
-    raised and nothing is recorded.
+    An exec attempt starts from what :func:`resolve_base` returns for
+    ``base`` and ``fresh``; a review takes neither.
+
+    Precondition: ``piece`` must exist in the job and ``base`` must name an
+    existing branch; otherwise ValueError is raised and nothing is recorded.
     """
     project = Path(project)
     if role == "review" and review_target is None:
         raise ValueError("role 'review' requires review_target")
+    if role == "review" and (base or fresh):
+        raise ValueError("a review runs in its target: base and fresh are for exec")
 
-    number = update_job(
-        project,
-        job_id,
-        lambda job: _reserve_attempt(job, piece, project, role == "exec"),
-    )
+    def reserve(job: dict) -> tuple[int, dict | None]:
+        start_from = (
+            resolve_base(job, piece, project, base, fresh)
+            if role == "exec"
+            else None
+        )
+        return _reserve_attempt(job, piece, project, role == "exec"), start_from
+
+    number, start_from = update_job(project, job_id, reserve)
     started = datetime.now(timezone.utc)
     start = time.monotonic()
 
@@ -141,6 +161,7 @@ def dispatch(
         "outside_writes": [],
         "branch": None,
         "worktree": None,
+        "base": None,
         "steps": None,
         "tokens_in": None,
         "tokens_out": None,
@@ -169,11 +190,18 @@ def dispatch(
         worktree = Path(review_target)
     else:
         try:
-            worktree, branch = create_worktree(project, job_id, piece, number)
+            worktree, branch = create_worktree(
+                project,
+                job_id,
+                piece,
+                number,
+                start=start_from["branch"] if start_from else "HEAD",
+            )
         except RuntimeError as exc:
             return finish("failed", f"cannot create worktree: {exc}")
         attempt["branch"] = branch
         attempt["worktree"] = str(worktree)
+        attempt["base"] = start_from
 
     brief_file = worktree / BRIEF_FILE
     output_file = worktree / OUTPUT_FILE
@@ -250,7 +278,9 @@ def dispatch(
     changed = True
     if role == "exec":
         try:
-            rows, destructive = diffstat(worktree)
+            # Against the starting point, so a correction counts only the
+            # adjustment and work the executor committed itself still counts.
+            rows, destructive = diffstat(worktree, start_head)
             rows = [row for row in rows if row["file"] not in EXCLUDED_FILES]
             attempt["diffstat"] = rows
             attempt["destructive_suspect"] = destructive
@@ -267,6 +297,102 @@ def dispatch(
     return finish(
         _status(timed_out, writes, proc.returncode, stderr, text, changed)
     )
+
+
+def resolve_base(
+    job: dict,
+    piece: int,
+    project: Path,
+    base: str | None = None,
+    fresh: bool = False,
+) -> dict | None:
+    """Where a new exec attempt of ``piece`` starts: ``{"attempt", "branch"}``.
+
+    ``None`` means ``HEAD``. ``fresh`` always gives ``None``. ``base`` is an
+    attempt number of the piece (digits) or a branch name; ``attempt`` is
+    ``None`` for a branch no exec attempt of the piece owns. Without either,
+    the piece's last ``ok`` exec attempt is the start when a correction was
+    recorded after that attempt started and its branch still exists (an
+    accepted or discarded branch is gone, and ``HEAD`` then holds whatever
+    landed). Raises :class:`ValueError` for ``base`` together with ``fresh``,
+    an attempt number the piece does not have, or a branch that does not
+    exist.
+    """
+    if base and fresh:
+        raise ValueError("base and fresh exclude each other (fresh starts from HEAD)")
+    if fresh:
+        return None
+    entry = _piece_entry(job, piece)
+    attempts = [
+        attempt
+        for attempt in entry.get("attempts") or []
+        if isinstance(attempt, dict) and attempt.get("role") == "exec"
+    ]
+
+    if base:
+        if base.isdigit():
+            owner = next(
+                (
+                    attempt
+                    for attempt in attempts
+                    if attempt.get("n") == int(base) and attempt.get("branch")
+                ),
+                None,
+            )
+            if owner is None:
+                raise ValueError(
+                    f"piece {piece} has no exec attempt {base} with a branch"
+                )
+            branch = owner["branch"]
+        else:
+            branch = base
+            owner = next(
+                (attempt for attempt in attempts if attempt.get("branch") == branch),
+                None,
+            )
+        if not branch_exists(project, branch):
+            raise ValueError(
+                f"base branch {branch!r} does not exist "
+                "(accepted or discarded already?); use --fresh to start from HEAD"
+            )
+        return {"attempt": owner.get("n") if owner else None, "branch": branch}
+
+    last_ok = next(
+        (attempt for attempt in reversed(attempts) if attempt.get("status") == "ok"),
+        None,
+    )
+    if last_ok is None or not last_ok.get("branch"):
+        return None
+    started = _parse_iso(last_ok.get("started"))
+    if started is None:
+        return None
+    corrected = any(
+        (when := _parse_iso(correction.get("at"))) is not None and when > started
+        for correction in entry.get("corrections") or []
+        if isinstance(correction, dict)
+    )
+    if not corrected or not branch_exists(project, last_ok["branch"]):
+        return None
+    return {"attempt": last_ok.get("n"), "branch": last_ok["branch"]}
+
+
+def _piece_entry(job: dict, piece: int) -> dict:
+    """The piece numbered ``piece``; :class:`ValueError` when it is absent."""
+    for entry in job.get("pieces") or []:
+        if entry.get("n") == piece:
+            return entry
+    raise ValueError(f"job {job.get('id')!r} has no piece {piece}")
+
+
+def _parse_iso(text: object) -> datetime | None:
+    """An ISO 8601 timestamp as an aware datetime (UTC when naive), or ``None``."""
+    if not isinstance(text, str):
+        return None
+    try:
+        when = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
 
 
 def _reserve_attempt(

@@ -263,6 +263,22 @@ def test_render_markdown_shows_corrections_and_escalations(tmp_path):
     assert "codex:g" in md
 
 
+def test_render_markdown_names_the_base_of_a_correction(tmp_path):
+    job = _new_job(tmp_path)
+    piece = add_piece(job, "A", "code", "low")
+    add_attempt(job, piece, {"executor": "beam:m", "role": "exec", "status": "ok",
+                             "branch": "crew/j-1-1", "base": None})
+    add_attempt(job, piece, {"executor": "minimax:m", "role": "exec",
+                             "status": "ok", "branch": "crew/j-1-2",
+                             "base": {"attempt": 1, "branch": "crew/j-1-1"}})
+
+    md = render_markdown(job)
+
+    first, second = [line for line in md.splitlines() if "- attempt " in line]
+    assert "from `" not in first
+    assert "from `crew/j-1-1` (attempt 1)" in second
+
+
 @pytest.mark.parametrize(
     "work_type, commit_type",
     [

@@ -686,3 +686,166 @@ def test_silent_failure_keeps_stderr_in_the_note(git_repo, fake_bin):
 
     assert attempt["status"] == "failed"
     assert "boom: no model" in attempt["note"]
+
+
+# --- corrections start from the earlier work -------------------------------
+
+#: First attempt: writes a 40-line ``page.py``.
+_FIRST_WORK = (
+    "from pathlib import Path\n"
+    "Path('page.py').write_text(''.join(f'line {i}\\n' for i in range(40)),"
+    " encoding='utf-8')\n"
+    "print('page written')\n"
+)
+
+#: Correction: appends one line to ``page.py`` (creating it when missing).
+_ADJUSTMENT = (
+    "from pathlib import Path\n"
+    "page = Path('page.py')\n"
+    "text = page.read_text(encoding='utf-8') if page.exists() else ''\n"
+    "page.write_text(text + 'justify-center\\n', encoding='utf-8')\n"
+    "print('adjusted')\n"
+)
+
+
+def _correct(repo, job_id: str, reason: str = "add justify-center") -> None:
+    records.update_job(
+        repo, job_id, lambda job: records.add_correction(job, 1, reason, "stub:m")
+    )
+
+
+def test_correction_starts_from_the_last_ok_attempt(git_repo, fake_bin):
+    job = _seed_job(git_repo)
+    fake_bin("stub", _FIRST_WORK)
+    first = dispatch(git_repo, job["id"], 1, _executor(), "page\n", _prefs())
+    assert first["status"] == "ok"
+    _correct(git_repo, job["id"])
+
+    fake_bin("stub", _ADJUSTMENT)
+    second = dispatch(
+        git_repo, job["id"], 1, _executor(), "add justify-center\n", _prefs()
+    )
+
+    assert second["status"] == "ok"
+    assert second["base"] == {"attempt": first["n"], "branch": first["branch"]}
+    page = (Path(second["worktree"]) / "page.py").read_text(encoding="utf-8")
+    assert page.startswith("line 0\n")
+    assert page.endswith("line 39\njustify-center\n")
+    assert second["diffstat"] == [{"file": "page.py", "added": 1, "deleted": 0}]
+    assert second["destructive_suspect"] == []
+    assert _stored_attempt(git_repo, job["id"], 1, 1)["base"] == second["base"]
+
+
+def test_fresh_correction_starts_from_head(git_repo, fake_bin):
+    job = _seed_job(git_repo)
+    fake_bin("stub", _FIRST_WORK)
+    dispatch(git_repo, job["id"], 1, _executor(), "page\n", _prefs())
+    _correct(git_repo, job["id"])
+
+    fake_bin("stub", _ADJUSTMENT)
+    second = dispatch(
+        git_repo, job["id"], 1, _executor(), "redo\n", _prefs(), fresh=True
+    )
+
+    assert second["status"] == "ok"
+    assert second["base"] is None
+    page = (Path(second["worktree"]) / "page.py").read_text(encoding="utf-8")
+    assert page == "justify-center\n"
+
+
+def test_new_attempt_without_correction_starts_from_head(git_repo, fake_bin):
+    job = _seed_job(git_repo)
+    fake_bin("stub", _FIRST_WORK)
+    dispatch(git_repo, job["id"], 1, _executor(), "page\n", _prefs())
+
+    fake_bin("stub", _ADJUSTMENT)
+    second = dispatch(git_repo, job["id"], 1, _executor(), "again\n", _prefs())
+
+    assert second["base"] is None
+    page = (Path(second["worktree"]) / "page.py").read_text(encoding="utf-8")
+    assert page == "justify-center\n"
+
+
+def test_correction_recorded_before_the_ok_attempt_does_not_count(
+    git_repo, fake_bin
+):
+    job = _seed_job(git_repo)
+    _correct(git_repo, job["id"], "an older correction")
+    fake_bin("stub", _FIRST_WORK)
+    dispatch(git_repo, job["id"], 1, _executor(), "page\n", _prefs())
+
+    fake_bin("stub", _ADJUSTMENT)
+    second = dispatch(git_repo, job["id"], 1, _executor(), "again\n", _prefs())
+
+    assert second["base"] is None
+
+
+def test_correction_after_the_base_branch_is_gone_starts_from_head(
+    git_repo, fake_bin
+):
+    job = _seed_job(git_repo)
+    fake_bin("stub", _FIRST_WORK)
+    first = dispatch(git_repo, job["id"], 1, _executor(), "page\n", _prefs())
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", first["worktree"]],
+        cwd=git_repo, check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "branch", "-D", first["branch"]],
+        cwd=git_repo, check=True, capture_output=True,
+    )
+    _correct(git_repo, job["id"])
+
+    fake_bin("stub", _ADJUSTMENT)
+    second = dispatch(git_repo, job["id"], 1, _executor(), "again\n", _prefs())
+
+    assert second["status"] == "ok"
+    assert second["base"] is None
+
+
+def test_explicit_base_by_attempt_number_and_by_branch(git_repo, fake_bin):
+    job = _seed_job(git_repo)
+    fake_bin("stub", _FIRST_WORK)
+    first = dispatch(git_repo, job["id"], 1, _executor(), "page\n", _prefs())
+
+    fake_bin("stub", _ADJUSTMENT)
+    by_number = dispatch(
+        git_repo, job["id"], 1, _executor(), "adjust\n", _prefs(),
+        base=str(first["n"]),
+    )
+    by_branch = dispatch(
+        git_repo, job["id"], 1, _executor(), "adjust\n", _prefs(),
+        base=first["branch"],
+    )
+
+    expected = {"attempt": first["n"], "branch": first["branch"]}
+    assert by_number["base"] == expected
+    assert by_branch["base"] == expected
+    for attempt in (by_number, by_branch):
+        assert attempt["diffstat"] == [
+            {"file": "page.py", "added": 1, "deleted": 0}
+        ]
+
+
+def test_unknown_base_is_refused_before_anything_runs(git_repo, fake_bin):
+    fake_bin("stub", "print('must not run')\n")
+    job = _seed_job(git_repo)
+
+    with pytest.raises(ValueError, match="no exec attempt 7"):
+        dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs(), base="7")
+    with pytest.raises(ValueError, match="crew/nope"):
+        dispatch(
+            git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+            base="crew/nope",
+        )
+    with pytest.raises(ValueError, match="fresh"):
+        dispatch(
+            git_repo, job["id"], 1, _executor(), "go\n", _prefs(),
+            base="crew/nope", fresh=True,
+        )
+
+    stored = json.loads(
+        (records.jobs_dir(git_repo) / f"{job['id']}.json").read_text("utf-8")
+    )
+    assert stored["pieces"][0]["attempts"] == []
+    assert not (git_repo.parent / f"{git_repo.name}.crew").exists()

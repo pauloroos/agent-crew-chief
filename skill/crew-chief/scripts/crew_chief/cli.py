@@ -125,6 +125,18 @@ def _tokens_text(attempt: dict) -> str:
     return f"{total} (in {attempt['tokens_in']} / out {attempt['tokens_out']})"
 
 
+def _base_text(attempt: dict) -> str:
+    """``crew/... (attempt 1)``, a bare branch, ``HEAD`` or ``-`` for a review."""
+    if attempt.get("role") != "exec":
+        return "-"
+    base = attempt.get("base")
+    if not base:
+        return "HEAD"
+    if base.get("attempt") is None:
+        return str(base.get("branch"))
+    return f"{base.get('branch')} (attempt {base['attempt']})"
+
+
 def _last_ok_exec_attempt(piece: dict) -> dict | None:
     """The piece's last ``exec`` attempt with status ``ok``, or ``None``."""
     for attempt in reversed(piece.get("attempts") or []):
@@ -359,6 +371,8 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
     project = _project(args)
     if args.review and not args.target:
         raise ValueError("--review requires --target")
+    if args.review and (args.base or args.fresh):
+        raise ValueError("--base and --fresh are for exec attempts, not --review")
 
     prefs = load_prefs(project)
     found = discover_full(prefs)
@@ -383,6 +397,8 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         review_target=(
             Path(args.target).expanduser().resolve() if args.target else None
         ),
+        base=args.base,
+        fresh=args.fresh,
     )
 
     status = attempt["status"]
@@ -390,6 +406,7 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         f"status: {status}",
         f"branch: {attempt['branch'] or '-'}",
         f"worktree: {attempt['worktree'] or '-'}",
+        f"base: {_base_text(attempt)}",
         "destructive_suspect: "
         + (", ".join(attempt["destructive_suspect"]) or "-"),
         "outside_writes: " + (", ".join(attempt["outside_writes"]) or "-"),
@@ -401,6 +418,7 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         "status": status,
         "branch": attempt["branch"],
         "worktree": attempt["worktree"],
+        "base": attempt.get("base"),
         "destructive_suspect": attempt["destructive_suspect"],
         "outside_writes": attempt["outside_writes"],
         "duration_s": attempt["duration_s"],
@@ -616,6 +634,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dispatch_parser.add_argument(
         "--target", default=None, help="worktree a review must run in"
+    )
+    start = dispatch_parser.add_mutually_exclusive_group()
+    start.add_argument(
+        "--base",
+        default=None,
+        metavar="N|BRANCH",
+        help="start the worktree from this attempt number of the piece or "
+        "this branch (default: HEAD, or the last ok attempt once a correction "
+        "was recorded after it)",
+    )
+    start.add_argument(
+        "--fresh",
+        action="store_true",
+        help="start the worktree from HEAD even after a correction",
     )
     dispatch_parser.add_argument("--effort", default=None, help="effort/reasoning")
     dispatch_parser.add_argument(

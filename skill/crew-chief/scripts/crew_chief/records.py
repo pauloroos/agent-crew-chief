@@ -493,6 +493,12 @@ def _attempt_line(index: int, attempt: dict) -> str:
             parts.append(f"{attempt['tokens_total']} tokens")
     if attempt.get("branch"):
         parts.append(f"branch `{attempt['branch']}`")
+    base = attempt.get("base")
+    if isinstance(base, dict) and base.get("branch"):
+        start = f"from `{base['branch']}`"
+        if base.get("attempt") is not None:
+            start += f" (attempt {base['attempt']})"
+        parts.append(start)
     if attempt.get("model_mismatch"):
         parts.append("model mismatch")
     return f"- attempt {index}: " + ", ".join(parts)

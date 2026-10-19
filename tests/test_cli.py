@@ -1006,6 +1006,89 @@ def test_dispatch_reports_duration_steps_and_tokens(
     assert isinstance(payload["duration_s"], float)
 
 
+#: Correction stub: appends one line to ``out.py`` (creating it when missing).
+_ADJUST_STUB = (
+    "from pathlib import Path\n"
+    "out = Path('out.py')\n"
+    "text = out.read_text(encoding='utf-8') if out.exists() else ''\n"
+    "out.write_text(text + 'y = 2\\n', encoding='utf-8')\n"
+    "print('adjusted')\n"
+)
+
+
+def test_correction_cycle_builds_on_the_earlier_attempt(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", _STUB)
+    _only_bins(monkeypatch, {"stub"})
+    brief = _write(repo.parent / "brief.md", "Create out.py.\n")
+    fix = _write(repo.parent / "fix.md", "Add y = 2 to out.py.\n")
+    job = records.new_job(repo, "Correct", "do it", True, "parts")
+    records.add_piece(job, "Bit", "code", "low")
+    records.save_job(repo, job)
+    dispatch_argv = ["dispatch", "--project", str(repo), "--job", job["id"],
+                     "--piece", "1", "--executor", "stub:m"]
+
+    assert main([*dispatch_argv, "--brief-file", str(brief)]) == 0
+    first = capsys.readouterr().out
+    assert "base: HEAD" in first
+    first_branch = _stored_job(repo, job["id"])["pieces"][0]["attempts"][0][
+        "branch"
+    ]
+
+    assert main(["correction", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--reason", "missing y",
+                 "--executor", "stub:m"]) == 0
+    capsys.readouterr()
+
+    fake_bin("stub", _ADJUST_STUB)
+    assert main([*dispatch_argv, "--brief-file", str(fix), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["base"] == {"attempt": 1, "branch": first_branch}
+
+    assert main(["accept", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    capsys.readouterr()
+    assert (repo / "out.py").read_text(encoding="utf-8") == "x = 1\ny = 2\n"
+
+
+def test_dispatch_fresh_and_base_options(git_repo, fake_bin, monkeypatch, capsys):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", _STUB)
+    _only_bins(monkeypatch, {"stub"})
+    brief = _write(repo.parent / "brief.md", "Create out.py.\n")
+    job = records.new_job(repo, "Options", "do it", True, "parts")
+    records.add_piece(job, "Bit", "code", "low")
+    records.save_job(repo, job)
+    argv = ["dispatch", "--project", str(repo), "--job", job["id"],
+            "--piece", "1", "--executor", "stub:m", "--brief-file", str(brief)]
+
+    assert main(argv) == 0
+    capsys.readouterr()
+    records.update_job(
+        repo, job["id"], lambda j: records.add_correction(j, 1, "fix", "stub:m")
+    )
+    fake_bin("stub", _ADJUST_STUB)
+
+    assert main([*argv, "--fresh"]) == 0
+    assert "base: HEAD" in capsys.readouterr().out
+
+    assert main([*argv, "--base", "1"]) == 0
+    out = capsys.readouterr().out
+    assert f"base: crew/{job['id']}-1-1 (attempt 1)" in out
+
+    assert main([*argv, "--base", "9"]) == 2
+    assert "no exec attempt 9" in capsys.readouterr().err
+
+    target = _write(repo.parent / "target.txt", "")
+    assert main([*argv, "--review", "--target", str(target.parent),
+                 "--fresh"]) == 2
+    assert "exec" in capsys.readouterr().err
+
+
 def test_entry_script_writes_no_bytecode(tmp_path):
     # Running the CLI must not leave __pycache__ folders in the project.
     import shutil
