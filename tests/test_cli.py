@@ -723,3 +723,31 @@ def test_pick_skips_an_executor_that_hit_quota_in_another_job(
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].strip() == "strong:s"
     assert "skipped for quota: freebie:m" in lines[1]
+
+
+def test_dispatch_reports_duration_steps_and_tokens(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", _STUB)
+    _only_bins(monkeypatch, {"stub"})
+    brief = _write(repo.parent / "brief.md", "b" * 40)
+    job = records.new_job(repo, "Metrics", "do it", True, "parts")
+    records.add_piece(job, "Bit", "code", "low")
+    records.save_job(repo, job)
+    argv = ["dispatch", "--project", str(repo), "--job", job["id"],
+            "--piece", "1", "--executor", "stub:m", "--brief-file", str(brief)]
+
+    assert main(argv) == 0
+    out = capsys.readouterr().out
+    assert "steps: -" in out
+    assert "tokens: ~12 (estimated)" in out
+    assert "duration: " in out
+
+    assert main([*argv, "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["steps"] is None
+    assert payload["tokens_total"] == 12
+    assert payload["tokens_estimated"] is True
+    assert isinstance(payload["duration_s"], float)

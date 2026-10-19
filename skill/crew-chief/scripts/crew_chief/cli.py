@@ -111,6 +111,18 @@ def _write_scoreboard(project: Path, text: str) -> Path:
     return path
 
 
+def _tokens_text(attempt: dict) -> str:
+    """``12345 (in 12000 / out 345)``, ``~120 (estimated)`` or ``-``."""
+    total = attempt.get("tokens_total")
+    if total is None:
+        return "-"
+    if attempt.get("tokens_estimated"):
+        return f"~{total} (estimated)"
+    if attempt.get("tokens_in") is None or attempt.get("tokens_out") is None:
+        return str(total)
+    return f"{total} (in {attempt['tokens_in']} / out {attempt['tokens_out']})"
+
+
 def _last_ok_exec_attempt(piece: dict) -> dict | None:
     """The piece's last ``exec`` attempt with status ``ok``, or ``None``."""
     for attempt in reversed(piece.get("attempts") or []):
@@ -314,6 +326,9 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         "destructive_suspect: "
         + (", ".join(attempt["destructive_suspect"]) or "-"),
         "outside_writes: " + (", ".join(attempt["outside_writes"]) or "-"),
+        f"duration: {attempt['duration_s']}s",
+        f"steps: {'-' if attempt['steps'] is None else attempt['steps']}",
+        f"tokens: {_tokens_text(attempt)}",
     ]
     payload = {
         "status": status,
@@ -321,6 +336,12 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         "worktree": attempt["worktree"],
         "destructive_suspect": attempt["destructive_suspect"],
         "outside_writes": attempt["outside_writes"],
+        "duration_s": attempt["duration_s"],
+        "steps": attempt["steps"],
+        "tokens_in": attempt["tokens_in"],
+        "tokens_out": attempt["tokens_out"],
+        "tokens_total": attempt["tokens_total"],
+        "tokens_estimated": attempt["tokens_estimated"],
     }
     _emit(args, "\n".join(lines), payload)
     return 0 if status == "ok" else 1
