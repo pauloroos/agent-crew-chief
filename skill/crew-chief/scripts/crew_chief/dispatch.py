@@ -4,8 +4,9 @@
 other modules together in a fixed order: a brief that leaks a secret is
 refused before anything is created; the executor CLI runs inside a throwaway
 worktree with a hard timeout and its process tree is killed when it overruns;
-the status then follows from the exit code, the quota patterns and the two
-containment snapshots taken around the run.
+the status then follows from the exit code, the quota patterns, the two
+containment snapshots taken around the run and, for an exec, whether the
+worktree changed at all (a clean exit that changed nothing is ``no_change``).
 
 The brief travels as a file (``.crew-chief-brief.md``) rather than on the
 command line, so long or accented text survives; the prompt names it, and the
@@ -45,9 +46,11 @@ from .tools import (
     wants_effort,
 )
 from .worktree import (
+    EXCLUDED_FILES,
     commit_worktree,
     create_worktree,
     diffstat,
+    head_commit,
     next_free_attempt,
     outside_writes,
     snapshot,
@@ -101,8 +104,9 @@ def dispatch(
     without a ``review_target`` raises :class:`ValueError`.
 
     The returned dict is also appended to ``piece`` of the job and the job is
-    saved, whatever the status: ``ok``, ``failed``, ``timeout``, ``quota``,
-    ``outside_write`` or ``brief_refused``.
+    saved, whatever the status: ``ok``, ``no_change`` (an exec that exited
+    cleanly without changing the worktree), ``failed``, ``timeout``,
+    ``quota``, ``outside_write`` or ``brief_refused``.
 
     Precondition: ``piece`` must exist in the job; otherwise ValueError is
     raised and nothing is recorded.
@@ -193,6 +197,7 @@ def dispatch(
         return finish("failed", f"missing env: {names}")
 
     ignore_home = prefs.ignore_home_entries
+    start_head = head_commit(worktree) if role == "exec" else None
     before = snapshot(project, worktree, ignore_home)
     try:
         proc = subprocess.Popen(
@@ -237,11 +242,14 @@ def dispatch(
             executor.model in reported or reported in executor.model
         )
 
+    changed = True
     if role == "exec":
         try:
             rows, destructive = diffstat(worktree)
+            rows = [row for row in rows if row["file"] not in EXCLUDED_FILES]
             attempt["diffstat"] = rows
             attempt["destructive_suspect"] = destructive
+            changed = bool(rows) or head_commit(worktree) != start_head
             commit_worktree(
                 worktree, f"crew: {job_id} piece {piece} attempt {number}"
             )
@@ -251,7 +259,9 @@ def dispatch(
     else:
         _remove_brief(role, brief_file)
 
-    return finish(_status(timed_out, writes, proc.returncode, stderr, text))
+    return finish(
+        _status(timed_out, writes, proc.returncode, stderr, text, changed)
+    )
 
 
 def _reserve_attempt(
@@ -310,14 +320,21 @@ def _status(
     returncode: int | None,
     stderr: str | None,
     text: str,
+    changed: bool = True,
 ) -> str:
-    """Status from the run's outcome: timeout and containment first."""
+    """Status from the run's outcome: timeout and containment first.
+
+    A clean exit that left the worktree untouched (``changed`` false, only
+    ever for an exec) is ``no_change``: the executor did not do the work.
+    """
     if timed_out:
         return "timeout"
     if writes:
         return "outside_write"
     if returncode != 0:
         return "quota" if _quota_hit(stderr, text) else "failed"
+    if not changed:
+        return "no_change"
     return "ok"
 
 

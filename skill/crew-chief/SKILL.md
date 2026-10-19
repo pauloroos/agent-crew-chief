@@ -97,9 +97,13 @@ Seven steps, in order.
    `status`, `branch`, `worktree`, `destructive_suspect`, `outside_writes`,
    `duration`, `steps` (agent turns, `-` when the tool does not say) and
    `tokens` (`~` and "estimated" when the tool reported none and the count is
-   characters / 4), and exits `0` only on `status: ok`. Any other status (`failed`, `timeout`,
-   `quota`, `outside_write`, `brief_refused`) is recorded in the job with the
-   executor's output as a note - read it before you retry. Give long work a
+   characters / 4), and exits `0` only on `status: ok`. Any other status
+   (`no_change`, `failed`, `timeout`, `quota`, `outside_write`,
+   `brief_refused`) is recorded in the job with the executor's output as a
+   note - read it before you retry. `no_change` means the executor exited
+   cleanly but left the worktree exactly as it found it (the brief and output
+   files do not count); it is a failure like the others. A review never
+   changes files, so it stays `ok`. Give long work a
    smaller `--timeout <seconds>` only when you know the piece is short; the
    default comes from `dispatch_timeout_s` (900 s). Pieces that do not depend
    on each other can be dispatched in parallel (separate processes): every

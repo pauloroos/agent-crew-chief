@@ -38,6 +38,14 @@ def home_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return home
 
 
+#: Stub prelude that changes the worktree, so a clean exit is ``ok`` and not
+#: ``no_change``.
+_WRITES = (
+    "from pathlib import Path\n"
+    "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+)
+
+
 def _prefs(**overrides) -> Prefs:
     values = dict(
         tools=[],
@@ -160,7 +168,7 @@ def test_successful_attempt_records_diffstat_and_branch(git_repo, fake_bin):
 def test_executor_stdin_is_closed(git_repo, fake_bin, monkeypatch):
     # An executor left waiting on the coordinator's stdin hangs until the
     # timeout (`opencode run` does this in the background).
-    fake_bin("stub", "print('done')\n")
+    fake_bin("stub", _WRITES + "print('done')\n")
     job = _seed_job(git_repo)
     seen = {}
     real_popen = subprocess.Popen
@@ -277,8 +285,7 @@ def test_accented_output_roundtrip(git_repo, fake_bin):
 def test_output_file_used_when_stdout_is_empty(git_repo, fake_bin):
     fake_bin(
         "stub",
-        "import sys\n"
-        "from pathlib import Path\n"
+        _WRITES + "import sys\n"
         "Path(sys.argv[1]).write_text('answer from file', encoding='utf-8')\n",
     )
     job = _seed_job(git_repo)
@@ -295,8 +302,7 @@ def test_output_file_used_when_stdout_is_empty(git_repo, fake_bin):
 def test_whitespace_stdout_beats_output_file(git_repo, fake_bin):
     fake_bin(
         "stub",
-        "import sys\n"
-        "from pathlib import Path\n"
+        _WRITES + "import sys\n"
         "Path(sys.argv[1]).write_text('answer from file', encoding='utf-8')\n"
         "sys.stdout.buffer.write(b'\\n')\n"
         "sys.stdout.buffer.flush()\n",
@@ -385,6 +391,7 @@ def test_home_entries_from_preferences_are_not_outside_write(
         "home = Path(os.environ['USERPROFILE' if os.name == 'nt' else 'HOME'])\n"
         "(home / '.claude.json').write_text('{}', encoding='utf-8')\n"
         "(home / '.my-agent').mkdir()\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
         "print('ok')\n",
     )
     job = _seed_job(git_repo)
@@ -410,6 +417,7 @@ def test_parallel_attempts_do_not_flag_each_other(git_repo, fake_bin):
         "from pathlib import Path\n"
         f"Path(r'{other}', 'parallel.py').write_text('x', encoding='utf-8')\n"
         f"Path(r'{other.parent}', '{job['id']}-2-1').mkdir()\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
         "print('ok')\n",
     )
 
@@ -451,7 +459,7 @@ def test_opencode_attempt_records_steps_tokens_and_readable_note(
     lines = "".join(json.dumps(event) + "\n" for event in events)
     fake_bin(
         "ocstub",
-        "import sys\n"
+        _WRITES + "import sys\n"
         "assert sys.argv[1:5] == ['run', '--standalone', '--format', 'json'], sys.argv\n"
         f"sys.stdout.write({lines!r})\n",
     )
@@ -489,7 +497,7 @@ def test_refused_brief_has_no_metrics(git_repo, fake_bin):
 
 
 def test_leftover_worktree_from_a_lost_attempt_is_skipped(git_repo, fake_bin):
-    fake_bin("stub", "print('ok')\n")
+    fake_bin("stub", _WRITES + "print('ok')\n")
     job = _seed_job(git_repo)
     create_worktree(git_repo, job["id"], 1, 1)  # attempt 1 lost from the JSON
 
@@ -583,3 +591,65 @@ def test_review_prompt_names_the_target_and_forbids_changes(git_repo, fake_bin):
     assert str(target.resolve() / ".crew-chief-brief.md") in note
     assert f"Work only inside {target.resolve()}." in note
     assert note.endswith("Do not modify any file; reply with your review.")
+
+
+# --- no change -------------------------------------------------------------
+
+
+def test_exec_that_changes_nothing_is_no_change(git_repo, fake_bin):
+    fake_bin("stub", "print('I could not find the brief')\n")
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "no_change"
+    assert attempt["diffstat"] == []
+    assert "could not find the brief" in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["status"] == "no_change"
+
+
+def test_coordinator_files_alone_are_no_change(git_repo, fake_bin):
+    fake_bin(
+        "stub",
+        "import sys\n"
+        "from pathlib import Path\n"
+        "Path(sys.argv[1]).write_text('answer from file', encoding='utf-8')\n",
+    )
+    job = _seed_job(git_repo)
+    tool = _tool()
+    tool["run_cmd"] = ["stub", "{output_file}", "{prompt}"]
+    executor = Executor(id="stub:m", tool=tool, model="m", cost="free", trains=False)
+
+    attempt = dispatch(git_repo, job["id"], 1, executor, "go\n", _prefs())
+
+    assert attempt["status"] == "no_change"
+
+
+def test_exec_that_commits_its_own_work_is_ok(git_repo, fake_bin):
+    fake_bin(
+        "stub",
+        "import subprocess\n"
+        "from pathlib import Path\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+        "subprocess.run(['git', 'add', 'out.py'], check=True)\n"
+        "subprocess.run(['git', 'commit', '-q', '-m', 'self'], check=True)\n"
+        "print('committed')\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "ok"
+
+
+def test_review_that_changes_nothing_stays_ok(git_repo, fake_bin):
+    fake_bin("stub", "print('looks fine')\n")
+    job = _seed_job(git_repo)
+    target, _branch = create_worktree(git_repo, job["id"], 1, 1)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "review it\n", _prefs(),
+        role="review", review_target=target,
+    )
+
+    assert attempt["status"] == "ok"

@@ -51,6 +51,7 @@ ROLES = ("exec", "review")
 #: Valid attempt statuses.
 STATUSES = (
     "ok",
+    "no_change",
     "failed",
     "timeout",
     "quota",

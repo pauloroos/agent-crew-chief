@@ -677,6 +677,18 @@ def test_free_failures_counts_free_exec_attempts_that_did_not_succeed(tmp_path):
     assert free_failures(job, number) == 2
 
 
+def test_free_failures_counts_no_change_attempts(tmp_path):
+    job, number = _job_with_piece(
+        tmp_path,
+        attempts=[
+            _attempt("opencode:a", status="no_change"),
+            _attempt("opencode:b", status="no_change"),
+        ],
+    )
+
+    assert free_failures(job, number) == 2
+
+
 def test_free_failures_counts_corrections_from_the_free_executor(tmp_path):
     job, number = _job_with_piece(
         tmp_path,

@@ -301,6 +301,11 @@ def diffstat(worktree: Path, base: str = "HEAD") -> tuple[list[dict], list[str]]
     return rows, destructive
 
 
+def head_commit(worktree: Path) -> str:
+    """The sha ``HEAD`` points at in ``worktree``."""
+    return _git(["rev-parse", "HEAD"], Path(worktree)).strip()
+
+
 def commit_worktree(worktree: Path, message: str) -> str | None:
     """Stage everything in the worktree and commit it.
 

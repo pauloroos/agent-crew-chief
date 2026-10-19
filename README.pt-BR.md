@@ -55,7 +55,7 @@ flowchart TB
 1. `job new`: o pedido é registrado palavra por palavra.
 2. `piece add`: ele é dividido em pedaços, cada um com tipo de trabalho e nível de risco.
 3. `pick`: o executor é escolhido. Os grátis vêm primeiro, ordenados pela nota com decaimento, e às vezes alguém ganha segunda chance. Empates são espalhados pelo job, e um modelo que acabou de bater cota fica de fora por um tempo.
-4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado, com duração, passos do agente e tokens. Peças independentes podem ser despachadas em paralelo.
+4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado, com duração, passos do agente e tokens. Uma tentativa que termina sem erro mas não muda nada fica `no_change`, que conta como falha, não como `ok`. Peças independentes podem ser despachadas em paralelo.
 5. `dispatch --review`: um modelo de outra família revisa o trabalho.
 6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito.
 7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue.

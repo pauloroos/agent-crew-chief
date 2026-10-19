@@ -218,6 +218,69 @@ def test_pick_escalates_after_two_free_failures(
     assert piece["picks"][-1]["pick"] == "strong:s"
 
 
+
+def test_pick_escalates_after_two_free_no_change_attempts(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _ESCALATION_PREFS)
+    fake_bin("freebie", "print('x')\n")
+    fake_bin("strong", "print('x')\n")
+    _only_bins(monkeypatch, {"freebie", "strong"})
+
+    job = records.new_job(repo, "Escalate", "do it", True, "two parts")
+    records.add_piece(job, "Hard bit", "code", "low")
+    for _ in range(2):
+        records.add_attempt(job, 1, {"executor": "freebie:m", "role": "exec",
+                                     "status": "no_change", "cost": "free"})
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "strong:s"
+    piece = _stored_job(repo, job["id"])["pieces"][0]
+    assert piece["escalations"][0]["reason"] == "2 free failures"
+
+
+def test_pick_excludes_an_executor_with_no_change_on_the_piece(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS.replace('models = ["m"]', 'models = ["m", "n"]'))
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+
+    job = records.new_job(repo, "Exclude", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+    records.add_attempt(job, 1, {"executor": "stub:m", "role": "exec",
+                                 "status": "no_change", "cost": "free"})
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "stub:n"
+
+
+def test_dispatch_with_no_change_exits_1_and_accept_refuses_it(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", "print('brief not found')\n")
+    _only_bins(monkeypatch, {"stub"})
+    brief = _write(repo / "brief.md", "Create out.py.\n")
+    job_id = _pick_job(repo)
+
+    assert main(["dispatch", "--project", str(repo), "--job", job_id,
+                 "--piece", "1", "--executor", "stub:m",
+                 "--brief-file", str(brief)]) == 1
+    assert "status: no_change" in capsys.readouterr().out
+
+    assert main(["accept", "--project", str(repo), "--job", job_id,
+                 "--piece", "1"]) == 1
+    assert "nothing to accept" in capsys.readouterr().out
+
+
 # --- errors ----------------------------------------------------------------
 
 

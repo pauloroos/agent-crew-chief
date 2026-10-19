@@ -55,7 +55,7 @@ flowchart TB
 1. `job new`: your request is recorded verbatim.
 2. `piece add`: it is split into pieces, each with a work type and a risk level.
 3. `pick`: an executor is chosen. Free models come first, ranked by decayed score, with an occasional second chance. Ties are spread over the job, and a model that just hit its quota sits out for a while.
-4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status, with its duration, agent steps and tokens. Independent pieces can be dispatched in parallel.
+4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status, with its duration, agent steps and tokens. An attempt that exits cleanly without changing anything is `no_change`, a failure, not `ok`. Independent pieces can be dispatched in parallel.
 5. `dispatch --review`: a different model family reviews the work.
 6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten.
 7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment.
