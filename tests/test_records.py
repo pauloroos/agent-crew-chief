@@ -459,6 +459,34 @@ def test_update_job_breaks_a_stale_lock(tmp_path):
     assert not lock.exists()
 
 
+def test_update_job_releases_a_lock_whose_removal_is_refused_once(
+    tmp_path, monkeypatch
+):
+    # On Windows an antivirus or indexer briefly opening the fresh lock file
+    # makes its removal fail; a lock left behind stalls every other process
+    # for the whole lock timeout.
+    job = _new_job(tmp_path)
+    project = tmp_path / "project"
+    lock = jobs_dir(project) / f"{job['id']}.lock"
+    real_unlink = Path.unlink
+    calls = {"n": 0}
+
+    def flaky_unlink(self, *args, **kwargs):
+        if self.suffix == ".lock":
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise PermissionError(13, "Access is denied")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+
+    update_job(project, job["id"], lambda current: current.update(title="x"))
+
+    assert not lock.exists()
+    assert calls["n"] == 3
+    assert load_job(project, job["id"])["title"] == "x"
+
+
 def test_write_atomic_retries_a_replace_refused_by_a_reader(tmp_path, monkeypatch):
     import crew_chief.records as records_module
 

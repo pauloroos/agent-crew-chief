@@ -695,23 +695,39 @@ sys.exit(main(sys.argv[3:]))
 
 _SLOW_STUB = (
     "import time\n"
+    "from pathlib import Path\n"
     "time.sleep(1)\n"
+    "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
     "print('done')\n"
 )
 
 
-def _run_parallel(bins: str, argvs: list[list[str]]) -> list[int]:
+def _run_parallel_outputs(
+    bins: str, argvs: list[list[str]]
+) -> list[tuple[int, str]]:
+    """Run each CLI call in its own process; ``(exit code, stdout+stderr)``."""
     import sys
 
     procs = [
         subprocess.Popen(
             [sys.executable, "-c", _DRIVER, str(_SCRIPTS_DIR), bins, *argv],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         for argv in argvs
     ]
-    return [proc.wait(timeout=300) for proc in procs]
+    results = []
+    for proc in procs:
+        output, _ = proc.communicate(timeout=300)
+        results.append((proc.returncode, output))
+    return results
+
+
+def _run_parallel(bins: str, argvs: list[list[str]]) -> list[int]:
+    return [code for code, _ in _run_parallel_outputs(bins, argvs)]
 
 
 def test_parallel_dispatches_of_one_piece_keep_every_attempt(
@@ -727,10 +743,14 @@ def test_parallel_dispatches_of_one_piece_keep_every_attempt(
 
     argv = ["dispatch", "--project", str(repo), "--job", job["id"],
             "--piece", "1", "--executor", "stub:m", "--brief-file", str(brief)]
-    _run_parallel("stub", [argv] * 4)
+    results = _run_parallel_outputs("stub", [argv] * 4)
 
+    # The children's output explains a failure that only shows under load.
+    report = "\n---\n".join(output for _, output in results)
+    assert [code for code, _ in results] == [0] * 4, report
     attempts = _stored_job(repo, job["id"])["pieces"][0]["attempts"]
-    assert len(attempts) == 4
+    assert len(attempts) == 4, report
+    assert {attempt["status"] for attempt in attempts} == {"ok"}, report
     branches = sorted(attempt["branch"] for attempt in attempts)
     assert branches == sorted(
         f"crew/{job['id']}-1-{number}" for number in range(1, 5)

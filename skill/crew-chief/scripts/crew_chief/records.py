@@ -268,8 +268,11 @@ def job_lock(
             # PermissionError: Windows refuses a file that is being deleted.
             age = _lock_age_s(lock)
             if age is not None and age > stale_s:
-                lock.unlink(missing_ok=True)
-                continue
+                try:
+                    lock.unlink(missing_ok=True)
+                    continue
+                except PermissionError:
+                    pass  # held open for a moment: wait and try again
             if time.monotonic() >= deadline:
                 raise JobLockTimeout(
                     f"{lock}: job {job_id!r} is locked by another crew-chief "
@@ -285,7 +288,8 @@ def job_lock(
     try:
         yield lock
     finally:
-        lock.unlink(missing_ok=True)
+        # An antivirus or indexer may hold the fresh file open for a moment.
+        _sharing_retry(lambda: lock.unlink(missing_ok=True))
 
 
 def update_job(
