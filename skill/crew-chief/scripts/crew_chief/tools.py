@@ -198,6 +198,15 @@ def parse_reported_model(tool: dict, stdout: str) -> str | None:
 _CODEX_TOKENS = re.compile(r"tokens used\s*:?\s*([\d][\d,.]*)", re.IGNORECASE)
 
 
+def _json_objects(text: str) -> list[dict]:
+    """The JSON objects in ``text``: the whole text if it is one, else its lines."""
+    try:
+        data = json.loads(text or "")
+    except json.JSONDecodeError:
+        return _json_lines(text)
+    return [data] if isinstance(data, dict) else []
+
+
 def _json_lines(text: str) -> list[dict]:
     """Every line of ``text`` that parses as a JSON object, in order."""
     events = []
@@ -339,10 +348,26 @@ def output_text(tool: dict, stdout: str) -> str:
     """The readable answer inside ``stdout``.
 
     ``opencode --format json`` prints events; their ``text`` parts are joined
-    with blank lines. Any other kind, or output with no text event, is
-    returned unchanged.
+    with blank lines. ``antigravity --output-format json`` prints one object
+    whose ``response`` (or, when empty, ``error``) is the answer; claude-code
+    stream/json output ends with a ``result`` event. Any other kind, or
+    output with no answer field, is returned unchanged.
     """
-    if tool.get("kind") != "opencode":
+    kind = tool.get("kind")
+    if kind == "antigravity":
+        for data in reversed(_json_objects(stdout)):
+            for key in ("response", "error"):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+        return stdout
+    if kind == "claude-code":
+        for data in reversed(_json_objects(stdout)):
+            value = data.get("result")
+            if data.get("type", "result") == "result" and isinstance(value, str):
+                return value
+        return stdout
+    if kind != "opencode":
         return stdout
     texts = []
     for event in _json_lines(stdout):

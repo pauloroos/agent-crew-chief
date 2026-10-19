@@ -339,3 +339,32 @@ def test_output_text_joins_opencode_text_parts():
     assert output_text({"kind": "opencode"}, _OPENCODE_JSON) == "Pronto: criei b.txt."
     assert output_text({"kind": "opencode"}, "plain") == "plain"
     assert output_text({"kind": "codex"}, '{"a": 1}') == '{"a": 1}'
+
+
+def test_output_text_takes_the_antigravity_response():
+    out = (
+        '{"conversation_id": "c1", "status": "OK", "response": "Item 1: CUMPRIDO",'
+        ' "error": "", "num_turns": 1, "usage": {"total_tokens": 10}}'
+    )
+    assert output_text({"kind": "antigravity"}, out) == "Item 1: CUMPRIDO"
+
+
+def test_output_text_antigravity_error_when_no_response():
+    out = '{"status": "ERROR", "response": "", "error": "Individual quota reached."}'
+    assert output_text({"kind": "antigravity"}, out) == "Individual quota reached."
+
+
+def test_output_text_pretty_printed_antigravity_json():
+    out = '{\n  "response": "ok, revisado",\n  "num_turns": 2\n}\n'
+    assert output_text({"kind": "antigravity"}, out) == "ok, revisado"
+
+
+def test_output_text_takes_the_claude_code_result_event():
+    out = (
+        '{"type": "system", "subtype": "init"}\n'
+        '{"type": "assistant", "message": {}}\n'
+        '{"type": "result", "result": "Revisão: tudo certo", "num_turns": 3}\n'
+    )
+    assert output_text({"kind": "claude-code"}, out) == "Revisão: tudo certo"
+    assert output_text({"kind": "claude-code"}, "plain answer") == "plain answer"
+
