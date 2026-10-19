@@ -16,7 +16,8 @@ operational failure: one ``error: ...`` line on stderr and exit 1.
 
 Every command that runs discovery also keeps ``docs/crew-chief/models-seen.json``
 up to date and reports the models that appeared, disappeared or changed cost:
-``discover`` always (on stdout, after the list), ``job new`` always (on
+``discover`` always (on stdout, after the list, before the closing
+``work types:`` lines of each tool), ``job new`` always (on
 stderr, so the job id stays alone on stdout), ``pick`` and ``dispatch`` only
 when the last check is ``model_check_hours`` old (on stderr). A failing check
 never fails the command.
@@ -32,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import records
-from .config import Prefs, PrefsError, load_prefs
+from .config import Prefs, PrefsError, load_prefs, tool_work_types
 from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
 from .models_seen import changes_payload, check_due, check_models, render_changes
@@ -132,6 +133,31 @@ def _last_ok_exec_attempt(piece: dict) -> dict | None:
     return None
 
 
+def _work_types_summary(prefs: Prefs, executors: list) -> dict[str, list[str]]:
+    """Effective work types of every tool that has an executor, in tool order."""
+    present = {executor.tool.get("name") for executor in executors}
+    return {
+        tool["name"]: list(tool_work_types(tool))
+        for tool in prefs.tools
+        if tool["name"] in present
+    }
+
+
+def _work_types_line(name: str, types: list[str], prefs: Prefs) -> str:
+    """One ``work types: <tool>: ...`` line of ``discover``."""
+    if tuple(types) == records.WORK_TYPES:
+        text = "all types"
+    elif tuple(types) == records.EXEC_TYPES:
+        text = f"exec only ({', '.join(types)})"
+    elif tuple(types) == records.THINK_TYPES:
+        text = f"think only ({', '.join(types)})"
+    else:
+        text = ", ".join(types)
+    if name in prefs.exec_first and set(types) & set(records.EXEC_TYPES):
+        text += ", first on execution work"
+    return f"work types: {name}: {text}"
+
+
 # --- commands --------------------------------------------------------------
 
 
@@ -148,6 +174,7 @@ def _cmd_discover(args: argparse.Namespace) -> int:
         for executor in executors
     ]
     lines.extend(f"skipped: {note}" for note in notes)
+    work_types = _work_types_summary(prefs, executors)
 
     payload = {
         "executors": [
@@ -162,9 +189,16 @@ def _cmd_discover(args: argparse.Namespace) -> int:
         ],
         "skipped": list(notes),
         "changes": changes_payload(changes),
+        "work_types": work_types,
+        "exec_first": list(prefs.exec_first),
     }
     text = "\n".join(lines) if lines else "no executors"
     text += "\n\n" + "\n".join(render_changes(changes))
+    if work_types:
+        text += "\n\n" + "\n".join(
+            _work_types_line(name, types, prefs)
+            for name, types in work_types.items()
+        )
     _emit(args, text, payload)
     return 0
 

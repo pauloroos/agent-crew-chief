@@ -550,6 +550,58 @@ def _seen_path(repo: Path) -> Path:
     return repo / "docs" / "crew-chief" / "models-seen.json"
 
 
+_WORK_TYPES_PREFS = """
+[[tools]]
+name = "opencode"
+kind = "generic"
+bin = "stub"
+models = ["a-free"]
+run_cmd = ["stub", "{prompt}"]
+
+[[tools]]
+name = "doer"
+kind = "generic"
+bin = "stub"
+models = ["d"]
+run_cmd = ["stub", "{prompt}"]
+work_types = ["code", "tests", "refactor", "docs", "data"]
+
+[[tools]]
+name = "writer"
+kind = "generic"
+bin = "stub"
+models = ["w"]
+run_cmd = ["stub", "{prompt}"]
+work_types = ["research", "docs"]
+
+[[models]]
+match = "*"
+cost = "free"
+"""
+
+
+def test_discover_ends_with_the_work_types_of_each_tool(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+    _write_prefs(repo, _WORK_TYPES_PREFS)
+
+    assert main(["discover", "--project", str(repo)]) == 0
+    lines = capsys.readouterr().out.rstrip().splitlines()
+    assert lines[-3:] == [
+        "work types: opencode: all types, first on execution work",
+        "work types: doer: exec only (code, tests, refactor, docs, data)",
+        "work types: writer: docs, research",
+    ]
+
+    assert main(["discover", "--project", str(repo), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["work_types"]["writer"] == ["docs", "research"]
+    assert payload["exec_first"] == ["opencode"]
+
+
 def test_discover_records_a_baseline_then_reports_changes(
     git_repo, fake_bin, monkeypatch, capsys
 ):
