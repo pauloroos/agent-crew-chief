@@ -275,3 +275,19 @@ def test_missing_project_exits_2_with_one_line(tmp_path):
     assert result.returncode == 2
     assert len(result.stderr.strip().splitlines()) == 1
     assert "nope" in result.stderr
+
+
+# --- snippet ---------------------------------------------------------------
+
+
+def test_installed_snippet_declares_precedence_with_superpowers(tmp_path):
+    project = _project(tmp_path)
+
+    result = _run(project)
+
+    assert result.returncode == 0, result.stderr
+    text = _read(project / "AGENTS.md")
+    assert (
+        "If the superpowers skills are also installed, use them to discuss and "
+        "design; use crew-chief to execute the plan."
+    ) in text

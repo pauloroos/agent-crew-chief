@@ -57,7 +57,8 @@ work on its own. A tool that was skipped never makes its models "gone", and a
 
 ## The job cycle
 
-Seven steps, in order.
+Seven steps, in order. For a project-size request that has a spec, follow
+**Spec-driven work** below, which uses the same steps.
 
 1. **Create the job.** Write the user's request verbatim to a UTF-8 file, then
    register it:
@@ -127,7 +128,7 @@ Seven steps, in order.
    `tokens` (`~` and "estimated" when the tool reported none and the count is
    characters / 4), and exits `0` only on `status: ok`. Any other status
    (`no_change`, `failed`, `timeout`, `quota`, `outside_write`,
-   `brief_refused`) is recorded in the job with the executor's output as a
+   `brief_refused`, and for spec pieces `proof_failed`) is recorded in the job with the executor's output as a
    note - read it before you retry. `no_change` means the executor exited
    cleanly but left the worktree exactly as it found it (the brief and output
    files do not count); it is a failure like the others. A review never
@@ -195,7 +196,9 @@ Seven steps, in order.
    ```
 
    `accept` merges the piece's last `ok` attempt into the current branch (after
-   a correction it already carries the earlier work); `discard` drops it.
+   a correction it already carries the earlier work); `discard` drops it. On a
+   spec piece `accept` also ticks the task `[X]` in `tasks.md` (see
+   **Spec-driven work**).
    `close` prints the commit message for the delivery and the issue comment;
    both credit the executor of the last `ok` attempt first and list every
    other graded executor with its score. When a piece was accepted and the work is
@@ -207,6 +210,166 @@ Seven steps, in order.
 
 `CC scoreboard --project .` regenerates and prints the scoreboard when the user
 asks how the executors are doing.
+
+## Spec-driven work
+
+Size the process to the request before you create anything:
+
+- **trivial** (a one-line answer, one small edit): no job, no spec. Do it.
+- **small** (a few pieces, and the request fits in a paragraph): only a job,
+  the seven steps above. Pieces without a spec task need no proof.
+- **project** (a feature with several requirements the user will want to trace
+  back to the code): a spec folder and the full cycle below.
+
+A project job keeps its spec in a spec-kit style folder (`specs/NNN-slug/` with
+`spec.md`, `plan.md`, `tasks.md`). crew-chief reads that format; it never
+creates `.specify/` and never edits `spec.md` or `plan.md`. Extra facts the
+executor needs live in a sidecar, `crew.toml`, next to `tasks.md`. If the
+superpowers skills are installed, use them to discuss and design the spec with
+the user; crew-chief starts when the plan exists.
+
+The cycle:
+
+1. **Spec folder.** Use the one the user already has (a spec-kit folder, or the
+   one `.specify/feature.json` points to), or create one:
+
+   ```bash
+   CC spec new --project . --title "CSV export"
+   ```
+
+   It prints the new folder (`specs/001-csv-export`), with short templates to
+   fill in. Write the requirements as `FR-001`, the user stories as `User Story
+   1` with `Given/When/Then` scenarios, and the tasks as one line each in
+   `tasks.md`: `- [ ] T001 [P] [US1] Create the exporter in src/exporter.py`.
+   `[P]` marks a task that can run in parallel; write `depends on T001` in the
+   text for a dependency.
+
+2. **Job and import.**
+
+   ```bash
+   CC job new --project . --title "CSV export" --request-file .crew-chief-request.md
+   CC spec import --project . --job <id> --spec-dir specs/001-csv-export
+   ```
+
+   Every open task becomes a piece (`ref` = the task id) with a type and a risk
+   from `crew.toml`, or guessed from the task text. `--spec-dir` is only needed
+   the first time. Read what `import` prints and fix it before you dispatch:
+   `missing proof` (hands-on tasks without a proof), `orphan sidecar entries` and
+   `orphan pieces` (a task id that is gone from `tasks.md`), `parallel conflict`
+   (two `[P]` tasks of one phase that share `files`) and `stale pieces` (the text
+   of a task changed since it was imported, for example after `tasks.md` was
+   regenerated; a stale piece is refused by `dispatch` and `brief render`, so
+   fix the spec and run `import` again). Then fill in `crew.toml`, one table per
+   task:
+
+   ```toml
+   global_constraints = ["Python 3.11, stdlib only"]
+
+   [tasks.T001]
+   type = "code"
+   risk = "low"
+   accept = ["FR-001", "US1/AC1"]        # references into spec.md
+   files = ["src/exporter.py", "tests/test_exporter.py"]
+   proof = "python -m pytest tests/test_exporter.py -q"
+   expect = "passed"                      # optional: text the output must contain
+   depends = []
+   interfaces = { export_csv = "def export_csv(rows, path) -> int" }
+   ```
+
+   `CC spec status --project . --job <id>` shows the progress per phase, which
+   tasks are ready and which are blocked, and by what.
+
+3. **Brief and dispatch.** Render the brief from the task instead of writing it:
+
+   ```bash
+   CC brief render --project . --job <id> --piece 3 --out .crew-chief-brief.md
+   CC pick --project . --job <id> --piece 3
+   CC dispatch --project . --job <id> --piece 3 --executor <tool>:<model> --brief-file .crew-chief-brief.md
+   ```
+
+   The brief carries only the task, the acceptance criteria it points at (with
+   their text), the global constraints, the interfaces, the files it may change
+   and the proof. When the executor finishes `ok`, `dispatch` runs the proof in
+   its worktree; a failing proof, or one that times out, makes the attempt
+   `proof_failed` with the output in the note, and it counts as a failure. A
+   hands-on spec piece (`code`, `tests`, `refactor`, `docs`, `data`) with no
+   proof is refused unless you pass `--no-proof` (recorded as skipped). A piece
+   whose dependency is not accepted yet, or whose earlier phase is not finished,
+   is refused unless you pass `--ignore-deps` (recorded). A `scope:` line in the
+   output lists files the attempt touched outside the task's `files`: read it
+   before you accept. Pieces without a `ref` follow the plain job cycle and need
+   no proof.
+
+4. **Review.** Same as step 5 of the job cycle, with the brief rendered for you:
+
+   ```bash
+   CC pick --project . --job <id> --piece 3 --review
+   CC brief render --project . --job <id> --piece 3 --review --out .crew-chief-review.md
+   CC dispatch --project . --job <id> --piece 3 --executor <other-tool>:<model> --brief-file .crew-chief-review.md --review --target <worktree>
+   ```
+
+   The reviewer gives two separate verdicts: **spec** (each acceptance criterion
+   `done`, `missing` or `misunderstood`, plus anything `extra`) and **quality**
+   (findings as `Critical`, `Important` or `Minor`). Read the diff yourself.
+
+5. **Correct and grade.** `CC correction` and `CC grade` as in step 6; a
+   correction brief describes only the adjustment.
+
+6. **Accept.** `CC accept` merges the piece and marks its task `[X]` in
+   `tasks.md`, as its own commit (`docs(tasks): mark T003 done`); only that one
+   line of the file changes, and its line endings stay. A stale piece is merged
+   but its task is not ticked.
+
+7. **Converge.** When the tasks are done, one last review compares the code
+   with the whole spec. Add a `review` piece, render the converge brief and run
+   it against the project folder:
+
+   ```bash
+   CC piece add --project . --job <id> --title "Converge spec" --type review --risk low
+   CC brief render --project . --job <id> --converge --out .crew-chief-converge.md
+   CC dispatch --project . --job <id> --piece <n> --executor <other-tool>:<model> --brief-file .crew-chief-converge.md --review --target .
+   ```
+
+   The reviewer lists the gaps that are not tasks yet (`- [ ] T### <text> per
+   <ref> (<gap-type>)`) or answers `Converged`. Add the gaps to `tasks.md`, run
+   `spec import` again and repeat from step 3.
+
+8. **Rulings and decisions.** Whenever you settle a question that an executor,
+   a reviewer or the user could later ask about, record it in one line, then
+   promote the ones worth keeping to an ADR:
+
+   ```bash
+   CC ruling add --project . --job <id> --text "<decision> — <why> — <cost if wrong>"
+   CC decision add --project . --job <id> --from-ruling 1 --context "..." --alternatives "..." --consequences "..."
+   CC decision add --project . --job <id> --title "Use TOML for the sidecar"
+   ```
+
+   `decision add` writes `docs/decisions/NNNN-slug.md`; commit it with the work.
+
+9. **Close.** `CC close` as in step 7 of the job cycle: it adds the job to the
+   project's CHANGELOG, prints the economy block (below) and the commit message.
+
+### Your own spend and the economy alerts
+
+The point of delegating is to spend fewer paid tokens, so the job keeps score of
+yours too. **When your CLI reports your own token usage, record it with `usage
+add`** (`--role coordinator` for you, `--role central` for a session above you
+that worked on this job; add `--estimated` when the counts are guesses):
+
+```bash
+CC usage add --project . --job <id> --role coordinator --tokens-in 52000 --tokens-out 9000 --note "planning and review"
+CC economy --project . --job <id>
+```
+
+`economy` (and `close`, before the commit message) prints one summary line:
+the share of pieces and tokens that went to free executors, the coordinator's
+share of all tokens, attempts per piece and the mean score, plus one
+`alert: ...` line for each limit crossed: `alert_coordinator_share` (default
+0.5), `alert_attempts_per_piece` (2.5) and `alert_job_minutes` (180); a `0`
+turns an alert off. **Read the economy alerts.** If the coordinator is spending
+more than it delegates, split less and do the work directly; if there are too
+many attempts per piece, the briefs are too big or the pieces too vague: split
+the piece or write the proof first. Tell the user when an alert fired.
 
 ## What stays with the coordinator
 
@@ -311,4 +474,6 @@ change the score; use them to explain a choice and when you report back.
 - Report what each attempt cost, per piece and executor: steps, tokens (say
   when they are estimated) and time, from the `dispatch` output or the job
   record.
+- Include the economy line and any alert `close` printed (see **Spec-driven
+  work**), and say what you did about it.
 - Say plainly what was not done and what you discarded.

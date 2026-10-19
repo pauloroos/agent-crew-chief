@@ -8,3 +8,5 @@ the user what changed and the output of `close` at the end.
 Read `.agents/skills/crew-chief/SKILL.md` (or
 `.claude/skills/crew-chief/SKILL.md` when that is the one that exists) before
 you start.
+
+If the superpowers skills are also installed, use them to discuss and design; use crew-chief to execute the plan.

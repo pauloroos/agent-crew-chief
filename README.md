@@ -60,6 +60,94 @@ flowchart TB
 6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten. After a correction the next `dispatch` starts from the last `ok` attempt's branch, so the brief only describes the adjustment and the diff shows only that (`--fresh` starts over from `HEAD`, `--base <n|branch>` picks the starting attempt). Every executor that worked on the piece keeps its own grade.
 7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment, which list every executor with its score.
 
+## Spec-driven work (optional)
+
+For a feature with several requirements, the request can live in a spec folder
+instead of a paragraph. crew-chief reads the [spec-kit](https://github.com/github/spec-kit)
+layout (`specs/NNN-slug/` with `spec.md`, `plan.md` and `tasks.md`) and turns
+its tasks into pieces. Tested with spec-kit 1.2.x. It does not need spec-kit
+installed, never creates `.specify/`, and never edits `spec.md` or `plan.md`.
+The grammar is reimplemented; no spec-kit template is copied.
+
+The coordinator sizes the process to the request: a **trivial** edit gets no job
+and no spec, a **small** request gets only a job, and a **project** gets the
+cycle below.
+
+```bash
+crew-chief spec new --title "CSV export"                    # or use an existing spec-kit folder
+crew-chief spec import --job <id> --spec-dir specs/001-csv-export
+crew-chief spec status --job <id>                           # progress, ready and blocked tasks
+crew-chief brief render --job <id> --piece 3 --out brief.md # then pick + dispatch
+crew-chief brief render --job <id> --piece 3 --review --out review.md
+crew-chief brief render --job <id> --converge --out converge.md
+crew-chief ruling add --job <id> --text "<decision> — <why> — <cost if wrong>"
+crew-chief decision add --job <id> --from-ruling 1
+crew-chief usage add --job <id> --role coordinator --tokens-in 52000 --tokens-out 9000
+crew-chief economy --job <id>
+```
+
+(`crew-chief` stands for `python -I .agents/skills/crew-chief/scripts/crew-chief.py`.)
+
+- **Import.** `spec import` turns each open task of `tasks.md` into a piece
+  (`ref` = the task id; `[X]` tasks are skipped) and keeps a sidecar,
+  `crew.toml`, next to it. spec-kit has no place for the facts an executor
+  needs, so the sidecar holds them, one `[tasks.T012]` table per task: `type`,
+  `risk`, `accept` (references such as `FR-001` or `US1/AC1` into `spec.md`),
+  `files` it may change, a `proof` command, an optional `expect` text, `depends`
+  and `interfaces`; a top-level `global_constraints` list applies to every task.
+  `import` warns about tasks without a proof, sidecar entries and pieces whose
+  task id is gone, `[P]` tasks of one phase that share files, and **stale
+  pieces**: when `tasks.md` is regenerated and a task's text changed, its piece
+  is refused by `dispatch` and `brief render` until you fix the spec and import
+  again, so a piece never points at the wrong task.
+- **Briefs.** `brief render` writes the minimum an executor needs: the task, the
+  acceptance criteria it points at (their text, not the whole spec), the
+  constraints, interfaces, allowed files and proof. With `--review` it writes
+  the reviewer's brief, which asks for two verdicts: spec (`done`, `missing`,
+  `misunderstood`, `extra`) and quality (`Critical`, `Important`, `Minor`).
+  `--converge` writes the last pass, which compares the code with the whole
+  spec and lists the gaps that are not tasks yet, or answers `Converged`.
+- **Proof.** After an `ok` attempt, `dispatch` runs the task's `proof` in the
+  worktree. A failing or timed-out proof makes the attempt `proof_failed`, with
+  the output in the note, and counts as a failure. Hands-on pieces without a
+  proof are refused (`--no-proof` skips it and records that). A piece whose
+  dependency or earlier phase is not accepted yet is refused (`--ignore-deps`
+  overrides and records that). Files changed outside the task's `files` show up
+  as a `scope:` line. Pieces without a spec task work as before and need no
+  proof.
+- **Accept.** `accept` marks the task `[X]` in `tasks.md` and commits that one
+  line (`docs(tasks): mark T012 done`); CRLF, BOM and the rest of the file are
+  left alone.
+- **Rulings and decisions.** `ruling add` records a one-line ruling in the job.
+  `decision add` writes it, or a title you give, to `docs/decisions/NNNN-slug.md`
+  as an ADR with context, alternatives and consequences.
+- **Close.** `close` also adds the job to the project CHANGELOG (see the
+  `changelog` preference) and prints the economy block.
+
+### Economy
+
+Delegating only pays if the free work is not eaten by the coordinator's own
+spending, by rework, or by delay. `usage add` records the coordinator's tokens
+(`--role coordinator`, or `central` for a session above it) when its CLI
+reports them. `economy` and `close` print the free share of pieces and tokens,
+the coordinator's share, attempts per piece, the mean score and the job's
+duration, and one `alert:` line for each limit crossed:
+
+| Preference | Default | Alert |
+| --- | --- | --- |
+| `alert_coordinator_share` | `0.5` | the coordinator spent more than this share of all tokens |
+| `alert_attempts_per_piece` | `2.5` | more exec attempts per piece than this |
+| `alert_job_minutes` | `180` | the job took longer than this |
+
+`0` turns an alert off. The skill tells the coordinator to read them: if it
+spends more than it delegates, it should split less and do the work itself.
+
+### Together with superpowers
+
+If the [superpowers](https://github.com/obra/superpowers) skills are installed
+too, use them to discuss and design; use crew-chief to execute the plan. The
+installed snippet says so in one line.
+
 ## Install
 
 ```bash
@@ -199,6 +287,9 @@ Every key:
 | `issue_tracker` | `none`, `github`, `plane`, `linear` or `other`; used by `close`. |
 | `changelog` | `keep-a-changelog` (default) or `none`. `close` adds the job to the project CHANGELOG under `## [Unreleased]` (`Added` for feat, `Fixed` for fix, `Changed` for refactor and perf), once per job, keeping CRLF and BOM; docs, tests and chores get no entry. `close --no-changelog` skips it. |
 | `changelog_path` | CHANGELOG file, relative to the project. Default `CHANGELOG.md`. |
+| `alert_coordinator_share` | Alert when the coordinator spent more than this share (0 to 1) of a job's tokens. Default `0.5`; `0` turns it off. |
+| `alert_attempts_per_piece` | Alert when a job averages more exec attempts per piece than this. Default `2.5`; `0` turns it off. |
+| `alert_job_minutes` | Alert when a job took longer than this many minutes. Default `180`; `0` turns it off. |
 | `dispatch_timeout_s` | Hard limit for one attempt, in seconds. On overrun the process tree is killed and the attempt is recorded as `timeout`. Default `900`. |
 | `review_default` | Executor id used for reviews when the coordinator has no better idea, for example `codex:gpt-5-codex`. Empty means "choose one yourself" (`pick --review`). |
 | `exec_first` | Tools whose free executors `pick` tries first on hands-on work (`code`, `tests`, `refactor`, `docs`, `data`), before the other free ones. Default `["opencode"]`; `[]` turns it off. |
@@ -291,6 +382,9 @@ Everything under `docs/crew-chief/`:
 - `scoreboard.md` — the decayed ranking per work type;
 - `models-seen.json` — every executor discovery has seen, with its cost,
   `first_seen`, `last_seen` and whether it is still there.
+
+Spec-driven jobs also leave `specs/NNN-slug/crew.toml` (the sidecar, committed
+with the spec) and ADRs under `docs/decisions/`.
 
 They belong to the project, so a teammate (or the next session) inherits the
 history. Committing them is the point: the scoreboard is only useful if it
@@ -392,6 +486,13 @@ agent that reads one of those picks it up.
   effects the executor already had outside the worktree.
 - The scoreboard is only as good as the grading: a piece that is not graded
   teaches the coordinator nothing.
+
+## Credits
+
+The spec-driven flow is inspired by [spec-kit](https://github.com/github/spec-kit)
+(MIT), whose `specs/` layout and `tasks.md` format it reads, and by
+[superpowers](https://github.com/obra/superpowers) (MIT), whose design and
+review habits it follows. No code or template was copied from either.
 
 ## License
 

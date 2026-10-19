@@ -1,0 +1,94 @@
+"""Checks that the docs keep up with the CLI: commands, version, changelog."""
+
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+from crew_chief import __version__
+from crew_chief.cli import build_parser
+
+ROOT = Path(__file__).resolve().parents[1]
+SKILL_MD = ROOT / "skill" / "crew-chief" / "SKILL.md"
+README = ROOT / "README.md"
+README_PT = ROOT / "README.pt-BR.md"
+CHANGELOG = ROOT / "CHANGELOG.md"
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def test_skill_md_documents_spec_flow():
+    text = _read(SKILL_MD)
+    assert "Spec-driven work" in text
+    for cmd in (
+        "spec new",
+        "spec import",
+        "spec status",
+        "brief render",
+        "--converge",
+        "ruling add",
+        "decision add",
+        "usage add",
+        "economy",
+        "--no-proof",
+        "--ignore-deps",
+    ):
+        assert cmd in text, cmd
+
+
+def test_skill_md_names_every_subcommand():
+    text = _read(SKILL_MD)
+    subparsers = next(
+        action
+        for action in build_parser()._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    for name in subparsers.choices:
+        assert f"CC {name}" in text, name
+
+
+def test_skill_md_sizes_the_process():
+    text = _read(SKILL_MD)
+    for word in ("trivial", "small", "project"):
+        assert re.search(rf"\*\*{word}\*\*", text, re.IGNORECASE), word
+    assert "read the economy alerts" in text.lower()
+
+
+def test_both_readmes_document_sdd_and_credit_inspirations():
+    for path in (README, README_PT):
+        text = _read(path)
+        assert "spec-kit 1.2.x" in text, path.name
+        assert "spec import" in text, path.name
+        assert "crew.toml" in text, path.name
+        assert "superpowers" in text, path.name
+        assert "MIT" in text, path.name
+
+
+def test_readmes_have_the_same_command_blocks():
+    """The two READMEs show the same shell commands, only the prose differs."""
+
+    def fences(path: Path) -> list[str]:
+        return re.findall(r"```bash\n(.*?)```", _read(path), re.DOTALL)
+
+    english, portuguese = fences(README), fences(README_PT)
+    assert len(english) == len(portuguese)
+
+
+def test_version_is_0_3_0_and_changelog_has_unreleased():
+    assert __version__ == "0.3.0"
+    text = _read(CHANGELOG)
+    assert "## [Unreleased]" in text
+    unreleased = text.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+    for needle in (
+        "spec import",
+        "brief render",
+        "proof_failed",
+        "decision add",
+        "usage add",
+        "economy",
+        "crew.toml",
+    ):
+        assert needle in unreleased, needle

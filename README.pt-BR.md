@@ -60,6 +60,96 @@ flowchart TB
 6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito. Depois de uma correção, o próximo `dispatch` parte do branch da última tentativa `ok`, então o brief descreve só o ajuste e o diff mostra só ele (`--fresh` recomeça do `HEAD`, `--base <n|branch>` escolhe a tentativa de partida). Cada executor que trabalhou na peça fica com a própria nota.
 7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue, que listam cada executor com sua nota.
 
+## Trabalho guiado por especificação (opcional)
+
+Para uma funcionalidade com vários requisitos, o pedido pode morar numa pasta de
+especificação em vez de um parágrafo. O crew-chief lê o formato do
+[spec-kit](https://github.com/github/spec-kit) (`specs/NNN-slug/` com `spec.md`,
+`plan.md` e `tasks.md`) e transforma as tarefas em peças. Testado com
+spec-kit 1.2.x. Não precisa do spec-kit instalado, nunca cria `.specify/` e
+nunca edita `spec.md` nem `plan.md`. A gramática foi reimplementada; nenhum
+template do spec-kit foi copiado.
+
+O coordenador dimensiona o processo ao pedido: uma edição **trivial** não tem job
+nem spec, um pedido **pequeno** tem só o job, e um **projeto** segue o ciclo
+abaixo.
+
+```bash
+crew-chief spec new --title "Exportar CSV"                  # ou use uma pasta spec-kit que já existe
+crew-chief spec import --job <id> --spec-dir specs/001-exportar-csv
+crew-chief spec status --job <id>                           # progresso, tarefas prontas e bloqueadas
+crew-chief brief render --job <id> --piece 3 --out brief.md # depois pick + dispatch
+crew-chief brief render --job <id> --piece 3 --review --out review.md
+crew-chief brief render --job <id> --converge --out converge.md
+crew-chief ruling add --job <id> --text "<decisão> — <por quê> — <custo se errar>"
+crew-chief decision add --job <id> --from-ruling 1
+crew-chief usage add --job <id> --role coordinator --tokens-in 52000 --tokens-out 9000
+crew-chief economy --job <id>
+```
+
+(`crew-chief` representa `python -I .agents/skills/crew-chief/scripts/crew-chief.py`.)
+
+- **Importação.** O `spec import` transforma cada tarefa aberta do `tasks.md` numa
+  peça (`ref` = o id da tarefa; tarefas `[X]` são puladas) e mantém um arquivo
+  auxiliar, o `crew.toml`, ao lado dele. O spec-kit não tem lugar para os dados
+  que o executor precisa, então o `crew.toml` guarda: uma tabela `[tasks.T012]`
+  por tarefa, com `type`, `risk`, `accept` (referências como `FR-001` ou `US1/AC1`
+  dentro do `spec.md`), `files` que ela pode mudar, um comando `proof`, um texto
+  `expect` opcional, `depends` e `interfaces`; a lista `global_constraints` no
+  topo vale para todas as tarefas. O `import` avisa sobre tarefas sem prova,
+  entradas do `crew.toml` e peças cujo id de tarefa sumiu, tarefas `[P]` da mesma
+  fase que dividem arquivos e **peças desatualizadas**: quando o `tasks.md` é
+  regenerado e o texto de uma tarefa muda, a peça dela é recusada pelo `dispatch`
+  e pelo `brief render` até você corrigir a spec e importar de novo, então uma
+  peça nunca aponta para a tarefa errada.
+- **Briefs.** O `brief render` escreve o mínimo que o executor precisa: a tarefa,
+  os critérios de aceite a que ela se refere (o texto deles, não a spec inteira),
+  as restrições, as interfaces, os arquivos permitidos e a prova. Com `--review`
+  escreve o brief do revisor, que pede dois veredictos: spec (`done`, `missing`,
+  `misunderstood`, `extra`) e qualidade (`Critical`, `Important`, `Minor`). O
+  `--converge` escreve a última passada, que compara o código com a spec inteira e
+  lista as lacunas que ainda não são tarefas, ou responde `Converged`.
+- **Prova.** Depois de uma tentativa `ok`, o `dispatch` roda a `proof` da tarefa na
+  worktree. Uma prova que falha ou estoura o tempo deixa a tentativa como
+  `proof_failed`, com a saída na nota, e conta como falha. Peças braçais sem prova
+  são recusadas (`--no-proof` pula e registra isso). Uma peça cuja dependência ou
+  fase anterior ainda não foi aceita é recusada (`--ignore-deps` libera e
+  registra). Arquivos mudados fora dos `files` da tarefa aparecem numa linha
+  `scope:`. Peças sem tarefa de spec funcionam como antes e não exigem prova.
+- **Aceite.** O `accept` marca a tarefa `[X]` no `tasks.md` e commita só essa linha
+  (`docs(tasks): mark T012 done`); CRLF, BOM e o resto do arquivo ficam como estão.
+- **Decisões.** O `ruling add` registra uma decisão de uma linha no job. O
+  `decision add` grava essa decisão, ou um título que você der, em
+  `docs/decisions/NNNN-slug.md` como um ADR com contexto, alternativas e
+  consequências.
+- **Fechamento.** O `close` também põe o job no CHANGELOG do projeto (veja a
+  preferência `changelog`) e imprime o bloco de economia.
+
+### Economia
+
+Delegar só compensa se o trabalho grátis não for comido pelo gasto do próprio
+coordenador, por retrabalho ou por demora. O `usage add` registra os tokens do
+coordenador (`--role coordinator`, ou `central` para uma sessão acima dele)
+quando a CLI dele informa. O `economy` e o `close` imprimem a fatia de peças e de
+tokens que foi para executores grátis, a fatia do coordenador, tentativas por
+peça, a nota média e a duração do job, e uma linha `alert:` para cada limite
+ultrapassado:
+
+| Preferência | Padrão | Alerta |
+| --- | --- | --- |
+| `alert_coordinator_share` | `0.5` | o coordenador gastou mais que essa fatia de todos os tokens |
+| `alert_attempts_per_piece` | `2.5` | mais tentativas de execução por peça que isso |
+| `alert_job_minutes` | `180` | o job demorou mais que isso |
+
+`0` desliga um alerta. A skill manda o coordenador ler os alertas: se ele gasta
+mais do que delega, deve dividir menos e fazer o trabalho direto.
+
+### Junto com o superpowers
+
+Se as skills do [superpowers](https://github.com/obra/superpowers) também estão
+instaladas, use-as para conversar e desenhar; use o crew-chief para executar o
+plano. O trecho instalado diz isso numa linha.
+
 ## Instalação
 
 ```bash
@@ -200,6 +290,9 @@ Todas as chaves:
 | `issue_tracker` | `none`, `github`, `plane`, `linear` ou `other`; usado pelo `close`. |
 | `changelog` | `keep-a-changelog` (padrão) ou `none`. O `close` põe o job no CHANGELOG do projeto em `## [Unreleased]` (`Added` para feat, `Fixed` para fix, `Changed` para refactor e perf), uma vez por job, mantendo CRLF e BOM; docs, tests e chores não geram entrada. `close --no-changelog` pula. |
 | `changelog_path` | Arquivo do CHANGELOG, relativo ao projeto. Padrão `CHANGELOG.md`. |
+| `alert_coordinator_share` | Alerta quando o coordenador gastou mais que essa fatia (0 a 1) dos tokens de um job. Padrão `0.5`; `0` desliga. |
+| `alert_attempts_per_piece` | Alerta quando um job tem, em média, mais tentativas de execução por peça que isso. Padrão `2.5`; `0` desliga. |
+| `alert_job_minutes` | Alerta quando um job demorou mais que esses minutos. Padrão `180`; `0` desliga. |
 | `dispatch_timeout_s` | Limite rígido de uma tentativa, em segundos. Ao estourar, a árvore de processos é morta e a tentativa é registrada como `timeout`. Padrão `900`. |
 | `review_default` | Id de executor usado nas revisões quando o coordenador não tem ideia melhor, por exemplo `codex:gpt-5-codex`. Vazio significa "escolha um você mesmo" (`pick --review`). |
 | `exec_first` | Ferramentas cujos executores grátis o `pick` tenta primeiro no trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`), antes dos outros grátis. Padrão `["opencode"]`; `[]` desliga. |
@@ -292,6 +385,9 @@ Tudo em `docs/crew-chief/`:
 - `scoreboard.md` — o ranking com decaimento por tipo de trabalho;
 - `models-seen.json` — todo executor que a descoberta já viu, com custo,
   `first_seen`, `last_seen` e se ele ainda está lá.
+
+Jobs guiados por spec também deixam `specs/NNN-slug/crew.toml` (o arquivo
+auxiliar, commitado com a spec) e ADRs em `docs/decisions/`.
 
 Eles pertencem ao projeto, então um colega (ou a próxima sessão) herda o
 histórico. Commitar é o ponto: o placar só serve se sobreviver.
@@ -396,6 +492,13 @@ que qualquer agente que leia um deles o encontre.
   colaterais que o executor já tenha causado fora da worktree.
 - O placar vale o que vale a avaliação: uma parte sem nota não ensina nada ao
   coordenador.
+
+## Créditos
+
+O fluxo guiado por especificação se inspira no [spec-kit](https://github.com/github/spec-kit)
+(MIT), cujo layout `specs/` e formato de `tasks.md` ele lê, e no
+[superpowers](https://github.com/obra/superpowers) (MIT), cujos hábitos de
+desenho e revisão ele segue. Nenhum código ou template foi copiado de nenhum dos dois.
 
 ## Licença
 
