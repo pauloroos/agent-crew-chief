@@ -13,6 +13,13 @@ and exits 2; exit 1 means "nothing to do" (no executor, an attempt that is not
 ``ok``, nothing to accept) and exit 0 means success. A ``RuntimeError`` from a
 git or worktree operation (a merge conflict, a taken worktree path) is an
 operational failure: one ``error: ...`` line on stderr and exit 1.
+
+Every command that runs discovery also keeps ``docs/crew-chief/models-seen.json``
+up to date and reports the models that appeared, disappeared or changed cost:
+``discover`` always (on stdout, after the list), ``job new`` always (on
+stderr, so the job id stays alone on stdout), ``pick`` and ``dispatch`` only
+when the last check is ``model_check_hours`` old (on stderr). A failing check
+never fails the command.
 """
 
 from __future__ import annotations
@@ -25,9 +32,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import records
-from .config import PrefsError, load_prefs
-from .discover import discover
+from .config import Prefs, PrefsError, load_prefs
+from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
+from .models_seen import changes_payload, check_due, check_models, render_changes
 from .records import RecordError
 from .scoring import (
     build_stats,
@@ -116,7 +124,9 @@ def _last_ok_exec_attempt(piece: dict) -> dict | None:
 def _cmd_discover(args: argparse.Namespace) -> int:
     project = _project(args)
     prefs = load_prefs(project)
-    executors, notes = discover(prefs)
+    found = discover_full(prefs)
+    executors, notes = found.executors, found.notes
+    changes = check_models(project, found)
 
     lines = [
         f"{executor.id}  cost={executor.cost}  "
@@ -137,9 +147,41 @@ def _cmd_discover(args: argparse.Namespace) -> int:
             for executor in executors
         ],
         "skipped": list(notes),
+        "changes": changes_payload(changes),
     }
-    _emit(args, "\n".join(lines) if lines else "no executors", payload)
+    text = "\n".join(lines) if lines else "no executors"
+    text += "\n\n" + "\n".join(render_changes(changes))
+    _emit(args, text, payload)
     return 0
+
+
+def _check_models_to_stderr(
+    project: Path,
+    prefs: Prefs | None = None,
+    found: Discovery | None = None,
+    due_only: bool = False,
+) -> None:
+    """Run the models check and print its lines on stderr.
+
+    ``prefs`` and ``found`` are loaded or discovered when not given. With
+    ``due_only`` nothing happens (and nothing is written) unless the last
+    check is ``prefs.model_check_hours`` old. Never raises: a broken check
+    (bad preferences, a crashing CLI, an unwritable registry) prints one
+    ``models: check skipped`` line, so the main command never fails over it.
+    """
+    try:
+        if prefs is None:
+            prefs = load_prefs(project)
+        if due_only and not check_due(project, prefs.model_check_hours):
+            return
+        if found is None:
+            found = discover_full(prefs)
+        lines = render_changes(check_models(project, found))
+    except Exception as exc:  # noqa: BLE001 - the main command must not fail here
+        text_lines = str(exc).splitlines()
+        reason = text_lines[0] if text_lines else type(exc).__name__
+        lines = [f"models: check skipped: {reason}"]
+    sys.stderr.write("\n".join(lines) + "\n")
 
 
 def _cmd_job_new(args: argparse.Namespace) -> int:
@@ -154,6 +196,8 @@ def _cmd_job_new(args: argparse.Namespace) -> int:
         project, args.title, request, distributed, reason, args.issue or ""
     )
     _emit(args, job["id"], {"id": job["id"]})
+    sys.stdout.flush()
+    _check_models_to_stderr(project)
     return 0
 
 
@@ -169,9 +213,11 @@ def _cmd_piece_add(args: argparse.Namespace) -> int:
 def _cmd_pick(args: argparse.Namespace) -> int:
     project = _project(args)
     prefs = load_prefs(project)
-    executors, _notes = discover(prefs)
+    found = discover_full(prefs)
+    executors = found.executors
     job = records.load_job(project, args.job)
     piece = _piece(job, args.piece)
+    _check_models_to_stderr(project, prefs, found, due_only=True)
 
     exclude = set(args.exclude or [])
     for attempt in piece.get("attempts") or []:
@@ -224,12 +270,15 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         raise ValueError("--review requires --target")
 
     prefs = load_prefs(project)
-    executors, _notes = discover(prefs)
-    executor = next((item for item in executors if item.id == args.executor), None)
+    found = discover_full(prefs)
+    executor = next(
+        (item for item in found.executors if item.id == args.executor), None
+    )
     if executor is None:
         raise ValueError(f"unknown executor {args.executor!r}")
 
     brief = _read_text(Path(args.brief_file), "--brief-file")
+    _check_models_to_stderr(project, prefs, found, due_only=True)
     attempt = run_attempt(
         project,
         args.job,
