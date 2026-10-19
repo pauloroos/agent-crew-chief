@@ -108,7 +108,7 @@ python install.py /path/to/project
 ```
 
 The skill files and the snippet are refreshed. Your `preferences.toml`, your
-`jobs/` and your `scoreboard.md` are never touched.
+`jobs/`, your `scoreboard.md` and your `models-seen.json` are never touched.
 
 ## Preferences
 
@@ -151,6 +151,9 @@ dispatch_timeout_s = 900
 
 # Executor id used for reviews by default; empty means "choose one".
 review_default = ""
+
+# Hours after which pick/dispatch re-check which models are new or gone.
+model_check_hours = 24
 
 [[models]]
 match = "opencode:opencode/*-free"
@@ -240,6 +243,29 @@ run_cmd = ["my-generic-cli", "run", "--model", "{model}", "{prompt}"]
 list_cmd = ["my-generic-cli", "models"]
 ```
 
+## New and gone models
+
+Providers add and drop models without notice (OpenCode rotates its `*-free`
+models often). `discover` compares what it finds with
+`docs/crew-chief/models-seen.json` and prints what changed after the list:
+
+```text
+models: changes since 2026-10-18T12:00:00+00:00
+new free: opencode:opencode/foo-free (trains=no)
+now paid: opencode:opencode/bar (was free, trains=no)
+gone: opencode:opencode/old-free (was free)
+```
+
+`job new` runs the same check and prints it on stderr (the job id stays alone
+on stdout); `pick` and `dispatch` run it only when the last check is older
+than `model_check_hours` (24 by default), so you hear about changes at least
+once a day. The first run only records a baseline. A tool that was skipped (bin
+missing, env var missing, no models listed) never makes its models "gone", and
+a failing check never fails the command. A new model starts unrated, and
+`pick`'s second chance (`explore_rate`, low-risk work) hands it a piece to
+prove itself on. `--json` adds a
+`changes` object with `added`, `removed` and `changed`.
+
 ## What gets committed
 
 Everything under `docs/crew-chief/`:
@@ -248,7 +274,9 @@ Everything under `docs/crew-chief/`:
 - `jobs/<job_id>.json` and `jobs/<job_id>.md` — the machine-readable and the
   human-readable record of every job, with attempts, corrections, escalations
   and grades;
-- `scoreboard.md` — the decayed ranking per work type.
+- `scoreboard.md` — the decayed ranking per work type;
+- `models-seen.json` — every executor discovery has seen, with its cost,
+  `first_seen`, `last_seen` and whether it is still there.
 
 They belong to the project, so a teammate (or the next session) inherits the
 history. Committing them is the point: the scoreboard is only useful if it

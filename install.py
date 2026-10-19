@@ -19,8 +19,8 @@ What it does:
    block's END line; otherwise the snippet is appended at the end.
 3. Creates ``docs/crew-chief/preferences.toml`` from the example only if it is
    missing, plus ``docs/crew-chief/jobs/.gitkeep``.
-4. Never touches an existing ``preferences.toml``, ``jobs/`` or
-   ``scoreboard.md``, and never edits other skills.
+4. Never touches an existing ``preferences.toml``, ``jobs/``,
+   ``scoreboard.md`` or ``models-seen.json``, and never edits other skills.
 
 A file without markers is left alone once the skill is installed in the project
 (``.claude/skills/crew-chief`` or ``.agents/skills/crew-chief`` already

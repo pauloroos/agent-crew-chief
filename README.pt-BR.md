@@ -108,7 +108,7 @@ python install.py /caminho/do/projeto
 ```
 
 Os arquivos da skill e o trecho são atualizados. Seu `preferences.toml`, seus
-`jobs/` e seu `scoreboard.md` nunca são tocados.
+`jobs/`, seu `scoreboard.md` e seu `models-seen.json` nunca são tocados.
 
 ## Preferências
 
@@ -151,6 +151,9 @@ dispatch_timeout_s = 900
 
 # Id de executor usado por padrão nas revisões; vazio significa "escolha um".
 review_default = ""
+
+# Horas depois das quais pick/dispatch voltam a checar modelos novos ou sumidos.
+model_check_hours = 24
 
 [[models]]
 match = "opencode:opencode/*-free"
@@ -241,6 +244,29 @@ run_cmd = ["my-generic-cli", "run", "--model", "{model}", "{prompt}"]
 list_cmd = ["my-generic-cli", "models"]
 ```
 
+## Modelos novos e que sumiram
+
+Os provedores colocam e tiram modelos sem aviso (o OpenCode troca os `*-free`
+com frequência). O `discover` compara o que encontrou com
+`docs/crew-chief/models-seen.json` e, depois da lista, imprime o que mudou:
+
+```text
+models: changes since 2026-10-18T12:00:00+00:00
+new free: opencode:opencode/foo-free (trains=no)
+now paid: opencode:opencode/bar (was free, trains=no)
+gone: opencode:opencode/old-free (was free)
+```
+
+O `job new` faz a mesma checagem e imprime no stderr (o id do job continua
+sozinho no stdout); `pick` e `dispatch` só checam quando a última checagem
+passou de `model_check_hours` (24 por padrão), então você fica sabendo das
+mudanças pelo menos uma vez por dia. A primeira execução só grava a linha de
+base. Uma ferramenta pulada (bin ausente, variável de ambiente faltando, nenhum
+modelo listado) nunca faz os modelos dela "sumirem", e uma checagem que falha
+nunca derruba o comando. Um modelo novo entra sem nota, e a segunda chance do
+`pick` (`explore_rate`, trabalho de risco baixo) dá a ele uma parte para se
+provar. Com `--json` vem um objeto `changes` com `added`, `removed` e `changed`.
+
 ## O que é commitado
 
 Tudo em `docs/crew-chief/`:
@@ -248,7 +274,9 @@ Tudo em `docs/crew-chief/`:
 - `preferences.toml` — as preferências resolvidas do projeto;
 - `jobs/<job_id>.json` e `jobs/<job_id>.md` — o registro de cada job, legível por
   máquina e por gente, com tentativas, correções, escaladas e notas;
-- `scoreboard.md` — o ranking com decaimento por tipo de trabalho.
+- `scoreboard.md` — o ranking com decaimento por tipo de trabalho;
+- `models-seen.json` — todo executor que a descoberta já viu, com custo,
+  `first_seen`, `last_seen` e se ele ainda está lá.
 
 Eles pertencem ao projeto, então um colega (ou a próxima sessão) herda o
 histórico. Commitar é o ponto: o placar só serve se sobreviver.

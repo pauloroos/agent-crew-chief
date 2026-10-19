@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [Unreleased]
+
+### Added
+- **Model changes:** `docs/crew-chief/models-seen.json` records every executor discovery has seen (`cost`, `trains`, `first_seen`, `last_seen`, `present`, plus a top-level `last_check`). `discover` always updates it and prints, after the list, the free and paid models that are new, gone or changed cost (`new free: ...`, `gone: ...`, `now paid: ...`), or `models: no changes since <when>`. The first run only records a baseline, and a skipped tool never marks its models as gone. `--json` adds a `changes` object.
+- `job new` runs the same check every time and prints it on stderr; `pick` and `dispatch` run it on stderr only when the last check is older than `model_check_hours`. A failing check never fails the command.
+- `model_check_hours` preference (default `24`; `0` means every time).
+
 ## [0.1.0] - 2026-10-17
 
 First public release.
