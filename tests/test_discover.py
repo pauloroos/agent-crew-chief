@@ -131,7 +131,7 @@ def test_discover_executor_carries_tool_dict(fake_bin):
 
 
 def test_discover_full_lists_models_only_for_tools_that_listed(fake_bin):
-    fake_bin("opencode", "print('oc/free\noc/banned')\n")
+    fake_bin("opencode", "print('oc/free\\noc/banned')\n")
     prefs = _prefs(
         [
             {"name": "opencode", "kind": "opencode", "bin": "opencode"},
