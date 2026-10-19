@@ -8,6 +8,8 @@ from crew_chief.tools import (
     build_command,
     list_models,
     missing_env,
+    output_text,
+    parse_metrics,
     parse_reported_model,
     tool_env,
     wants_effort,
@@ -63,7 +65,7 @@ def test_build_opencode_command(tmp_path):
         tool, "oc/m", tmp_path, "p", tmp_path / "b.md", tmp_path / "o.json",
         None, False,
     )
-    assert cmd[1:] == ["run", "-m", "oc/m", "p"]
+    assert cmd[1:] == ["run", "--format", "json", "-m", "oc/m", "p"]
 
 
 def test_build_antigravity_review_uses_plan_mode(tmp_path):
@@ -213,3 +215,123 @@ def test_executor_is_a_plain_dataclass():
     assert (ex.id, ex.model, ex.cost, ex.trains) == ("t:m", "m", "free", True)
     ex.cost = "paid"  # mutable: a frozen dataclass would raise
     assert ex.cost == "paid"
+
+
+# --- parse_metrics and output_text -----------------------------------------
+
+#: Trimmed from a real ``opencode run --format json`` (v2.0.32) with tool use:
+#: one JSON event per line; ``step_finish`` carries the step's tokens, and the
+#: last step (the final answer) is never closed by a ``step_finish``.
+_OPENCODE_JSON = "\n".join(
+    [
+        '{"type":"step_start","timestamp":1,"sessionID":"s","part":{"type":"step-start"}}',
+        '{"type":"tool_use","timestamp":2,"sessionID":"s","part":{"type":"tool","tool":"read","state":{"status":"completed"}}}',
+        '{"type":"step_finish","timestamp":3,"sessionID":"s","part":{"type":"step-finish","reason":"tool-calls","cost":0,"tokens":{"input":3532,"output":49,"reasoning":13,"cache":{"read":12672,"write":0}}}}',
+        '{"type":"step_start","timestamp":4,"sessionID":"s","part":{"type":"step-start"}}',
+        '{"type":"tool_use","timestamp":5,"sessionID":"s","part":{"type":"tool","tool":"write","state":{"status":"completed"}}}',
+        '{"type":"step_finish","timestamp":6,"sessionID":"s","part":{"type":"step-finish","reason":"tool-calls","cost":0,"tokens":{"input":258,"output":119,"reasoning":0,"cache":{"read":23040,"write":10}}}}',
+        '{"type":"step_start","timestamp":7,"sessionID":"s","part":{"type":"step-start"}}',
+        '{"type":"text","timestamp":8,"sessionID":"s","part":{"type":"text","text":"Pronto: criei b.txt."}}',
+    ]
+)
+
+
+def test_parse_metrics_opencode_counts_steps_and_sums_tokens():
+    metrics = parse_metrics({"kind": "opencode"}, _OPENCODE_JSON)
+
+    assert metrics == {
+        "steps": 3,
+        "tokens_in": 3532 + 12672 + 258 + 23040 + 10,
+        "tokens_out": 49 + 13 + 119,
+        "tokens_total": 3532 + 12672 + 258 + 23040 + 10 + 49 + 13 + 119,
+    }
+
+
+def test_parse_metrics_opencode_without_step_finish_has_steps_only():
+    text = (
+        '{"type":"step_start","part":{"type":"step-start"}}\n'
+        '{"type":"text","part":{"type":"text","text":"Oi!"}}\n'
+    )
+
+    assert parse_metrics({"kind": "opencode"}, text) == {
+        "steps": 1,
+        "tokens_in": None,
+        "tokens_out": None,
+        "tokens_total": None,
+    }
+
+
+def test_parse_metrics_claude_code_result():
+    stdout = (
+        '{"type":"result","subtype":"success","num_turns":4,"result":"done",'
+        '"usage":{"input_tokens":10,"cache_creation_input_tokens":200,'
+        '"cache_read_input_tokens":3000,"output_tokens":50}}'
+    )
+
+    assert parse_metrics({"kind": "claude-code"}, stdout) == {
+        "steps": 4,
+        "tokens_in": 3210,
+        "tokens_out": 50,
+        "tokens_total": 3260,
+    }
+
+
+def test_parse_metrics_claude_code_stream_json_uses_the_result_event():
+    stdout = (
+        '{"type":"system","subtype":"init"}\n'
+        '{"type":"assistant","message":{"usage":{"input_tokens":1}}}\n'
+        '{"type":"result","num_turns":2,"usage":{"input_tokens":7,'
+        '"output_tokens":3}}\n'
+    )
+
+    metrics = parse_metrics({"kind": "claude-code"}, stdout)
+
+    assert (metrics["steps"], metrics["tokens_total"]) == (2, 10)
+
+
+def test_parse_metrics_antigravity_json():
+    # Shape of a real `agy -p ... --output-format json` answer.
+    stdout = (
+        '{"conversation_id":"c","status":"SUCCESS","response":"Oi!",'
+        '"duration_seconds":6.3,"num_turns":1,"usage":{"input_tokens":15230,'
+        '"output_tokens":12,"thinking_tokens":5,"cache_read_tokens":100,'
+        '"total_tokens":15347}}'
+    )
+
+    assert parse_metrics({"kind": "antigravity"}, stdout) == {
+        "steps": 1,
+        "tokens_in": 15330,
+        "tokens_out": 17,
+        "tokens_total": 15347,
+    }
+
+
+def test_parse_metrics_codex_reads_tokens_used_from_stderr():
+    stderr = "[2026-10-19] thinking\n[2026-10-19] tokens used: 12,345\n"
+
+    assert parse_metrics({"kind": "codex"}, "final answer", stderr) == {
+        "steps": None,
+        "tokens_in": None,
+        "tokens_out": None,
+        "tokens_total": 12345,
+    }
+    newline_form = "tokens used\n8,001\n"
+    assert parse_metrics({"kind": "codex"}, "", newline_form)["tokens_total"] == 8001
+
+
+def test_parse_metrics_unknown_output_is_all_none():
+    empty = {
+        "steps": None,
+        "tokens_in": None,
+        "tokens_out": None,
+        "tokens_total": None,
+    }
+    assert parse_metrics({"kind": "generic"}, "whatever") == empty
+    assert parse_metrics({"kind": "claude-code"}, "not json") == empty
+    assert parse_metrics({"kind": "opencode"}, "plain text answer") == empty
+
+
+def test_output_text_joins_opencode_text_parts():
+    assert output_text({"kind": "opencode"}, _OPENCODE_JSON) == "Pronto: criei b.txt."
+    assert output_text({"kind": "opencode"}, "plain") == "plain"
+    assert output_text({"kind": "codex"}, '{"a": 1}') == '{"a": 1}'

@@ -134,7 +134,9 @@ def build_command(
         return cmd
 
     if kind == "opencode":
-        return [exe, "run", "-m", model, prompt]
+        # JSON events carry the step count and the tokens (parse_metrics);
+        # output_text turns them back into the readable answer.
+        return [exe, "run", "--format", "json", "-m", model, prompt]
 
     if kind == "codex":
         cmd = [
@@ -188,6 +190,166 @@ def parse_reported_model(tool: dict, stdout: str) -> str | None:
         return None
     model = data.get("model")
     return model if isinstance(model, str) else None
+
+
+#: ``tokens used: 12,345`` (or the number on the next line) in codex's log.
+_CODEX_TOKENS = re.compile(r"tokens used\s*:?\s*([\d][\d,.]*)", re.IGNORECASE)
+
+
+def _json_lines(text: str) -> list[dict]:
+    """Every line of ``text`` that parses as a JSON object, in order."""
+    events = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            events.append(data)
+    return events
+
+
+def _int(value: object) -> int:
+    """``value`` as a token count; anything that is not a number counts 0."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
+
+
+def _metrics(
+    steps: int | None, tokens_in: int | None, tokens_out: int | None,
+    tokens_total: int | None = None,
+) -> dict:
+    """The metrics dict; the total defaults to ``in + out`` when both are known."""
+    if tokens_total is None and tokens_in is not None and tokens_out is not None:
+        tokens_total = tokens_in + tokens_out
+    return {
+        "steps": steps,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "tokens_total": tokens_total,
+    }
+
+
+def _opencode_metrics(stdout: str) -> dict:
+    """Steps and tokens from ``opencode run --format json`` events.
+
+    One step per ``step_start`` event (one turn of the agent loop). Tokens
+    are summed over the ``step_finish`` events: in = input + cache read +
+    cache write, out = output + reasoning. opencode never closes the last
+    step with a ``step_finish``, so the final answer's tokens are missing;
+    with no ``step_finish`` at all the tokens are unknown.
+    """
+    events = _json_lines(stdout)
+    steps = sum(1 for event in events if event.get("type") == "step_start")
+    tokens_in = tokens_out = 0
+    finished = 0
+    for event in events:
+        if event.get("type") != "step_finish":
+            continue
+        part = event.get("part")
+        tokens = part.get("tokens") if isinstance(part, dict) else None
+        if not isinstance(tokens, dict):
+            continue
+        finished += 1
+        cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
+        tokens_in += (
+            _int(tokens.get("input")) + _int(cache.get("read"))
+            + _int(cache.get("write"))
+        )
+        tokens_out += _int(tokens.get("output")) + _int(tokens.get("reasoning"))
+    if not finished:
+        return _metrics(steps or None, None, None)
+    return _metrics(steps or None, tokens_in, tokens_out)
+
+
+def _result_event(stdout: str) -> dict | None:
+    """The claude-code ``result`` object: the whole JSON or the last event."""
+    try:
+        whole = json.loads((stdout or "").strip())
+    except json.JSONDecodeError:
+        whole = None
+    events = [whole] if isinstance(whole, dict) else _json_lines(stdout)
+    for event in reversed(events):
+        if event.get("type") == "result" or "num_turns" in event:
+            return event
+    return None
+
+
+def parse_metrics(tool: dict, stdout: str, stderr: str = "") -> dict:
+    """Agent steps and tokens the CLI reported, as far as its output tells.
+
+    Returns ``{"steps", "tokens_in", "tokens_out", "tokens_total"}``; a value
+    the output does not carry is ``None`` (the caller then estimates the
+    tokens). Per kind:
+
+    * ``opencode`` (``--format json``): see :func:`_opencode_metrics`.
+    * ``claude-code`` (json or stream-json): ``num_turns`` and ``usage`` of
+      the ``result`` event; in = input + cache creation + cache read.
+    * ``antigravity`` (json): ``num_turns`` and ``usage``; in = input + cache
+      read, out = output + thinking, total = ``total_tokens`` when present.
+    * ``codex``: only the total, from ``tokens used`` in its log.
+    * ``generic``: nothing.
+    """
+    kind = tool.get("kind")
+    if kind == "opencode":
+        return _opencode_metrics(stdout)
+    if kind in ("claude-code", "antigravity"):
+        data = _result_event(stdout)
+        if data is None:
+            return _metrics(None, None, None)
+        turns = data.get("num_turns")
+        steps = _int(turns) if isinstance(turns, (int, float)) else None
+        usage = data.get("usage")
+        if not isinstance(usage, dict):
+            return _metrics(steps, None, None)
+        if kind == "claude-code":
+            tokens_in = (
+                _int(usage.get("input_tokens"))
+                + _int(usage.get("cache_creation_input_tokens"))
+                + _int(usage.get("cache_read_input_tokens"))
+            )
+            return _metrics(steps, tokens_in, _int(usage.get("output_tokens")))
+        tokens_in = _int(usage.get("input_tokens")) + _int(
+            usage.get("cache_read_tokens")
+        )
+        tokens_out = _int(usage.get("output_tokens")) + _int(
+            usage.get("thinking_tokens")
+        )
+        total = usage.get("total_tokens")
+        return _metrics(
+            steps, tokens_in, tokens_out,
+            _int(total) if isinstance(total, (int, float)) else None,
+        )
+    if kind == "codex":
+        matches = _CODEX_TOKENS.findall(f"{stderr or ''}\n{stdout or ''}")
+        if matches:
+            digits = re.sub(r"[^\d]", "", matches[-1])
+            if digits:
+                return _metrics(None, None, None, int(digits))
+    return _metrics(None, None, None)
+
+
+def output_text(tool: dict, stdout: str) -> str:
+    """The readable answer inside ``stdout``.
+
+    ``opencode --format json`` prints events; their ``text`` parts are joined
+    with blank lines. Any other kind, or output with no text event, is
+    returned unchanged.
+    """
+    if tool.get("kind") != "opencode":
+        return stdout
+    texts = []
+    for event in _json_lines(stdout):
+        part = event.get("part")
+        if event.get("type") == "text" and isinstance(part, dict):
+            text = part.get("text")
+            if isinstance(text, str) and text:
+                texts.append(text)
+    return "\n\n".join(texts) if texts else stdout
 
 
 def _fill_from_registry(names: list[str], env: dict[str, str]) -> list[str]:
