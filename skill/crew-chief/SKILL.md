@@ -79,6 +79,11 @@ Seven steps, in order.
    excludes executors that failed this piece; add `--exclude <id> ...` to leave
    more out. When the reason mentions a "second chance", a low-risk piece went
    to an unrated or below-median model on purpose - that is the point.
+   Executors tied on score are spread over the job (the least used one first,
+   then a different tool), so pick every piece with `pick` rather than reusing
+   one id. An executor whose attempt ended in `quota` in the last
+   `quota_cooldown_min` minutes (default 60), in any job, sits out; the reason
+   then ends with `skipped for quota: <ids>`.
 
 4. **Write the brief and dispatch.**
 
@@ -89,12 +94,17 @@ Seven steps, in order.
    The brief is the whole contract: what to change, where, what "done" means,
    which files may be touched and how to test it. The executor runs in a
    throwaway git worktree and never touches your branch. `dispatch` prints
-   `status`, `branch`, `worktree`, `destructive_suspect` and `outside_writes`,
-   and exits `0` only on `status: ok`. Any other status (`failed`, `timeout`,
+   `status`, `branch`, `worktree`, `destructive_suspect`, `outside_writes`,
+   `duration`, `steps` (agent turns, `-` when the tool does not say) and
+   `tokens` (`~` and "estimated" when the tool reported none and the count is
+   characters / 4), and exits `0` only on `status: ok`. Any other status (`failed`, `timeout`,
    `quota`, `outside_write`, `brief_refused`) is recorded in the job with the
    executor's output as a note - read it before you retry. Give long work a
    smaller `--timeout <seconds>` only when you know the piece is short; the
-   default comes from `dispatch_timeout_s` (900 s).
+   default comes from `dispatch_timeout_s` (900 s). Pieces that do not depend
+   on each other can be dispatched in parallel (separate processes): every
+   command updates the job record under a lock, and parallel attempts get
+   their own worktrees.
 
 5. **Review with a different model family.**
 
@@ -194,6 +204,11 @@ it, and an unrated or below-median executor still gets a second chance on
 low-risk work (`explore_rate`, default `0.1`). No model is ever dropped for
 good.
 
+The scoreboard also shows, per executor and work type, how much work a pass
+costs: `attempts/pass` (exec attempts per piece it got `ok` on), mean `steps`,
+mean `tokens` (`~` when any count was estimated) and mean duration. They do not
+change the score; use them to explain a choice and when you report back.
+
 ## Safety
 
 - **Never put secrets or real client data in a brief.** The brief travels into a
@@ -215,4 +230,7 @@ good.
 - Reply in the user's language.
 - Show the result: what changed, the score, what the review flagged, and the
   `close` output (commit message and issue comment).
+- Report what each attempt cost, per piece and executor: steps, tokens (say
+  when they are estimated) and time, from the `dispatch` output or the job
+  record.
 - Say plainly what was not done and what you discarded.

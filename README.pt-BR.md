@@ -54,8 +54,8 @@ flowchart TB
 
 1. `job new`: o pedido é registrado palavra por palavra.
 2. `piece add`: ele é dividido em pedaços, cada um com tipo de trabalho e nível de risco.
-3. `pick`: o executor é escolhido. Os grátis vêm primeiro, ordenados pela nota com decaimento, e às vezes alguém ganha segunda chance.
-4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado.
+3. `pick`: o executor é escolhido. Os grátis vêm primeiro, ordenados pela nota com decaimento, e às vezes alguém ganha segunda chance. Empates são espalhados pelo job, e um modelo que acabou de bater cota fica de fora por um tempo.
+4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado, com duração, passos do agente e tokens. Peças independentes podem ser despachadas em paralelo.
 5. `dispatch --review`: um modelo de outra família revisa o trabalho.
 6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito.
 7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue.
@@ -154,6 +154,14 @@ review_default = ""
 
 # Horas depois das quais pick/dispatch voltam a checar modelos novos ou sumidos.
 model_check_hours = 24
+
+# Minutos que um executor fica fora do pick depois de uma tentativa `quota`.
+quota_cooldown_min = 60
+
+# Entradas extras do home (fnmatch) que a checagem de escrita externa ignora,
+# além da lista embutida de pastas de CLIs de agente (.claude, .codex, .gemini,
+# .config, ...).
+ignore_home_entries = []
 
 [[models]]
 match = "opencode:opencode/*-free"
@@ -302,10 +310,29 @@ O histórico é ponderado pela idade com meia-vida de 30 dias: uma nota de 30
 dias atrás vale metade da de hoje, uma de 60 dias atrás vale um quarto. A nota
 mostrada por executor e tipo de trabalho é a média ponderada das notas dele.
 
-A escolha é free primeiro: a melhor nota com decaimento ganha, empates vão para
-a menor duração média e, só em trabalho de risco baixo, há 1 chance em 10
-(`explore_rate`, padrão `0.1`) de um executor sem nota ou abaixo da mediana
-ganhar uma segunda chance. Nenhum modelo é descartado para sempre.
+A escolha é free primeiro: a melhor nota com decaimento ganha. Empates
+(inclusive "ninguém tem nota ainda") vão para o executor menos usado no job
+atual, depois para uma ferramenta que o job usou menos, depois para a menor
+duração média. Só em trabalho de risco baixo há 1 chance em 10 (`explore_rate`,
+padrão `0.1`) de um executor sem nota ou abaixo da mediana ganhar uma segunda
+chance. Um executor com tentativa `quota` nos últimos `quota_cooldown_min`
+minutos (padrão 60), em qualquer job do projeto, fica de fora, e o motivo do
+pick avisa. Nenhum modelo é descartado para sempre.
+
+Ao lado da nota, cada linha mostra quanto uma entrega custa àquele executor
+naquele tipo de trabalho:
+
+| executor | score | n | attempts/pass | mean steps | mean tokens | mean duration | last graded |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| opencode:opencode/deepseek-v4.1-flash-free | 85 | 4 | 1.5 | 9 | 48210 | 95s | 2026-10-19 |
+| cursor:auto | 70 | 2 | 1 | — | ~3100 | 40s | 2026-10-18 |
+
+`attempts/pass` é o número de tentativas exec do executor dividido pelas peças
+em que ele chegou a `ok`. Passos (voltas do agente) e tokens vêm da saída da
+própria ferramenta quando ela informa (OpenCode `--format json`, Claude Code,
+Antigravity; o Codex dá só o total de tokens); senão os tokens são estimados
+como caracteres ÷ 4 do brief e da resposta, com `~` na frente, e os passos ficam
+`—`. Passos, tokens e duração são médias das tentativas `ok`.
 
 ## Coordenadores suportados
 
@@ -319,7 +346,11 @@ que qualquer agente que leia um deles o encontre.
 - **Não há sandbox de verdade.** Os executores rodam com as próprias permissões.
   Arquivos escritos fora da worktree são detectados comparando snapshots antes e
   depois da execução, e essa tentativa é rejeitada como `outside_write` — depois
-  do fato, não antes.
+  do fato, não antes. A checagem olha o primeiro nível do home e de
+  `<projeto>.crew/`; as outras worktrees do projeto ali e as pastas que CLIs de
+  agente mantêm no home (`.claude`, `.codex`, `.gemini`, `.config`, `.local`,
+  `.cache`, ...) são ignoradas, então uma escrita dentro delas passa batida.
+  Acrescente as suas com `ignore_home_entries`.
 - **Cotas são texto.** Uma falha de cota ou rate limit é detectada pelo texto de
   erro do próprio executor (`429`, `quota`, `rate limit`, `usage limit`, `too
   many requests`), então uma mensagem fora do padrão é registrada como `failed`.

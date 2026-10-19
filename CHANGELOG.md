@@ -10,6 +10,14 @@ All notable changes to this project are documented here. Versions follow
 - **Model changes:** `docs/crew-chief/models-seen.json` records every executor discovery has seen (`cost`, `trains`, `first_seen`, `last_seen`, `present`, plus a top-level `last_check`). `discover` always updates it and prints, after the list, the free and paid models that are new, gone or changed cost (`new free: ...`, `gone: ...`, `now paid: ...`), or `models: no changes since <when>`. The first run only records a baseline, and a skipped tool never marks its models as gone. `--json` adds a `changes` object.
 - `job new` runs the same check every time and prints it on stderr; `pick` and `dispatch` run it on stderr only when the last check is older than `model_check_hours`. A failing check never fails the command.
 - `model_check_hours` preference (default `24`; `0` means every time).
+- **Attempt metrics:** every attempt records `steps` (agent turns), `tokens_in`, `tokens_out`, `tokens_total` and `tokens_estimated` next to `duration_s`. Numbers come from the tool's own output (OpenCode now runs with `--format json`; Claude Code and Antigravity `num_turns`/`usage`; Codex's token total); otherwise tokens are estimated as characters / 4 and flagged. `dispatch` prints them, the job `.md` shows them per attempt, and `scoreboard.md` gains `attempts/pass`, `mean steps` and `mean tokens` columns.
+- `quota_cooldown_min` preference (default `60`): an executor whose attempt ended in `quota` within that window, in any job of the project, sits out of `pick`; the reason ends with `skipped for quota: <ids>`.
+- `ignore_home_entries` preference: extra home entries the outside-write check ignores, on top of the built-in list of agent CLI folders.
+
+### Fixed
+- Parallel `dispatch` (and `pick`, `piece add`, `correction`, `grade`) no longer lose each other's writes: every change to a job goes through a lock file next to the record and re-reads the job before saving. Parallel attempts of one piece get distinct attempt numbers and worktrees. Windows sharing violations on the record are retried.
+- `outside_write` no longer fires for the project's other worktrees in `<project>.crew/` (parallel attempts) or for the config folders agent CLIs write in the home directory (`.claude`, `.claude.json`, `.codex`, `.gemini`, `.antigravity`, `.config`, `.local`, `.cache`, ...). Unknown entries and writes to the main repo are still caught.
+- `pick` no longer sends every unrated piece to the same executor: ties go to the executor least used in the job, then to a different tool.
 
 ## [0.1.0] - 2026-10-17
 

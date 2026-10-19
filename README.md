@@ -54,8 +54,8 @@ flowchart TB
 
 1. `job new`: your request is recorded verbatim.
 2. `piece add`: it is split into pieces, each with a work type and a risk level.
-3. `pick`: an executor is chosen. Free models come first, ranked by decayed score, with an occasional second chance.
-4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status.
+3. `pick`: an executor is chosen. Free models come first, ranked by decayed score, with an occasional second chance. Ties are spread over the job, and a model that just hit its quota sits out for a while.
+4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status, with its duration, agent steps and tokens. Independent pieces can be dispatched in parallel.
 5. `dispatch --review`: a different model family reviews the work.
 6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten.
 7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment.
@@ -154,6 +154,13 @@ review_default = ""
 
 # Hours after which pick/dispatch re-check which models are new or gone.
 model_check_hours = 24
+
+# Minutes an executor sits out of pick after an attempt ended in `quota`.
+quota_cooldown_min = 60
+
+# Extra home entries (fnmatch) the outside-write check ignores, on top of the
+# built-in list of agent CLI folders (.claude, .codex, .gemini, .config, ...).
+ignore_home_entries = []
 
 [[models]]
 match = "opencode:opencode/*-free"
@@ -303,10 +310,29 @@ History is weighted by age with a 30-day half-life: a grade from 30 days ago
 counts half as much as today's, one from 60 days ago a quarter as much. The
 score shown per executor and work type is the weighted mean of its grades.
 
-Picking is free-first: the best decayed score wins, ties break on the shorter
-mean duration, and on low-risk work only there is a 1-in-10 chance
-(`explore_rate`, default `0.1`) that an unrated or below-median executor gets a
-second chance. No model is ever dropped for good.
+Picking is free-first: the best decayed score wins. Ties (including "nobody is
+rated yet") go to the executor used least in the current job, then to a tool
+the job has used least, then to the shorter mean duration. On low-risk work
+only there is a 1-in-10 chance (`explore_rate`, default `0.1`) that an unrated
+or below-median executor gets a second chance. An executor whose attempt ended
+in `quota` within `quota_cooldown_min` minutes (default 60), in any job of the
+project, sits out, and the pick reason says so. No model is ever dropped for
+good.
+
+Next to the score, each row shows what a pass costs that executor on that work
+type:
+
+| executor | score | n | attempts/pass | mean steps | mean tokens | mean duration | last graded |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| opencode:opencode/deepseek-v4.1-flash-free | 85 | 4 | 1.5 | 9 | 48210 | 95s | 2026-10-19 |
+| cursor:auto | 70 | 2 | 1 | — | ~3100 | 40s | 2026-10-18 |
+
+`attempts/pass` is the executor's exec attempts divided by the pieces it got
+`ok` on. Steps (agent turns) and tokens come from the tool's own output where
+it reports them (OpenCode `--format json`, Claude Code, Antigravity; Codex
+gives a token total only); otherwise tokens are estimated as characters / 4 of
+the brief and the answer, shown with `~`, and steps stay `—`. Steps, tokens and
+duration average the `ok` attempts.
 
 ## Supported coordinators
 
@@ -320,7 +346,11 @@ agent that reads one of those picks it up.
 - **No real sandbox.** Executors run with their own permissions. Files written
   outside the worktree are detected by comparing snapshots before and after the
   run, and such an attempt is rejected as `outside_write` — after the fact, not
-  before.
+  before. The check looks at the top level of the home directory and of
+  `<project>.crew/`; the project's other worktrees there and the folders agent
+  CLIs keep in your home (`.claude`, `.codex`, `.gemini`, `.config`, `.local`,
+  `.cache`, ...) are ignored, so a write inside those goes unnoticed. Add your
+  own with `ignore_home_entries`.
 - **Quotas are text.** A quota or rate-limit failure is detected from the
   executor's own error text (`429`, `quota`, `rate limit`, `usage limit`, `too
   many requests`), so an unusual message is recorded as a plain `failed`.
