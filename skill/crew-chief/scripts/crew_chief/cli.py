@@ -43,6 +43,7 @@ from .scoring import (
     grade as score_piece,
     pick as pick_executor,
     quota_cooldown,
+    quota_family,
     render_scoreboard,
 )
 from .worktree import NotAGitRepo
@@ -236,18 +237,44 @@ def _cmd_pick(args: argparse.Namespace) -> int:
     cooling = quota_cooldown(project, prefs.quota_cooldown_min)
 
     def choose(job: dict) -> tuple:
-        """Pick under the job lock, so parallel picks see each other's picks."""
+        """Pick under the job lock, so parallel picks see each other's picks.
+
+        With ``--review`` the pick is for a reviewer: the work type is
+        ``review``, failed review attempts are left out instead of failed exec
+        attempts, and so is every executor in the quota family of an executor
+        with an ``ok`` exec attempt on the piece. Two free failures escalate
+        on their own only on thinking work; execution work stays free unless
+        ``--strong`` is given.
+        """
         piece = _piece(job, args.piece)
+        role = "review" if args.review else "exec"
+        work_type = "review" if args.review else piece.get("type", "")
         exclude = set(args.exclude or [])
+        reviewed: set[str] = set()
         for attempt in piece.get("attempts") or []:
-            if attempt.get("role") != "exec" or attempt.get("status") == "ok":
-                continue
             executor_id = attempt.get("executor")
-            if isinstance(executor_id, str) and executor_id:
-                exclude.add(executor_id)
+            if not isinstance(executor_id, str) or not executor_id:
+                continue
+            if args.review and attempt.get("role") == "exec" and attempt.get(
+                "status"
+            ) == "ok":
+                reviewed.add(executor_id)
+            if attempt.get("role") != role or attempt.get("status") == "ok":
+                continue
+            exclude.add(executor_id)
+        families = {quota_family(executor_id) for executor_id in reviewed}
+        exclude |= {
+            executor.id
+            for executor in executors
+            if quota_family(executor.id) in families
+        }
 
         escalation = ""
-        if free_failures(job, args.piece) >= 2:
+        if (
+            not args.review
+            and work_type not in records.EXEC_TYPES
+            and free_failures(job, args.piece) >= 2
+        ):
             escalation = _ESCALATION_FREE_FAILURES
         elif args.strong:
             escalation = _ESCALATION_STRONG
@@ -259,23 +286,29 @@ def _cmd_pick(args: argparse.Namespace) -> int:
         choice, reason = pick_executor(
             executors,
             stats,
-            piece.get("type", ""),
+            work_type,
             piece.get("risk", ""),
             prefs,
             exclude,
             random.Random(),
             job=job,
             cooling=cooling,
+            strong=args.strong,
         )
+        if reviewed:
+            reason += (
+                f"; reviewer outside the family of: {', '.join(sorted(reviewed))}"
+            )
 
         if escalation:
             records.add_escalation(
                 job, args.piece, escalation, choice.id if choice else ""
             )
         if choice is not None:
-            piece.setdefault("picks", []).append(
-                {"pick": choice.id, "reason": reason, "at": _now_iso()}
-            )
+            entry = {"pick": choice.id, "reason": reason, "at": _now_iso()}
+            if args.review:
+                entry["role"] = "review"
+            piece.setdefault("picks", []).append(entry)
         return choice, reason
 
     choice, reason = records.update_job(project, args.job, choose)
@@ -522,7 +555,14 @@ def build_parser() -> argparse.ArgumentParser:
     pick_parser.add_argument(
         "--strong",
         action="store_true",
-        help="the piece is complex and cannot be split",
+        help="the piece is complex and cannot be split (the only way execution "
+        "work reaches a paid executor)",
+    )
+    pick_parser.add_argument(
+        "--review",
+        action="store_true",
+        help="pick a reviewer for the piece: thinking work, outside the quota "
+        "family of the executor that did it",
     )
     pick_parser.set_defaults(handler=_cmd_pick)
 

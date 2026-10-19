@@ -200,7 +200,7 @@ def test_pick_escalates_after_two_free_failures(
     _only_bins(monkeypatch, {"freebie", "strong"})
 
     job = records.new_job(repo, "Escalate", "do it", True, "two parts")
-    records.add_piece(job, "Hard bit", "code", "low")
+    records.add_piece(job, "Hard bit", "design", "low")
     records.add_attempt(job, 1, {"executor": "freebie:m", "role": "exec",
                                  "status": "failed", "cost": "free"})
     records.add_attempt(job, 1, {"executor": "freebie:m", "role": "exec",
@@ -229,7 +229,7 @@ def test_pick_escalates_after_two_free_no_change_attempts(
     _only_bins(monkeypatch, {"freebie", "strong"})
 
     job = records.new_job(repo, "Escalate", "do it", True, "two parts")
-    records.add_piece(job, "Hard bit", "code", "low")
+    records.add_piece(job, "Hard bit", "design", "low")
     for _ in range(2):
         records.add_attempt(job, 1, {"executor": "freebie:m", "role": "exec",
                                      "status": "no_change", "cost": "free"})
@@ -240,6 +240,124 @@ def test_pick_escalates_after_two_free_no_change_attempts(
     assert capsys.readouterr().out.splitlines()[0].strip() == "strong:s"
     piece = _stored_job(repo, job["id"])["pieces"][0]
     assert piece["escalations"][0]["reason"] == "2 free failures"
+
+
+def test_pick_exec_work_never_escalates_after_two_free_failures(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _ESCALATION_PREFS)
+    fake_bin("freebie", "print('x')\n")
+    fake_bin("strong", "print('x')\n")
+    _only_bins(monkeypatch, {"freebie", "strong"})
+
+    job = records.new_job(repo, "Stay free", "do it", True, "two parts")
+    records.add_piece(job, "Hands-on bit", "code", "low")
+    for _ in range(2):
+        records.add_attempt(job, 1, {"executor": "freebie:m", "role": "exec",
+                                     "status": "failed", "cost": "free"})
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 1
+    out = capsys.readouterr().out
+    assert "strong:s" not in out
+    assert "split the piece" in out and "do it yourself" in out
+    piece = _stored_job(repo, job["id"])["pieces"][0]
+    assert not piece.get("escalations")
+
+
+def test_pick_exec_work_goes_paid_with_strong(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _ESCALATION_PREFS)
+    fake_bin("freebie", "print('x')\n")
+    fake_bin("strong", "print('x')\n")
+    _only_bins(monkeypatch, {"freebie", "strong"})
+
+    job = records.new_job(repo, "Strong", "do it", True, "one part")
+    records.add_piece(job, "Knot", "refactor", "high")
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--strong"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "strong:s"
+    piece = _stored_job(repo, job["id"])["pieces"][0]
+    assert piece["escalations"][0]["reason"].startswith("--strong")
+
+
+_REVIEW_PREFS = """
+strong_order = ["strong"]
+
+[[tools]]
+name = "freebie"
+kind = "generic"
+bin = "freebie"
+models = ["m-high", "n"]
+run_cmd = ["freebie", "{prompt}"]
+
+[[tools]]
+name = "strong"
+kind = "generic"
+bin = "strong"
+models = ["s"]
+run_cmd = ["strong", "{prompt}"]
+
+[[models]]
+match = "freebie:*"
+cost = "free"
+
+[[models]]
+match = "strong:*"
+cost = "paid"
+"""
+
+
+def _reviewed_job(repo: Path, executor: str) -> dict:
+    """A job whose code piece 1 has an ``ok`` exec attempt by ``executor``."""
+    job = records.new_job(repo, "Review me", "do it", True, "one part")
+    records.add_piece(job, "Change", "code", "low")
+    records.add_attempt(job, 1, {"executor": executor, "role": "exec",
+                                 "status": "ok", "cost": "free"})
+    records.save_job(repo, job)
+    return job
+
+
+def test_pick_review_leaves_out_the_executor_quota_family(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _REVIEW_PREFS)
+    fake_bin("freebie", "print('x')\n")
+    fake_bin("strong", "print('x')\n")
+    _only_bins(monkeypatch, {"freebie", "strong"})
+    job = _reviewed_job(repo, "freebie:n")
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--review"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "freebie:m-high"
+    assert "reviewer outside the family of: freebie:n" in lines[1]
+    piece = _stored_job(repo, job["id"])["pieces"][0]
+    assert piece["picks"][-1]["role"] == "review"
+
+
+def test_pick_review_escalates_when_only_the_same_family_is_free(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _REVIEW_PREFS.replace('["m-high", "n"]', '["m-high"]'))
+    fake_bin("freebie", "print('x')\n")
+    fake_bin("strong", "print('x')\n")
+    _only_bins(monkeypatch, {"freebie", "strong"})
+    job = _reviewed_job(repo, "freebie:m-low")
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--review"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "strong:s"
+    assert lines[1].startswith("escalated: no free executor available")
 
 
 def test_pick_excludes_an_executor_with_no_change_on_the_piece(
@@ -798,7 +916,7 @@ def test_pick_skips_an_executor_that_hit_quota_in_another_job(
     })
     records.save_job(repo, earlier)
     job = records.new_job(repo, "Now", "do it", True, "parts")
-    records.add_piece(job, "Other bit", "code", "low")
+    records.add_piece(job, "Other bit", "diagnosis", "low")
     records.save_job(repo, job)
 
     assert main(["pick", "--project", str(repo), "--job", job["id"],
