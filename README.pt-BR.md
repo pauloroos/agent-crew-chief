@@ -358,7 +358,10 @@ que qualquer agente que leia um deles o encontre.
   `<projeto>.crew/`; as outras worktrees do projeto ali e as pastas que CLIs de
   agente mantêm no home (`.claude`, `.codex`, `.gemini`, `.config`, `.local`,
   `.cache`, ...) são ignoradas, então uma escrita dentro delas passa batida.
-  Acrescente as suas com `ignore_home_entries`.
+  Acrescente as suas com `ignore_home_entries`. No repo principal, os
+  registros que o próprio crew-chief reescreve (`docs/crew-chief/jobs/`,
+  `models-seen.json`, `scoreboard.md`) também são ignorados, porque despachos
+  em paralelo os atualizam.
 - **Cotas são texto.** Uma falha de cota ou rate limit é detectada pelo texto de
   erro do próprio executor (`429`, `quota`, `rate limit`, `usage limit`, `too
   many requests`), então uma mensagem fora do padrão é registrada como `failed`.

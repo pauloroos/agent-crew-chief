@@ -12,7 +12,9 @@ whether an attempt is allowed to land:
   were already dirty in the main repo appear in both snapshots and are ignored.
   The sibling directory is ``<project>.crew/`` itself, so the worktrees of
   parallel attempts living there are not writes; neither are the entries agent
-  CLIs keep in the home directory (:data:`AGENT_HOME_ENTRIES`).
+  CLIs keep in the home directory (:data:`AGENT_HOME_ENTRIES`), nor the
+  records parallel crew-chief commands rewrite in the main repo
+  (:data:`COORDINATOR_RECORDS`).
 * :func:`diffstat` reports what the attempt changed and calls out deletions
   that look destructive, so a merge can be refused before it happens.
 
@@ -29,10 +31,21 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 #: Files the coordinator writes inside the worktree; they never count as work.
 EXCLUDED_FILES: tuple[str, ...] = (".crew-chief-brief.md", ".crew-chief-out.txt")
+
+#: Paths in the main repo that crew-chief commands themselves rewrite (a
+#: trailing ``/`` covers a folder): parallel dispatches of the same project
+#: update the job records, their lock files and the registries while an
+#: attempt runs, so the containment check never counts them.
+COORDINATOR_RECORDS: tuple[str, ...] = (
+    "docs/crew-chief/jobs/",
+    "docs/crew-chief/models-seen.json",
+    "docs/crew-chief/scoreboard.md",
+)
 
 #: Top-level home entries that agent CLIs write on every run (config, auth,
 #: caches, session state) plus OS noise; fnmatch patterns, matched without
@@ -68,6 +81,9 @@ AGENT_HOME_ENTRIES: tuple[str, ...] = (
 #: Directory names :func:`create_worktree` gives attempts:
 #: ``<job_id>-<piece>-<attempt>`` with a job id ``<YYYYmmdd-HHMM>-<slug>[-N]``.
 _WORKTREE_NAME = re.compile(r"^\d{8}-\d{4}-[a-z0-9-]+-\d+-\d+$")
+
+#: Seconds a transient failure caused by a parallel attempt is retried.
+_TRANSIENT_RETRY_S = 2.0
 
 #: A deletion is called destructive when it removes many lines and mostly
 #: deletes: at least this many lines gone with more than twice the added lines.
@@ -174,7 +190,7 @@ def snapshot(
     """A containment snapshot: main repo status, siblings and home entries.
 
     ``repo`` is the set of ``git status --porcelain=v1 -uall`` lines of the
-    main repo; ``sibling`` and ``home`` map each top-level entry name to its
+    main repo, minus :data:`COORDINATOR_RECORDS`; ``sibling`` and ``home`` map each top-level entry name to its
     ``st_mtime_ns``, for ``worktree.parent`` and for ``Path.home()``. Nothing
     is walked recursively.
 
@@ -186,8 +202,11 @@ def snapshot(
     """
     project = Path(project)
     worktree = Path(worktree)
-    status = _git(["status", "--porcelain=v1", "-uall"], project)
-    registered = _registered_worktree_names(project, worktree.parent)
+    # A parallel attempt may be replacing the shared info/exclude right now.
+    status = _retry_transient(
+        lambda: _git(["status", "--porcelain=v1", "-uall"], project), RuntimeError
+    )
+    registered =_registered_worktree_names(project, worktree.parent)
     siblings = {
         name: mtime
         for name, mtime in _entry_mtimes(worktree.parent).items()
@@ -202,10 +221,29 @@ def snapshot(
         if not any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
     }
     return {
-        "repo": set(status.splitlines()),
+        "repo": {
+            line for line in status.splitlines() if not _is_coordinator_record(line)
+        },
         "sibling": siblings,
         "home": home,
     }
+
+
+def _is_coordinator_record(line: str) -> bool:
+    """Whether a porcelain status line is a record crew-chief itself writes.
+
+    Every path the line names (both sides of a rename) must be one of
+    :data:`COORDINATOR_RECORDS`.
+    """
+    paths = [part.strip().strip('"') for part in line[3:].split(" -> ")]
+
+    def is_record(path: str) -> bool:
+        return any(
+            path.startswith(entry) if entry.endswith("/") else path == entry
+            for entry in COORDINATOR_RECORDS
+        )
+
+    return all(is_record(path) for path in paths)
 
 
 def _registered_worktree_names(project: Path, directory: Path) -> set[str]:
@@ -344,7 +382,13 @@ def discard(project: Path, worktree: Path, branch: str) -> None:
 
 
 def _exclude_coordinator_files(worktree: Path) -> None:
-    """Add :data:`EXCLUDED_FILES` to the worktree's ``info/exclude``."""
+    """Add :data:`EXCLUDED_FILES` to the worktree's ``info/exclude``.
+
+    That file is shared by every worktree of the repository, and parallel
+    attempts run ``git`` against it at any moment; on Windows a ``git`` that
+    opens it mid-write dies. So it is written only when an entry is missing,
+    and then through a temp file and an atomic replace.
+    """
     raw = _git(["rev-parse", "--git-path", "info/exclude"], worktree).strip()
     exclude = Path(raw)
     if not exclude.is_absolute():
@@ -352,11 +396,34 @@ def _exclude_coordinator_files(worktree: Path) -> None:
     lines = (
         exclude.read_text(encoding="utf-8").splitlines() if exclude.exists() else []
     )
-    for entry in EXCLUDED_FILES:
-        if entry not in lines:
-            lines.append(entry)
+    missing = [entry for entry in EXCLUDED_FILES if entry not in lines]
+    if not missing:
+        return
     exclude.parent.mkdir(parents=True, exist_ok=True)
-    exclude.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    temp = exclude.with_name(f"{exclude.name}.{os.getpid()}.tmp")
+    temp.write_text("\n".join([*lines, *missing]) + "\n", encoding="utf-8")
+    try:
+        _retry_transient(lambda: os.replace(temp, exclude), PermissionError)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _retry_transient(action, errors, seconds: float = _TRANSIENT_RETRY_S):
+    """Run ``action``, retrying ``errors`` for up to ``seconds``.
+
+    For the brief failures parallel attempts cause on Windows: a file being
+    replaced cannot be opened, and one that is open cannot be replaced.
+    """
+    deadline = time.monotonic() + seconds
+    delay = 0.01
+    while True:
+        try:
+            return action()
+        except errors:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.2)
 
 
 def _remove_worktree(project: Path, worktree: Path) -> None:

@@ -82,6 +82,77 @@ def test_create_worktree_with_space_in_project_path(
     assert ".crew-chief-brief.md" not in status
 
 
+def test_create_worktree_leaves_a_complete_shared_exclude_alone(
+    git_repo: Path, home_dir: Path
+):
+    # info/exclude is shared by every worktree of the repo: rewriting it while
+    # a parallel attempt runs `git status` made git die with "cannot use
+    # .git/info/exclude as an exclude file" on Windows.
+    import os
+
+    create_worktree(git_repo, "job1", 1, 1)
+    exclude = git_repo / ".git" / "info" / "exclude"
+    assert ".crew-chief-brief.md" in exclude.read_text(encoding="utf-8")
+    os.utime(exclude, ns=(1_000_000_000, 1_000_000_000))
+
+    create_worktree(git_repo, "job1", 1, 2)
+
+    assert exclude.stat().st_mtime_ns == 1_000_000_000
+
+
+def test_snapshot_ignores_records_other_crew_chief_processes_write(
+    git_repo: Path, home_dir: Path
+):
+    # Parallel dispatches update the job record (tracked once committed), its
+    # lock file and the registries while this attempt runs; none of that is
+    # the executor writing outside its worktree.
+    records = git_repo / "docs" / "crew-chief"
+    (records / "jobs").mkdir(parents=True)
+    (records / "jobs" / "job1.json").write_text("{}\n", encoding="utf-8")
+    (records / "models-seen.json").write_text("{}\n", encoding="utf-8")
+    _git(git_repo, "add", "docs")
+    _git(git_repo, "commit", "-m", "records")
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    (records / "jobs" / "job1.json").write_text('{"x": 1}\n', encoding="utf-8")
+    (records / "jobs" / "job1.lock").write_text("123\n", encoding="utf-8")
+    (records / "jobs" / "job1.md").write_text("# job\n", encoding="utf-8")
+    (records / "models-seen.json").write_text('{"x": 1}\n', encoding="utf-8")
+    (records / "scoreboard.md").write_text("# Scoreboard\n", encoding="utf-8")
+    (records / "notes.md").write_text("not a record\n", encoding="utf-8")
+    after = snapshot(git_repo, worktree)
+
+    assert outside_writes(before, after) == ["repo: ?? docs/crew-chief/notes.md"]
+
+
+def test_snapshot_retries_a_git_status_that_fails_for_a_moment(
+    git_repo: Path, home_dir: Path, monkeypatch
+):
+    import crew_chief.worktree as worktree_module
+
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    real_git = worktree_module._git
+    calls = {"n": 0}
+
+    def flaky_git(args, cwd, check=True):
+        if args[0] == "status":
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise RuntimeError(
+                    "git status failed: fatal: cannot use .git/info/exclude "
+                    "as an exclude file"
+                )
+        return real_git(args, cwd, check)
+
+    monkeypatch.setattr(worktree_module, "_git", flaky_git)
+
+    taken = snapshot(git_repo, worktree)
+
+    assert calls["n"] == 3
+    assert taken["repo"] == set()
+
+
 def test_create_worktree_refuses_existing_path(git_repo: Path, home_dir: Path):
     worktree, _ = create_worktree(git_repo, "job1", 1, 1)
 

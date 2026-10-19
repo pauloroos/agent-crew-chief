@@ -356,7 +356,9 @@ agent that reads one of those picks it up.
   `<project>.crew/`; the project's other worktrees there and the folders agent
   CLIs keep in your home (`.claude`, `.codex`, `.gemini`, `.config`, `.local`,
   `.cache`, ...) are ignored, so a write inside those goes unnoticed. Add your
-  own with `ignore_home_entries`.
+  own with `ignore_home_entries`. In the main repo, the records crew-chief
+  itself rewrites (`docs/crew-chief/jobs/`, `models-seen.json`,
+  `scoreboard.md`) are ignored too, since parallel dispatches update them.
 - **Quotas are text.** A quota or rate-limit failure is detected from the
   executor's own error text (`429`, `quota`, `rate limit`, `usage limit`, `too
   many requests`), so an unusual message is recorded as a plain `failed`.
