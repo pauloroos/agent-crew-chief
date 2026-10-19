@@ -36,28 +36,41 @@ NOW = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)
 # --- helpers ---------------------------------------------------------------
 
 
-def _ex(id_: str, cost: str = "free", name: str | None = None) -> Executor:
-    """Build an executor from ``"<tool>:<model>"`` with an optional cost."""
+#: Tool kind of each tool name the tests use; any other name is ``opencode``.
+_KINDS = {"antigravity": "antigravity", "claude": "claude-code",
+          "ghost": "claude-code", "codex": "codex"}
+
+
+def _ex(
+    id_: str,
+    cost: str = "free",
+    name: str | None = None,
+    work_types: list[str] | None = None,
+) -> Executor:
+    """Build an executor from ``"<tool>:<model>"`` with an optional cost.
+
+    The kind follows the tool name (``_KINDS``); ``work_types`` sets the
+    tool's explicit list.
+    """
     tool_name, model = id_.split(":", 1)
-    return Executor(
-        id=id_,
-        tool={
-            "name": name or tool_name,
-            "kind": "opencode",
-            "bin": "opencode",
-        },
-        model=model,
-        cost=cost,
-        trains=False,
-    )
+    tool = {
+        "name": name or tool_name,
+        "kind": _KINDS.get(tool_name, "opencode"),
+        "bin": tool_name,
+    }
+    if work_types is not None:
+        tool["work_types"] = work_types
+    return Executor(id=id_, tool=tool, model=model, cost=cost, trains=False)
 
 
 def _prefs(
     strong_order: tuple[str, ...] = ("ghost", "codex"),
     explore_rate: float = 0.1,
+    exec_first: tuple[str, ...] = ("opencode",),
 ) -> Prefs:
     """A :class:`Prefs` with just the fields ``pick`` reads, plus defaults."""
     return Prefs(
+        exec_first=list(exec_first),
         tools=[],
         models=[],
         strong_order=list(strong_order),
@@ -606,14 +619,15 @@ def test_pick_drops_excluded_and_never_picks_forbidden():
 def test_pick_returns_none_without_a_candidate():
     forbidden = _ex("opencode:f", cost="forbidden")
 
-    assert pick([forbidden], {}, "code", "medium", _prefs(), set(), _Rng(0.0)) == (
+    assert pick([forbidden], {}, "review", "medium", _prefs(), set(),
+                _Rng(0.0)) == (None, "no executor available")
+    assert pick([], {}, "review", "medium", _prefs(), set(), _Rng(0.0)) == (
         None,
         "no executor available",
     )
-    assert pick([], {}, "code", "medium", _prefs(), set(), _Rng(0.0)) == (
-        None,
-        "no executor available",
-    )
+    chosen, reason = pick([], {}, "code", "medium", _prefs(), set(), _Rng(0.0))
+    assert chosen is None
+    assert reason.startswith("no executor available: no free executor left")
 
 
 def test_pick_escalates_when_no_free():
@@ -621,7 +635,7 @@ def test_pick_escalates_when_no_free():
     ghost = _ex("ghost:g1", cost="paid")
 
     chosen, reason = pick(
-        [codex, ghost], {}, "code", "medium", _prefs(), set(), _Rng(0.0)
+        [codex, ghost], {}, "review", "medium", _prefs(), set(), _Rng(0.0)
     )
 
     assert chosen is ghost
@@ -635,7 +649,7 @@ def test_pick_strong_order_puts_unlisted_tools_last():
     chosen, _ = pick(
         [ghost, codex],
         {},
-        "code",
+        "review",
         "medium",
         _prefs(strong_order=("codex",)),
         set(),
@@ -815,7 +829,8 @@ def test_pick_spreads_unrated_executors_over_the_job():
     job = _job_with_picks(["antigravity:opus"])
 
     chosen, reason = pick(
-        [a, b, c], {}, "code", "medium", _prefs(), set(), _Rng(0.9), job=job
+        [a, b, c], {}, "code", "medium", _prefs(exec_first=()), set(),
+        _Rng(0.9), job=job,
     )
 
     # b and c are both unused; c's tool has not been used in the job yet.
@@ -834,7 +849,8 @@ def test_pick_spreads_nine_pieces_in_a_row():
     chosen_ids = []
     for piece in job["pieces"]:
         chosen, _ = pick(
-            pool, {}, "code", "medium", _prefs(), set(), _Rng(0.9), job=job
+            pool, {}, "code", "medium", _prefs(exec_first=()), set(),
+            _Rng(0.9), job=job,
         )
         piece["picks"].append({"pick": chosen.id})
         chosen_ids.append(chosen.id)
@@ -906,17 +922,17 @@ def test_pick_skips_executors_cooling_down_after_quota():
 
 
 def test_pick_escalates_when_every_free_executor_is_cooling():
-    free = _ex("opencode:flash")
+    free = _ex("antigravity:gemini-4-argon-high")
     paid = _ex("codex:c1", cost="paid")
 
     chosen, reason = pick(
-        [free, paid], {}, "code", "medium", _prefs(), set(), _Rng(0.0),
-        cooling={"opencode:flash"},
+        [free, paid], {}, "review", "medium", _prefs(), set(), _Rng(0.0),
+        cooling={"antigravity:gemini-4-argon-high"},
     )
 
     assert chosen is paid
     assert reason.startswith("escalated: no free executor available")
-    assert "skipped for quota: opencode:flash" in reason
+    assert "skipped for quota: antigravity:gemini-4-argon-high" in reason
 
 
 def test_pick_with_everything_cooling_has_no_executor():
@@ -1098,3 +1114,135 @@ def test_scoreboard_row_shows_the_new_metric_columns(tmp_path):
     ) in text
     assert "| opencode:a | 80 | 1 | 2 | 7 | 12345 | 95s | 2026-10-17 |" in text
     assert "| cursor:b | 60 | 1 | 1 | — | ~800 | 30s | 2026-10-17 |" in text
+
+
+# --- pick: execute vs think work types --------------------------------------
+
+
+def test_pick_review_accepts_a_free_opencode_model():
+    opencode = _ex("opencode:x-free")
+    sonnet = _ex("claude:sonnet", cost="paid")
+    stats = _stats(("opencode:x-free", "review", 70.0, 5.0))
+
+    chosen, reason = pick(
+        [opencode, sonnet], stats, "review", "medium", _prefs(), set(),
+        _Rng(0.9),
+    )
+
+    assert chosen is opencode
+    assert reason == "best score 70 (opencode:x-free)"
+
+
+def test_pick_review_ranks_free_executors_by_score_not_exec_first():
+    opencode = _ex("opencode:x-free")
+    argon = _ex("antigravity:gemini-4-argon-high")
+    stats = _stats(("antigravity:gemini-4-argon-high", "review", 90.0, 5.0),
+                   ("opencode:x-free", "review", 60.0, 5.0))
+
+    chosen, _ = pick([opencode, argon], stats, "review", "medium", _prefs(),
+                     set(), _Rng(0.9))
+
+    assert chosen is argon
+
+
+def test_pick_review_escalates_to_paid_when_no_free_fits():
+    exec_only = ["code", "tests", "refactor", "docs", "data"]
+    x = _ex("opencode:x-free", work_types=exec_only)
+    y = _ex("opencode:y-free", work_types=exec_only)
+    claude = _ex("claude:sonnet", cost="paid")
+    codex = _ex("codex:c1", cost="paid")
+
+    chosen, reason = pick(
+        [x, y, claude, codex], {}, "review", "medium",
+        _prefs(strong_order=("codex", "claude")), set(), _Rng(0.0),
+    )
+
+    assert chosen is codex
+    assert reason == (
+        "escalated: no free executor available (codex:c1); "
+        "not for review: opencode"
+    )
+
+
+def test_pick_code_puts_opencode_before_other_free_executors():
+    gemini = _ex("antigravity:gemini-4-argon-high")
+    opencode = _ex("opencode:x-free")
+    stats = _stats(("antigravity:gemini-4-argon-high", "code", 95.0, 5.0))
+
+    chosen, reason = pick(
+        [gemini, opencode], stats, "code", "medium", _prefs(), set(), _Rng(0.9)
+    )
+
+    assert chosen is opencode
+    assert "not for" not in reason
+
+
+def test_pick_code_falls_back_to_other_free_when_opencode_is_out():
+    gemini = _ex("antigravity:gemini-4-argon-high")
+    x = _ex("opencode:x-free")
+    y = _ex("opencode:y-free")
+
+    chosen, reason = pick(
+        [gemini, x, y], {}, "code", "medium", _prefs(), {"opencode:x-free"},
+        _Rng(0.9), cooling={"opencode:y-free"},
+    )
+
+    assert chosen is gemini
+    assert reason.endswith("skipped for quota: opencode:y-free")
+
+
+def test_pick_tool_with_explicit_work_types_only_gets_those():
+    writer = _ex("writer:w", work_types=["docs"])
+    codex = _ex("codex:c1")
+
+    stats = _stats(("writer:w", "docs", 80.0, 5.0),
+                   ("writer:w", "code", 99.0, 5.0))
+
+    chosen, _ = pick([writer, codex], stats, "docs", "medium", _prefs(), set(),
+                     _Rng(0.9))
+    assert chosen is writer
+
+    chosen, reason = pick([writer, codex], stats, "code", "medium", _prefs(),
+                          set(), _Rng(0.9))
+    assert chosen is codex
+    assert reason.endswith("; not for code: writer")
+
+
+def test_pick_exec_work_never_escalates_to_paid_on_its_own():
+    free = _ex("opencode:x-free")
+    paid = _ex("codex:c1", cost="paid")
+
+    chosen, reason = pick(
+        [free, paid], {}, "code", "medium", _prefs(), {"opencode:x-free"},
+        _Rng(0.0),
+    )
+
+    assert chosen is None
+    assert reason.startswith(
+        "no executor available: no free executor left for code"
+    )
+    assert "split the piece" in reason and "do it yourself" in reason
+
+
+def test_pick_exec_work_goes_paid_only_when_strong_is_asked():
+    free = _ex("opencode:x-free")
+    paid = _ex("codex:c1", cost="paid")
+
+    chosen, reason = pick(
+        [free, paid], {}, "tests", "medium", _prefs(), {"opencode:x-free"},
+        _Rng(0.0), strong=True,
+    )
+
+    assert chosen is paid
+    assert reason.startswith("escalated")
+
+
+def test_pick_not_for_note_groups_by_tool():
+    pool = [_ex(f"opencode:m{index}-free", work_types=["code"])
+            for index in range(12)]
+    pool.append(_ex("antigravity:gemini-4-argon-high"))
+
+    _, reason = pick(pool, {}, "design", "medium", _prefs(), set(), _Rng(0.9))
+
+    assert reason.endswith("; not for design: opencode")
+    assert "m3-free" not in reason

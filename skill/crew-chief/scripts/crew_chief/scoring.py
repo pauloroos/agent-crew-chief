@@ -13,7 +13,10 @@ Three jobs live here:
   a second chance on low-risk work. Executors tied on score are spread over
   the job (least used first, then a tool the job has used least), and an
   executor that hit its quota recently (:func:`quota_cooldown`) sits out with
-  every executor of its :func:`quota_family`.
+  every executor of its :func:`quota_family`. Only tools whose
+  ``work_types`` take the piece's type are candidates; execution types
+  (:data:`EXEC_TYPES`) try ``exec_first`` tools first and never escalate to a
+  paid executor unless the coordinator asks (``strong``).
 
 :func:`free_failures` counts the free-executor failures on one piece, which is
 the signal the coordinator uses to stop retrying free executors and escalate.
@@ -28,8 +31,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .config import Prefs
-from .records import WORK_TYPES, iter_jobs
+from .config import Prefs, tool_work_types
+from .records import EXEC_TYPES, WORK_TYPES, iter_jobs
 from .tools import Executor
 
 #: Deductions applied by :func:`grade`, in score points.
@@ -434,6 +437,7 @@ def pick(
     rng: random.Random,
     job: dict | None = None,
     cooling: set[str] | None = None,
+    strong: bool = False,
 ) -> tuple[Executor | None, str]:
     """Choose the next executor and return ``(choice, one-line reason)``.
 
@@ -447,10 +451,33 @@ def pick(
     tried in ``prefs.strong_order``; with neither pool populated there is no
     choice.
 
+    Only executors whose tool takes ``type`` (:func:`config.tool_work_types`)
+    are candidates; the reason then ends with ``; not for <type>: <tools>``,
+    one name per tool left out. On an execution type (:data:`EXEC_TYPES`)
+    the free pool is first narrowed to the tools in ``prefs.exec_first``
+    when any of them is available, and the paid pool is only used when
+    ``strong`` is set: without it, an empty free pool means no choice and a
+    reason telling the coordinator to split the piece or do it itself.
+    Thinking types escalate to paid executors on their own.
+
     Executors whose :func:`quota_family` matches one in ``cooling`` (see
     :func:`quota_cooldown`) are left out like excluded ones, and the reason
     ends with ``; skipped for quota: <ids>``.
     """
+    unfit = sorted(
+        {
+            executor.tool.get("name", executor.id.split(":", 1)[0])
+            for executor in candidates
+            if type in WORK_TYPES
+            and type not in tool_work_types(executor.tool)
+            and executor.cost != "forbidden"
+        }
+    )
+    candidates = [
+        executor
+        for executor in candidates
+        if executor.tool.get("name", executor.id.split(":", 1)[0]) not in unfit
+    ]
     families = {quota_family(executor_id) for executor_id in cooling or ()}
     skipped = sorted(
         executor.id
@@ -468,7 +495,10 @@ def pick(
         exclude,
         rng,
         job_usage(job),
+        strong,
     )
+    if unfit:
+        reason += f"; not for {type}: {', '.join(unfit)}"
     if skipped:
         reason += f"; skipped for quota: {', '.join(skipped)}"
     return choice, reason
@@ -483,14 +513,26 @@ def _pick(
     exclude: set[str],
     rng: random.Random,
     usage: tuple[dict[str, int], dict[str, int]],
+    allow_paid_exec: bool = False,
 ) -> tuple[Executor | None, str]:
-    """:func:`pick` once the executors cooling down are left out."""
+    """:func:`pick` once unfit and cooling executors are left out."""
     available = [
         executor for executor in candidates if executor.id not in exclude
     ]
     free = [executor for executor in available if executor.cost == "free"]
     strong = [executor for executor in available if executor.cost == "paid"]
     strong.sort(key=lambda executor: _strong_index(executor, prefs))
+    execution = type in EXEC_TYPES
+    if execution:
+        first = [
+            executor
+            for executor in free
+            if executor.tool.get("name") in prefs.exec_first
+        ]
+        if first:
+            free = first
+        if not allow_paid_exec:
+            strong = []
 
     if free:
         pool = sorted(
@@ -522,6 +564,12 @@ def _pick(
         chosen = strong[0]
         return chosen, f"escalated: no free executor available ({chosen.id})"
 
+    if execution and not allow_paid_exec:
+        return None, (
+            f"no executor available: no free executor left for {type}; split "
+            f"the piece into smaller pieces or do it yourself (paid executors "
+            f"run {type} only on --strong)"
+        )
     return None, "no executor available"
 
 

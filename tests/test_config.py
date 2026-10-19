@@ -222,11 +222,8 @@ def test_quota_cooldown_min_must_be_a_non_negative_number(tmp_path, value):
 # --- work types and exec_first ---------------------------------------------
 
 
-def test_tool_work_types_default_by_kind():
-    assert tool_work_types({"name": "opencode", "kind": "opencode"}) == (
-        "code", "tests", "refactor", "docs", "data",
-    )
-    for kind in ("antigravity", "claude-code", "codex", "generic"):
+def test_tool_work_types_default_to_every_type_for_every_kind():
+    for kind in ("opencode", "antigravity", "claude-code", "codex", "generic"):
         assert tool_work_types({"name": "x", "kind": kind}) == WORK_TYPES
 
 

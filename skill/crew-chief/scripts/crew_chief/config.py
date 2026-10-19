@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .records import EXEC_TYPES, WORK_TYPES
+from .records import WORK_TYPES
 
 # Fixed vocabularies (see global constraints).
 COST_VALUES = ("free", "paid", "forbidden")
@@ -40,11 +40,12 @@ DEFAULT_QUOTA_COOLDOWN_MIN = 60
 DEFAULT_EXEC_FIRST = ["opencode"]
 
 #: Work types each tool kind takes when the tool sets no ``work_types``.
-#: This is the one place the execute/think split lives: ``opencode`` runs
-#: cheap or free models, so it only executes; the other kinds execute and
-#: think (review, design, diagnosis, research). See :func:`tool_work_types`.
+#: Every kind takes every type: any free model may execute, review or think,
+#: and the execute/think split lives in ``scoring.pick`` (``exec_first`` and
+#: no automatic paid escalation on ``records.EXEC_TYPES``). A tool narrows
+#: itself with an explicit ``work_types`` list. See :func:`tool_work_types`.
 DEFAULT_WORK_TYPES_BY_KIND: dict[str, tuple[str, ...]] = {
-    "opencode": EXEC_TYPES,
+    "opencode": WORK_TYPES,
     "antigravity": WORK_TYPES,
     "claude-code": WORK_TYPES,
     "codex": WORK_TYPES,
