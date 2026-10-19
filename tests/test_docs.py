@@ -68,13 +68,28 @@ def test_both_readmes_document_sdd_and_credit_inspirations():
 
 
 def test_readmes_have_the_same_command_blocks():
-    """The two READMEs show the same shell commands, only the prose differs."""
+    """The two READMEs have the same number of ```bash blocks (counts only)."""
 
     def fences(path: Path) -> list[str]:
         return re.findall(r"```bash\n(.*?)```", _read(path), re.DOTALL)
 
     english, portuguese = fences(README), fences(README_PT)
     assert len(english) == len(portuguese)
+
+
+def test_economy_docs_match_the_summary_line():
+    """The summary line has no duration; the docs must not say it does."""
+    from crew_chief.economy import Economy, summary_line
+
+    line = summary_line(Economy(1, 1, 1, False, 1, 1, 1, 1, 1, 90.0))
+    assert "min" not in line and "duration" not in line
+    claims = ("mean score and duration", "mean score and the job's duration",
+              "nota média e a duração do job")
+    for path in (README, README_PT, CHANGELOG):
+        text = " ".join(_read(path).split())
+        for claim in claims:
+            assert claim not in text, (path.name, claim)
+    assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
 def test_version_is_0_3_0_and_changelog_has_unreleased():

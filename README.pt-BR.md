@@ -132,8 +132,9 @@ coordenador, por retrabalho ou por demora. O `usage add` registra os tokens do
 coordenador (`--role coordinator`, ou `central` para uma sessão acima dele)
 quando a CLI dele informa. O `economy` e o `close` imprimem a fatia de peças e de
 tokens que foi para executores grátis, a fatia do coordenador, tentativas por
-peça, a nota média e a duração do job, e uma linha `alert:` para cada limite
-ultrapassado:
+peça e a nota média, e uma linha `alert:` para cada limite ultrapassado. A
+duração do job fica no registro do job (a linha `Time` do `.md`) e é o que o
+`alert_job_minutes` confere:
 
 | Preferência | Padrão | Alerta |
 | --- | --- | --- |

@@ -130,8 +130,9 @@ Delegating only pays if the free work is not eaten by the coordinator's own
 spending, by rework, or by delay. `usage add` records the coordinator's tokens
 (`--role coordinator`, or `central` for a session above it) when its CLI
 reports them. `economy` and `close` print the free share of pieces and tokens,
-the coordinator's share, attempts per piece, the mean score and the job's
-duration, and one `alert:` line for each limit crossed:
+the coordinator's share, attempts per piece and the mean score, and one
+`alert:` line for each limit crossed. The job's duration is recorded in the job
+record (the `Time` line of its `.md`) and is what `alert_job_minutes` checks:
 
 | Preference | Default | Alert |
 | --- | --- | --- |
