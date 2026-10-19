@@ -29,6 +29,8 @@ GLOBAL_PREFS_ENV = "AGENT_CREW_CHIEF_GLOBAL_PREFS"
 DEFAULT_STRONG_ORDER = ["codex", "claude"]
 DEFAULT_EXPLORE_RATE = 0.1
 DEFAULT_DISPATCH_TIMEOUT_S = 900
+#: Hours after which ``pick`` and ``dispatch`` re-check the models seen.
+DEFAULT_MODEL_CHECK_HOURS = 24
 
 #: Default tool definitions. Preferences merge over these by ``name``
 #: (project over global over defaults).
@@ -75,6 +77,7 @@ class Prefs:
     issue_tracker: str
     dispatch_timeout_s: int
     review_default: str
+    model_check_hours: float = DEFAULT_MODEL_CHECK_HOURS
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
@@ -133,6 +136,17 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
         if not 0 <= explore_rate <= 1:
             raise PrefsError(
                 f"{path}: explore_rate must be between 0 and 1, got {explore_rate!r}"
+            )
+
+    check_hours = data.get("model_check_hours")
+    if check_hours is not None:
+        if isinstance(check_hours, bool) or not isinstance(check_hours, (int, float)):
+            raise PrefsError(
+                f"{path}: model_check_hours must be a number, got {check_hours!r}"
+            )
+        if check_hours < 0:
+            raise PrefsError(
+                f"{path}: model_check_hours must be 0 or more, got {check_hours!r}"
             )
 
     issue_tracker = data.get("issue_tracker")
@@ -236,6 +250,7 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         issue_tracker=pick("issue_tracker", "none"),
         dispatch_timeout_s=pick("dispatch_timeout_s", DEFAULT_DISPATCH_TIMEOUT_S),
         review_default=pick("review_default", ""),
+        model_check_hours=pick("model_check_hours", DEFAULT_MODEL_CHECK_HOURS),
     )
 
 
