@@ -137,3 +137,88 @@ def test_parse_spec_refs_handles_crlf_bom_accents_and_bold_variants():
 
 def test_parse_spec_refs_empty_text_gives_empty_index():
     assert parse_spec_refs("") == {}
+
+
+def _task(text, phase="Phase 3: Story", parallel=False):
+    from crew_chief.speckit import SpecTask
+
+    return SpecTask("T020", False, parallel, None, text, phase, (), 0)
+
+
+def test_guess_type_heuristics():
+    from crew_chief.speckit import guess_type
+
+    assert guess_type(_task("Add unit coverage in tests/test_a.py")) == "tests"
+    assert guess_type(_task("Contract test for /users")) == "tests"
+    assert guess_type(_task("Write the guide in docs/usage.md")) == "docs"
+    assert guess_type(_task("Update README.md")) == "docs"
+    assert guess_type(_task("Research CSV libraries")) == "research"
+    assert guess_type(_task("Evaluate options for caching")) == "research"
+    assert guess_type(_task("Create User model in src/user.py")) == "code"
+    assert guess_type(_task("Pick the latest build")) == "code"
+
+
+def test_guess_risk_heuristics():
+    from crew_chief.speckit import guess_risk
+
+    assert guess_risk(_task("Create model", phase="Phase 2: Foundational")) == "medium"
+    assert guess_risk(_task("Write data-model.md notes")) == "high"
+    assert guess_risk(_task("Add auth middleware")) == "high"
+    assert guess_risk(_task("Implement contracts/users.yaml")) == "high"
+    assert guess_risk(_task("Run migration", phase="Phase 2: Foundational")) == "high"
+    assert guess_risk(_task("Create model", parallel=True)) == "low"
+    assert guess_risk(_task("Create model", phase="Phase 2: Foundational", parallel=True)) == "medium"
+    assert guess_risk(_task("Create model")) == "medium"
+
+
+def test_readiness_reports_dependency_and_phase_blockers():
+    from crew_chief.sidecar import Sidecar, TaskMeta
+    from crew_chief.speckit import parse_tasks, readiness
+
+    tasks = parse_tasks(
+        "## Phase 1: Setup\n- [ ] T001 a\n- [ ] T002 b\n"
+        "## Phase 2: Core\n- [ ] T003 c (depends on T001)\n- [ ] T004 d\n"
+    )
+    job = {"pieces": [
+        {"n": 1, "ref": "T001", "accepted": {"attempt": 1}},
+        {"n": 2, "ref": "T002"},
+        {"n": 3, "ref": "T003"},
+        {"n": 4, "ref": "T004"},
+    ]}
+    result = readiness(job, tasks, Sidecar(spec_dir="s"))
+    assert result == {
+        "T002": "",
+        "T003": "phase 'Phase 1: Setup' incomplete",
+        "T004": "phase 'Phase 1: Setup' incomplete",
+    }
+    job["pieces"][1]["accepted"] = {"attempt": 1}
+    assert readiness(job, tasks, Sidecar(spec_dir="s")) == {"T003": "", "T004": ""}
+    # sidecar depends win over prose depends
+    sidecar = Sidecar(spec_dir="s", tasks={"T003": TaskMeta("code", "low", depends=["T004"])})
+    result = readiness(job, tasks, sidecar)
+    assert result == {"T003": "depends on T004", "T004": ""}
+
+
+def test_find_spec_dir_prefers_argument_then_feature_json(tmp_path):
+    import json
+
+    import pytest
+
+    from crew_chief.speckit import SpecError, find_spec_dir
+
+    (tmp_path / "specs" / "001-a").mkdir(parents=True)
+    (tmp_path / "specs" / "002-b").mkdir()
+    assert find_spec_dir(tmp_path, "specs/001-a") == tmp_path / "specs" / "001-a"
+    with pytest.raises(SpecError):
+        find_spec_dir(tmp_path, "specs/nope")
+    with pytest.raises(SpecError):
+        find_spec_dir(tmp_path, None)
+    feature = tmp_path / ".specify" / "feature.json"
+    feature.parent.mkdir()
+    feature.write_text(json.dumps({"feature_directory": "specs/002-b"}), encoding="utf-8")
+    assert find_spec_dir(tmp_path, None) == tmp_path / "specs" / "002-b"
+    feature.write_text(json.dumps({"path": "specs/001-a"}), encoding="utf-8")
+    assert find_spec_dir(tmp_path, None) == tmp_path / "specs" / "001-a"
+    feature.write_text("{not json", encoding="utf-8")
+    with pytest.raises(SpecError):
+        find_spec_dir(tmp_path, None)

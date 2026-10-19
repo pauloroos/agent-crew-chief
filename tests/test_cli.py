@@ -155,6 +155,9 @@ def test_full_cycle_with_generic_stub(git_repo, fake_bin, monkeypatch, capsys):
     assert main(["accept", "--project", str(repo), "--job", job_id,
                  "--piece", "1"]) == 0
     capsys.readouterr()
+    accepted = _stored_job(repo, job_id)["pieces"][0]["accepted"]
+    assert accepted["attempt"] == 1 and accepted["branch"].startswith("crew/")
+    assert accepted["at"]
 
     assert main(["close", "--project", str(repo), "--job", job_id]) == 0
     closed = capsys.readouterr().out

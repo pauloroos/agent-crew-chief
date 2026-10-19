@@ -326,10 +326,12 @@ def _find_piece(job: dict, number: int) -> dict:
     raise ValueError(f"job {job.get('id')!r} has no piece {number}")
 
 
-def add_piece(job: dict, title: str, type: str, risk: str) -> int:
+def add_piece(job: dict, title: str, type: str, risk: str, ref: str = "") -> int:
     """Append a piece and return its number (starting at 1).
 
     ``type`` must be in :data:`WORK_TYPES` and ``risk`` in :data:`RISKS`.
+    A non-empty ``ref`` (a spec-kit task id such as ``T012``) is stored on the
+    piece; without one the piece has no ``ref`` key.
     """
     if type not in WORK_TYPES:
         raise ValueError(
@@ -351,8 +353,23 @@ def add_piece(job: dict, title: str, type: str, risk: str) -> int:
         "escalations": [],
         "grades": {},
     }
+    if ref:
+        piece["ref"] = ref
     pieces.append(piece)
     return piece["n"]
+
+
+def mark_accepted(job: dict, piece: int, attempt: dict) -> None:
+    """Record that ``attempt``'s branch was merged for the piece.
+
+    Stores ``{"attempt": n, "branch": ..., "at": <UTC ISO>}`` under the
+    piece's ``accepted`` key; ``piece.get("accepted")`` means "accepted".
+    """
+    _find_piece(job, piece)["accepted"] = {
+        "attempt": attempt["n"],
+        "branch": attempt["branch"],
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def add_attempt(job: dict, piece: int, attempt: dict) -> None:

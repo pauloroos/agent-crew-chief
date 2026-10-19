@@ -6,6 +6,10 @@ coordinator uses them: ``discover`` lists the executors present right now,
 ``dispatch`` runs one attempt, ``correction``/``grade`` close the loop and
 ``accept``/``discard``/``close`` land or drop the work.
 
+``spec new``/``spec import``/``spec status`` connect spec-kit folders: ``import``
+turns the open tasks of ``tasks.md`` into pieces (``ref`` = task id) and keeps the
+``crew.toml`` sidecar; ``status`` lists what is ready or blocked.
+
 All commands take ``--project PATH`` (default: the current directory) and
 ``--json`` (structured output instead of text). A ``PrefsError``,
 ``RecordError``, ``NotAGitRepo`` or ``ValueError`` prints one line to stderr
@@ -26,8 +30,10 @@ never fails the command.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import random
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +52,16 @@ from .scoring import (
     quota_cooldown,
     quota_family,
     render_scoreboard,
+)
+from .sidecar import Sidecar, SidecarError, TaskMeta, load_sidecar, save_sidecar
+from .speckit import (
+    SpecError,
+    SpecTask,
+    find_spec_dir,
+    guess_risk,
+    guess_type,
+    parse_tasks,
+    readiness,
 )
 from .worktree import NotAGitRepo
 from .worktree import accept as accept_branch
@@ -496,6 +512,11 @@ def _cmd_accept(args: argparse.Namespace) -> int:
         return 1
 
     accept_branch(project, Path(attempt["worktree"]), attempt["branch"])
+    records.update_job(
+        project,
+        args.job,
+        lambda stored: records.mark_accepted(stored, args.piece, attempt),
+    )
     _emit(
         args,
         f"accepted {attempt['branch']}",
@@ -541,6 +562,236 @@ def _cmd_scoreboard(args: argparse.Namespace) -> int:
     text = render_scoreboard(project)
     _write_scoreboard(project, text)
     _emit(args, text.rstrip("\n"), {"scoreboard": text})
+    return 0
+
+
+# --- spec commands -----------------------------------------------------------
+
+_SPEC_TEMPLATES = Path(__file__).resolve().parents[2] / "templates" / "spec"
+_SPEC_NUMBER_RE = re.compile(r"^(\d{3})-")
+
+
+def _cmd_spec_new(args: argparse.Namespace) -> int:
+    project = _project(args)
+    title = args.title.strip()
+    if not project.is_dir():
+        raise ValueError(f"--project: not a directory: {project}")
+    if not any(ch.isalnum() for ch in title):
+        raise ValueError("--title needs at least one letter or digit")
+
+    specs = project / "specs"
+    numbers = [
+        int(match.group(1))
+        for entry in (specs.iterdir() if specs.is_dir() else [])
+        if entry.is_dir() and (match := _SPEC_NUMBER_RE.match(entry.name))
+    ]
+    number = max(numbers, default=0) + 1
+    if number > 999:
+        raise ValueError("specs/ already holds 999 numbered folders")
+    folder = specs / f"{number:03d}-{records.slug(title)[:40].strip('-')}"
+    if folder.exists():
+        raise ValueError(f"{folder.relative_to(project).as_posix()} already exists")
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    contents = {}
+    for name in ("spec.md", "plan.md", "tasks.md"):
+        text = _read_text(_SPEC_TEMPLATES / name, "template")
+        contents[name] = text.replace("[FEATURE NAME]", title).replace("[DATE]", today)
+    folder.mkdir(parents=True)
+    for name, text in contents.items():
+        (folder / name).write_text(text, encoding="utf-8", newline="\n")
+
+    relative = folder.relative_to(project).as_posix()
+    _emit(args, relative, {"spec_dir": relative})
+    return 0
+
+
+def _spec_relative(project: Path, folder: Path) -> str:
+    """``folder`` as a ``/`` path relative to the project (absolute if outside)."""
+    try:
+        return folder.resolve().relative_to(project.resolve()).as_posix()
+    except ValueError:
+        return folder.resolve().as_posix()
+
+
+def _load_spec(
+    project: Path, job: dict, spec_dir: str | None
+) -> tuple[Path, str, list[SpecTask], Sidecar]:
+    """Locate and read a job's spec folder; any problem is a one-line error.
+
+    The folder is ``--spec-dir``, else the job's ``spec_dir``, else spec-kit's
+    ``.specify/feature.json``. Nothing is written.
+    """
+    folder = find_spec_dir(project, spec_dir or job.get("spec_dir") or None)
+    relative = _spec_relative(project, folder)
+    tasks_path = folder / "tasks.md"
+    if not tasks_path.is_file():
+        raise SpecError(f"tasks.md not found in {relative}")
+    tasks = parse_tasks(_read_text(tasks_path, "tasks.md"))
+    return folder, relative, tasks, load_sidecar(folder)
+
+
+def _norm_path(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def _parallel_conflicts(
+    tasks: list[SpecTask], sidecar: Sidecar
+) -> list[tuple[str, str, list[str]]]:
+    """``[P]`` tasks of one phase whose sidecar ``files`` overlap."""
+    open_tasks = [t for t in tasks if t.parallel and not t.done]
+    conflicts = []
+    for index, first in enumerate(open_tasks):
+        for second in open_tasks[index + 1:]:
+            if first.phase != second.phase:
+                continue
+            files = [
+                {_norm_path(f) for f in sidecar.tasks[t.id].files}
+                if t.id in sidecar.tasks
+                else set()
+                for t in (first, second)
+            ]
+            shared = sorted(files[0] & files[1])
+            if shared:
+                conflicts.append((first.id, second.id, shared))
+    return conflicts
+
+
+def _cmd_spec_import(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    folder, relative, tasks, sidecar = _load_spec(project, job, args.spec_dir)
+    original = copy.deepcopy(sidecar)
+
+    def apply(stored: dict) -> tuple[list[dict], list[dict]]:
+        existing = {p.get("ref") for p in stored.get("pieces") or [] if p.get("ref")}
+        created = []
+        for task in tasks:
+            if task.done or task.id in existing:
+                continue
+            meta = sidecar.tasks.get(task.id)
+            work_type = meta.type if meta else guess_type(task)
+            risk = meta.risk if meta else guess_risk(task)
+            number = records.add_piece(
+                stored, f"{task.id} {task.text}", work_type, risk, ref=task.id
+            )
+            created.append(
+                {"piece": number, "ref": task.id, "type": work_type, "risk": risk}
+            )
+        stored["spec_dir"] = relative
+        return created, [dict(p) for p in stored["pieces"]]
+
+    created, pieces = records.update_job(project, args.job, apply)
+
+    by_ref = {p["ref"]: p for p in reversed(pieces) if p.get("ref")}
+    for task in tasks:
+        meta = sidecar.tasks.get(task.id)
+        if meta is None:
+            if task.done:
+                continue
+            piece = by_ref.get(task.id)
+            sidecar.tasks[task.id] = TaskMeta(
+                piece["type"] if piece else guess_type(task),
+                piece["risk"] if piece else guess_risk(task),
+                depends=list(task.depends),
+            )
+        elif not meta.depends and task.depends:
+            meta.depends = list(task.depends)
+    sidecar.spec_dir = relative
+    sidecar.job = args.job
+    if sidecar != original:
+        save_sidecar(folder, sidecar)
+
+    ids = {task.id for task in tasks}
+    missing_proof = [
+        task.id
+        for task in tasks
+        if not task.done
+        and task.id in by_ref
+        and not by_ref[task.id].get("accepted")
+        and by_ref[task.id].get("type") in records.EXEC_TYPES
+        and not (task.id in sidecar.tasks and sidecar.tasks[task.id].proof)
+    ]
+    orphan_sidecar = sorted(set(sidecar.tasks) - ids)
+    orphan_pieces = [
+        p["ref"] for p in pieces if p.get("ref") and p["ref"] not in ids
+    ]
+    changed = [
+        task.id
+        for task in tasks
+        if task.id in by_ref
+        and by_ref[task.id].get("title") != f"{task.id} {task.text}"
+    ]
+    conflicts = _parallel_conflicts(tasks, sidecar)
+
+    lines = [
+        f"piece {c['piece']}: {c['ref']} ({c['type']}, {c['risk']})" for c in created
+    ] or ["nothing new to import"]
+    if missing_proof:
+        lines.append("missing proof: " + ", ".join(missing_proof))
+    if orphan_sidecar:
+        lines.append("orphan sidecar entries: " + ", ".join(orphan_sidecar))
+    if orphan_pieces:
+        lines.append("orphan pieces: " + ", ".join(orphan_pieces))
+    if changed:
+        lines.append("changed task text: " + ", ".join(changed))
+    lines.extend(
+        f"parallel conflict: {a}/{b} share {', '.join(shared)}"
+        for a, b, shared in conflicts
+    )
+    payload = {
+        "spec_dir": relative,
+        "created": created,
+        "missing_proof": missing_proof,
+        "orphan_sidecar": orphan_sidecar,
+        "orphan_pieces": orphan_pieces,
+        "changed_text": changed,
+        "parallel_conflicts": [
+            {"tasks": [a, b], "files": shared} for a, b, shared in conflicts
+        ],
+    }
+    _emit(args, "\n".join(lines), payload)
+    return 0
+
+
+def _cmd_spec_status(args: argparse.Namespace) -> int:
+    project = _project(args)
+    job = records.load_job(project, args.job)
+    _, relative, tasks, sidecar = _load_spec(project, job, args.spec_dir)
+
+    waiting = readiness(job, tasks, sidecar)
+    accepted_refs = {
+        p["ref"] for p in job.get("pieces") or [] if p.get("ref") and p.get("accepted")
+    }
+    phases: list[dict] = []
+    for task in tasks:
+        entry = next((p for p in phases if p["phase"] == task.phase), None)
+        if entry is None:
+            entry = {"phase": task.phase, "accepted": 0, "total": 0}
+            phases.append(entry)
+        entry["total"] += 1
+        if task.done or task.id in accepted_refs:
+            entry["accepted"] += 1
+
+    ready = [task_id for task_id, reason in waiting.items() if not reason]
+    blocked = {task_id: reason for task_id, reason in waiting.items() if reason}
+    lines = [
+        f"{p['phase'] or '(no phase)'}: {p['accepted']}/{p['total']} accepted"
+        for p in phases
+    ]
+    lines.append("ready: " + (", ".join(ready) if ready else "-"))
+    if blocked:
+        lines.append("blocked:")
+        lines.extend(f"  {task_id}: {reason}" for task_id, reason in blocked.items())
+    else:
+        lines.append("blocked: -")
+    payload = {
+        "spec_dir": relative,
+        "phases": phases,
+        "ready": ready,
+        "blocked": blocked,
+    }
+    _emit(args, "\n".join(lines), payload)
     return 0
 
 
@@ -716,6 +967,35 @@ def build_parser() -> argparse.ArgumentParser:
     close_parser.add_argument("--job", required=True, help="job id")
     close_parser.set_defaults(handler=_cmd_close)
 
+    spec_parser = subcommands.add_parser(
+        "spec", help="spec-kit specs: new folder, import tasks as pieces, status"
+    )
+    spec_commands = spec_parser.add_subparsers(dest="spec_command", required=True)
+    spec_new = spec_commands.add_parser(
+        "new", parents=[common], help="create specs/NNN-<slug>/ from the templates"
+    )
+    spec_new.add_argument("--title", required=True, help="feature title")
+    spec_new.set_defaults(handler=_cmd_spec_new)
+    spec_import = spec_commands.add_parser(
+        "import", parents=[common], help="turn open tasks.md tasks into pieces"
+    )
+    spec_import.add_argument("--job", required=True, help="job id")
+    spec_import.add_argument(
+        "--spec-dir",
+        default=None,
+        metavar="PATH",
+        help="spec folder (default: the job's, else .specify/feature.json)",
+    )
+    spec_import.set_defaults(handler=_cmd_spec_import)
+    spec_status = spec_commands.add_parser(
+        "status", parents=[common], help="progress per phase, ready and blocked tasks"
+    )
+    spec_status.add_argument("--job", required=True, help="job id")
+    spec_status.add_argument(
+        "--spec-dir", default=None, metavar="PATH", help="spec folder"
+    )
+    spec_status.set_defaults(handler=_cmd_spec_status)
+
     scoreboard_parser = subcommands.add_parser(
         "scoreboard", parents=[common], help="regenerate and print the scoreboard"
     )
@@ -730,7 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.handler(args)
-    except (PrefsError, RecordError, NotAGitRepo, ValueError) as exc:
+    except (PrefsError, RecordError, SidecarError, NotAGitRepo, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except RuntimeError as exc:

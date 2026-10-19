@@ -620,3 +620,26 @@ def test_attempt_line_shows_steps_and_tokens(tmp_path):
 
     assert "42.0s, 7 steps, 12345 tokens (in 12000 / out 345)" in text
     assert "3.0s, ~120 tokens (estimated)" in text
+
+
+def test_add_piece_keeps_ref(tmp_path):
+    job = _new_job(tmp_path)
+    with_ref = add_piece(job, "t", "code", "low", ref="T012")
+    without = add_piece(job, "u", "code", "low")
+    assert job["pieces"][with_ref - 1]["ref"] == "T012"
+    assert "ref" not in job["pieces"][without - 1]
+
+
+def test_mark_accepted_records_attempt_branch_and_time(tmp_path):
+    from crew_chief.records import mark_accepted
+
+    job = _new_job(tmp_path)
+    number = add_piece(job, "t", "code", "low")
+    piece = job["pieces"][number - 1]
+    assert "accepted" not in piece
+    mark_accepted(job, number, {"n": 2, "branch": "crew/x-2"})
+    assert piece["accepted"]["attempt"] == 2
+    assert piece["accepted"]["branch"] == "crew/x-2"
+    assert datetime.fromisoformat(piece["accepted"]["at"]).tzinfo is not None
+    with pytest.raises(ValueError):
+        mark_accepted(job, 99, {"n": 1, "branch": "b"})

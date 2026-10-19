@@ -17,8 +17,14 @@ endings (CRLF or LF, even mixed) survive untouched.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .sidecar import Sidecar
 
 _BOM = "\ufeff"
 _TASK_RE = re.compile(r"^(\s*[-*]\s+\[)([ xX])(\]\s+)(T\d{3,})\b(.*)$")
@@ -194,3 +200,131 @@ def resolve_refs(
         else:
             missing.append(ref)
     return found, missing
+
+
+# -- locating the spec folder ------------------------------------------------
+
+
+class SpecError(ValueError):
+    """A spec folder problem; the message is one line (the CLI exits 2)."""
+
+
+FEATURE_JSON = Path(".specify") / "feature.json"
+
+
+def find_spec_dir(project: Path, spec_dir: str | None) -> Path:
+    """Return the spec folder: ``spec_dir`` if given, else spec-kit's pointer.
+
+    The pointer is ``.specify/feature.json`` (key ``feature_directory``, or
+    ``path``). Relative paths resolve against ``project``. The folder must
+    exist; ``project`` is never written to.
+    """
+    project = Path(project)
+    if not spec_dir:
+        pointer = project / FEATURE_JSON
+        if not pointer.is_file():
+            raise SpecError(
+                f"no spec folder: pass --spec-dir or create {FEATURE_JSON.as_posix()}"
+            )
+        try:
+            data = json.loads(pointer.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            raise SpecError(f"{FEATURE_JSON.as_posix()}: cannot read: {exc}") from None
+        value = data.get("feature_directory") or data.get("path") if isinstance(data, dict) else None
+        if not isinstance(value, str) or not value:
+            raise SpecError(
+                f"{FEATURE_JSON.as_posix()}: no 'feature_directory' or 'path' key"
+            )
+        spec_dir = value
+    folder = project / spec_dir
+    if not folder.is_dir():
+        raise SpecError(f"spec folder not found: {spec_dir}")
+    return folder
+
+
+# -- guesses for tasks the sidecar does not describe --------------------------
+
+_TESTS_RE = re.compile(r"(^|[\s/\\(])tests?[/\\]|\btests?\b", re.IGNORECASE)
+_DOCS_RE = re.compile(r"(^|[\s/\\(])docs[/\\]|\.md\b", re.IGNORECASE)
+_RESEARCH_RE = re.compile(r"^(research|investigate|evaluate)\b", re.IGNORECASE)
+_HIGH_RISK_RE = re.compile(
+    r"contracts[/\\]|data-model|migration|\bauth|secret", re.IGNORECASE
+)
+
+
+def guess_type(task: SpecTask) -> str:
+    """Work type of a task from its text: tests, docs, research or code."""
+    if _TESTS_RE.search(task.text):
+        return "tests"
+    if _DOCS_RE.search(task.text):
+        return "docs"
+    if _RESEARCH_RE.match(task.text):
+        return "research"
+    return "code"
+
+
+def guess_risk(task: SpecTask) -> str:
+    """Risk of a task: high for contracts/data/auth/secrets, else by phase."""
+    if _HIGH_RISK_RE.search(task.text):
+        return "high"
+    if "foundational" in task.phase.lower():
+        return "medium"
+    if task.parallel:
+        return "low"
+    return "medium"
+
+
+# -- readiness ----------------------------------------------------------------
+
+
+def readiness(
+    job: dict, tasks: list[SpecTask], sidecar: "Sidecar"
+) -> dict[str, str]:
+    """Which spec tasks of ``job`` may start.
+
+    Maps every task id that has a piece (``piece["ref"]``) and is not accepted
+    to ``""`` (ready) or the reason it waits: ``depends on T012`` (first
+    dependency not accepted; dependencies come from the sidecar, falling back
+    to the task text) or ``phase '<name>' incomplete`` (an earlier phase has
+    a piece that is not accepted yet). A task ticked in ``tasks.md`` counts
+    as accepted.
+    """
+    pieces = {}
+    for piece in job.get("pieces") or []:
+        ref = piece.get("ref")
+        if ref and ref not in pieces:
+            pieces[ref] = piece
+    ticked = {task.id for task in tasks if task.done}
+
+    def accepted(task_id: str) -> bool:
+        piece = pieces.get(task_id)
+        return task_id in ticked or bool(piece and piece.get("accepted"))
+
+    phases: list[str] = []
+    for task in tasks:
+        if task.phase not in phases:
+            phases.append(task.phase)
+
+    result: dict[str, str] = {}
+    for task in tasks:
+        if task.id not in pieces or accepted(task.id):
+            continue
+        meta = sidecar.tasks.get(task.id)
+        depends = list(meta.depends) if meta and meta.depends else list(task.depends)
+        reason = ""
+        for dependency in depends:
+            if not accepted(dependency):
+                reason = f"depends on {dependency}"
+                break
+        if not reason:
+            for earlier in phases[: phases.index(task.phase)]:
+                if any(
+                    other.phase == earlier
+                    and other.id in pieces
+                    and not accepted(other.id)
+                    for other in tasks
+                ):
+                    reason = f"phase '{earlier}' incomplete"
+                    break
+        result[task.id] = reason
+    return result
