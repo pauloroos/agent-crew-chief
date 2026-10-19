@@ -349,7 +349,7 @@ def add_piece(job: dict, title: str, type: str, risk: str) -> int:
         "attempts": [],
         "corrections": [],
         "escalations": [],
-        "grade": None,
+        "grades": {},
     }
     pieces.append(piece)
     return piece["n"]
@@ -396,9 +396,39 @@ def add_escalation(job: dict, piece: int, reason: str, to: str) -> None:
     )
 
 
+def piece_grades(piece: dict) -> dict[str, dict]:
+    """Every grade of the piece, keyed by executor id, in grading order.
+
+    Grades live under the piece's ``grades`` map, one per executor that
+    worked on it. A record written before that kept a single ``grade``; it is
+    read as the grade of its own ``executor`` (``""`` when it names none), so
+    old jobs keep counting. Entries that are not dicts are left out.
+    """
+    grades: dict[str, dict] = {}
+    legacy = piece.get("grade")
+    if isinstance(legacy, dict):
+        grades[str(legacy.get("executor") or "")] = legacy
+    stored = piece.get("grades")
+    if isinstance(stored, dict):
+        for executor, grade in stored.items():
+            if isinstance(grade, dict):
+                grades[str(executor)] = grade
+    return grades
+
+
 def set_grade(job: dict, piece: int, grade: dict) -> None:
-    """Store ``grade`` (as given) under the piece's ``grade`` key."""
-    _find_piece(job, piece)["grade"] = grade
+    """Store ``grade`` (as given) as the grade of its ``executor`` on the piece.
+
+    Each executor that worked on a piece keeps its own grade under the
+    piece's ``grades`` map; grading the same executor again replaces only
+    that executor's grade. A legacy single ``grade`` is moved into the map
+    first, so it is not lost.
+    """
+    target = _find_piece(job, piece)
+    grades = piece_grades(target)
+    target.pop("grade", None)
+    grades[str(grade.get("executor") or "")] = grade
+    target["grades"] = grades
 
 
 # --- rendering -------------------------------------------------------------
@@ -412,12 +442,52 @@ def _piece_executor(piece: dict) -> str:
     return str(attempts[-1].get("executor", "") or "")
 
 
-def _piece_score(piece: dict) -> object:
-    """The piece's grade score, or ``"-"`` when the piece is not graded."""
-    grade = piece.get("grade")
+def _score_of(grade: dict | None) -> object:
+    """A grade's score, or ``"-"`` when there is none."""
     if not grade or grade.get("score") is None:
         return "-"
     return grade["score"]
+
+
+def _lead_executor(piece: dict) -> str:
+    """The executor the piece is credited to first.
+
+    The executor of the last ``ok`` exec attempt (the one ``accept`` lands),
+    else of the last attempt, else the first graded executor; ``""`` when the
+    piece has neither attempts nor grades.
+    """
+    for attempt in reversed(piece.get("attempts") or []):
+        if attempt.get("role") == "exec" and attempt.get("status") == "ok":
+            executor = str(attempt.get("executor", "") or "")
+            if executor:
+                return executor
+    executor = _piece_executor(piece)
+    if executor:
+        return executor
+    return next((name for name in piece_grades(piece) if name), "")
+
+
+def _piece_credit(piece: dict) -> str:
+    """``lead, score 100; also other, score 52`` for the summaries.
+
+    The lead executor (see :func:`_lead_executor`) comes first; a grade that
+    names no executor is read as the lead's. Every other graded executor
+    follows in grading order.
+    """
+    grades = piece_grades(piece)
+    lead = _lead_executor(piece)
+    lead_grade = grades.get(lead) if lead else None
+    if lead_grade is None:
+        lead_grade = grades.get("")
+    text = f"{lead or 'unassigned'}, score {_score_of(lead_grade)}"
+    others = [
+        f"{executor}, score {_score_of(grade)}"
+        for executor, grade in grades.items()
+        if executor and executor != lead
+    ]
+    if others:
+        text += "; also " + "; ".join(others)
+    return text
 
 
 def _commit_type(job: dict) -> str:
@@ -431,10 +501,7 @@ def _commit_type(job: dict) -> str:
 def _commit_message(job: dict) -> str:
     body = []
     for piece in job.get("pieces") or []:
-        executor = _piece_executor(piece) or "unassigned"
-        body.append(
-            f"- {piece.get('title', '')} — {executor}, score {_piece_score(piece)}"
-        )
+        body.append(f"- {piece.get('title', '')} — {_piece_credit(piece)}")
     subject = f"{_commit_type(job)}: {job.get('title', '')}"
     if not body:
         return subject
@@ -447,10 +514,8 @@ def _issue_comment(job: dict) -> str:
     if not pieces:
         lines.append("- no pieces")
     for piece in pieces:
-        executor = _piece_executor(piece) or "unassigned"
         lines.append(
-            f"- {piece.get('n')}. {piece.get('title', '')} — {executor}, "
-            f"score {_piece_score(piece)}"
+            f"- {piece.get('n')}. {piece.get('title', '')} — {_piece_credit(piece)}"
         )
         for escalation in piece.get("escalations") or []:
             lines.append(
@@ -564,16 +629,15 @@ def _render_piece(piece: dict) -> list[str]:
             f"({escalation.get('at', '')})"
         )
 
-    lines.append("")
-    grade = piece.get("grade")
-    if grade:
-        score = grade.get("score")
-        text = "**Grade**" if score is None else f"**Grade**: score {score}"
+    lines.extend(["", "**Grades**", ""])
+    grades = piece_grades(piece)
+    if not grades:
+        lines.append("- _not graded_")
+    for executor, grade in grades.items():
+        text = f"- `{executor or 'unnamed'}`: score {_score_of(grade)}"
         if grade.get("explain"):
             text += f" — {grade['explain']}"
         lines.append(text)
-    else:
-        lines.append("**Grade**: _not graded_")
     return lines
 
 

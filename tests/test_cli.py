@@ -1089,6 +1089,43 @@ def test_dispatch_fresh_and_base_options(git_repo, fake_bin, monkeypatch, capsys
     assert "exec" in capsys.readouterr().err
 
 
+def test_each_executor_keeps_its_own_grade(git_repo, capsys):
+    repo = git_repo
+    job = records.new_job(repo, "Two hands", "do it", True, "parts")
+    records.add_piece(job, "Bit", "code", "low")
+    records.add_attempt(job, 1, {"executor": "beam:m", "role": "exec",
+                                 "status": "ok"})
+    records.add_attempt(job, 1, {"executor": "minimax:m", "role": "exec",
+                                 "status": "ok"})
+    records.save_job(repo, job)
+
+    def grade(executor: str, corrections: str, missing: str) -> None:
+        assert main(["grade", "--project", str(repo), "--job", job["id"],
+                     "--piece", "1", "--executor", executor,
+                     "--corrections", corrections, "--done", "3",
+                     "--missing", missing, "--extra", "0"]) == 0
+        capsys.readouterr()
+
+    grade("beam:m", "1", "1")  # 100*3/4 - 15 = 60
+    grade("minimax:m", "0", "0")  # 100
+    grade("beam:m", "1", "0")  # regrade: 100 - 15 = 85
+
+    grades = _stored_job(repo, job["id"])["pieces"][0]["grades"]
+    assert {name: g["score"] for name, g in grades.items()} == {
+        "beam:m": 85,
+        "minimax:m": 100,
+    }
+    scoreboard = (repo / "docs" / "crew-chief" / "scoreboard.md").read_text(
+        encoding="utf-8"
+    )
+    assert "| minimax:m | 100 | 1 |" in scoreboard
+    assert "| beam:m | 85 | 1 |" in scoreboard
+
+    assert main(["close", "--project", str(repo), "--job", job["id"]]) == 0
+    closed = capsys.readouterr().out
+    assert "Bit — minimax:m, score 100; also beam:m, score 85" in closed
+
+
 def test_entry_script_writes_no_bytecode(tmp_path):
     # Running the CLI must not leave __pycache__ folders in the project.
     import shutil

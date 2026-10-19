@@ -3,9 +3,10 @@
 Three jobs live here:
 
 * :func:`grade` turns the outcome of one piece (adherence, corrections,
-  extras and named penalties) into the score stored under the piece's
-  ``grade`` key by the coordinator.
-* :func:`build_stats` folds every graded piece on disk into a per
+  extras and named penalties) into the score the coordinator stores for one
+  executor under the piece's ``grades`` map (one grade per executor that
+  worked on the piece).
+* :func:`build_stats` folds every grade on disk into a per
   ``(executor, type)`` :class:`Stat`, weighting each grade by how recent it
   is (a half-life decay, so a stale 100 fades against a fresh 20).
 * :func:`pick` chooses the next executor, free-first, by decayed score, with
@@ -32,7 +33,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import Prefs, tool_work_types
-from .records import EXEC_TYPES, WORK_TYPES, iter_jobs
+from .records import EXEC_TYPES, WORK_TYPES, iter_jobs, piece_grades
 from .tools import Executor
 
 #: Deductions applied by :func:`grade`, in score points.
@@ -163,7 +164,9 @@ def _collect(
     """Read every job and return ``(stats, skipped)``.
 
     ``skipped`` pairs the path of each corrupt job with the error text, for
-    :func:`render_scoreboard`. A grade without an executor or a parseable
+    :func:`render_scoreboard`. Every executor graded on a piece counts (see
+    :func:`records.piece_grades`, which also reads the single ``grade`` of
+    older records). A grade without an executor or a parseable
     ``graded_at`` cannot be keyed or aged and is ignored.
     """
     now = now or datetime.now(timezone.utc)
@@ -227,34 +230,30 @@ def _collect(
                 accumulator[0] += duration
                 accumulator[1] += 1
 
-            grade_value = piece.get("grade")
-            if not isinstance(grade_value, dict):
-                continue
-            score = grade_value.get("score")
-            executor = grade_value.get("executor")
-            graded_at = grade_value.get("graded_at")
-            if score is None or isinstance(score, bool):
-                continue
-            if not isinstance(score, (int, float)):
-                continue
-            if not isinstance(executor, str) or not executor:
-                continue
-            if not isinstance(graded_at, str):
-                continue
-            when = _parse_iso(graded_at)
-            if when is None:
-                continue
+            for grade_value in piece_grades(piece).values():
+                score = grade_value.get("score")
+                executor = grade_value.get("executor")
+                graded_at = grade_value.get("graded_at")
+                if not _is_number(score):
+                    continue
+                if not isinstance(executor, str) or not executor:
+                    continue
+                if not isinstance(graded_at, str):
+                    continue
+                when = _parse_iso(graded_at)
+                if when is None:
+                    continue
 
-            age_days = max(0.0, (now - when).total_seconds() / 86400.0)
-            weight = 0.5 ** (age_days / half_life_days)
-            accumulator = graded.setdefault(
-                (executor, work_type), [0.0, 0.0, 0, None]
-            )
-            accumulator[0] += weight * score
-            accumulator[1] += weight
-            accumulator[2] += 1
-            if accumulator[3] is None or when > accumulator[3]:
-                accumulator[3] = when
+                age_days = max(0.0, (now - when).total_seconds() / 86400.0)
+                weight = 0.5 ** (age_days / half_life_days)
+                accumulator = graded.setdefault(
+                    (executor, work_type), [0.0, 0.0, 0, None]
+                )
+                accumulator[0] += weight * score
+                accumulator[1] += weight
+                accumulator[2] += 1
+                if accumulator[3] is None or when > accumulator[3]:
+                    accumulator[3] = when
 
     stats: dict[tuple[str, str], Stat] = {}
     for key, (weighted, weights, count, newest) in graded.items():
@@ -294,10 +293,12 @@ def build_stats(
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
     now: datetime | None = None,
 ) -> dict[tuple[str, str], Stat]:
-    """Decayed history per ``(executor, type)`` over every graded piece.
+    """Decayed history per ``(executor, type)`` over every grade.
 
-    Only graded pieces count; a piece graded as ``review`` is keyed under the
-    ``review`` type like any other. Each grade's weight is
+    Only grades count, one per executor graded on a piece (a piece reworked
+    by a second executor after a correction gives both their own grade); a
+    piece graded as ``review`` is keyed under the ``review`` type like any
+    other. Each grade's weight is
     ``0.5 ** (age_days / half_life_days)`` and the score is the weighted mean.
     ``mean_duration_s`` is the mean ``duration_s`` of that executor's ``exec``
     attempts with status ``ok`` on pieces of that type; ``last`` is the most

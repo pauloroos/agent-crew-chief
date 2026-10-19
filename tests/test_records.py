@@ -22,6 +22,7 @@ from crew_chief.records import (
     jobs_dir,
     load_job,
     new_job,
+    piece_grades,
     render_markdown,
     save_job,
     set_grade,
@@ -168,7 +169,7 @@ def test_add_piece_numbers_from_one_and_returns_the_number(tmp_path):
     assert job["pieces"][0]["attempts"] == []
     assert job["pieces"][0]["corrections"] == []
     assert job["pieces"][0]["escalations"] == []
-    assert job["pieces"][0]["grade"] is None
+    assert job["pieces"][0]["grades"] == {}
 
 
 def test_add_attempt_validates_role_and_status(tmp_path):
@@ -261,6 +262,64 @@ def test_render_markdown_shows_corrections_and_escalations(tmp_path):
     assert "renamed the parameter" in md
     assert "quota twice" in md
     assert "codex:g" in md
+
+
+def _stored_grade(executor: str, score: int) -> dict:
+    return {"score": score, "explain": f"explain {score}", "executor": executor,
+            "graded_at": "2026-10-17T12:00:00+00:00"}
+
+
+def test_grades_are_kept_per_executor(tmp_path):
+    job = _new_job(tmp_path)
+    piece = add_piece(job, "A", "code", "low")
+
+    set_grade(job, piece, _stored_grade("beam:m", 52))
+    set_grade(job, piece, _stored_grade("minimax:m", 100))
+    set_grade(job, piece, _stored_grade("beam:m", 60))
+
+    grades = piece_grades(job["pieces"][0])
+    assert list(grades) == ["beam:m", "minimax:m"]
+    assert grades["beam:m"]["score"] == 60
+    assert grades["minimax:m"]["score"] == 100
+
+
+def test_legacy_single_grade_is_read_and_kept_on_regrade(tmp_path):
+    job = _new_job(tmp_path)
+    piece = add_piece(job, "A", "code", "low")
+    entry = job["pieces"][0]
+    entry.pop("grades")
+    entry["grade"] = _stored_grade("beam:m", 52)
+
+    assert piece_grades(entry) == {"beam:m": _stored_grade("beam:m", 52)}
+
+    set_grade(job, piece, _stored_grade("minimax:m", 100))
+
+    assert "grade" not in entry
+    assert piece_grades(entry) == {
+        "beam:m": _stored_grade("beam:m", 52),
+        "minimax:m": _stored_grade("minimax:m", 100),
+    }
+
+
+def test_summaries_and_markdown_list_every_graded_executor(tmp_path):
+    job = _new_job(tmp_path)
+    piece = add_piece(job, "Centre the card", "code", "low")
+    add_attempt(job, piece, {"executor": "beam:m", "role": "exec", "status": "ok"})
+    add_attempt(job, piece, {"executor": "minimax:m", "role": "exec",
+                             "status": "ok"})
+    set_grade(job, piece, _stored_grade("beam:m", 52))
+    set_grade(job, piece, _stored_grade("minimax:m", 100))
+
+    commit, comment = summaries(job)
+    md = render_markdown(job)
+
+    line = "- Centre the card — minimax:m, score 100; also beam:m, score 52"
+    assert line in commit
+    assert "1. Centre the card — minimax:m, score 100; also beam:m, score 52" in (
+        comment
+    )
+    assert "- `minimax:m`: score 100 — explain 100" in md
+    assert "- `beam:m`: score 52 — explain 52" in md
 
 
 def test_render_markdown_names_the_base_of_a_correction(tmp_path):

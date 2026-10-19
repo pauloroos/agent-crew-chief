@@ -173,6 +173,13 @@ def _project(
             add_attempt(job, number, attempt)
         if spec.get("grade") is not None:
             set_grade(job, number, spec["grade"])
+        for stored in spec.get("grades", []):
+            set_grade(job, number, stored)
+        if spec.get("legacy_grade") is not None:
+            # A record written before grades were kept per executor.
+            piece = job["pieces"][-1]
+            piece.pop("grades", None)
+            piece["grade"] = spec["legacy_grade"]
     save_job(project, job)
     return project
 
@@ -264,6 +271,43 @@ def test_grade_pluralises_corrections_and_shows_extra_deduction():
 
 
 # --- build_stats -----------------------------------------------------------
+
+
+def test_every_executor_graded_on_a_piece_counts(tmp_path):
+    project = _project(
+        tmp_path,
+        [
+            {
+                "type": "code",
+                "attempts": [
+                    {"executor": "beam:a", "role": "exec", "status": "ok"},
+                    {"executor": "minimax:b", "role": "exec", "status": "ok"},
+                ],
+                "grades": [_g("beam:a", 52, NOW), _g("minimax:b", 100, NOW)],
+            },
+        ],
+    )
+
+    stats = build_stats(project, now=NOW)
+
+    assert stats[("beam:a", "code")].score == 52
+    assert stats[("minimax:b", "code")].score == 100
+    assert stats[("beam:a", "code")].attempts_per_pass == 1
+    board = render_scoreboard(project, now=NOW)
+    assert "| minimax:b | 100 | 1 |" in board
+    assert "| beam:a | 52 | 1 |" in board
+
+
+def test_legacy_single_grade_is_still_read(tmp_path):
+    project = _project(
+        tmp_path,
+        [{"type": "code", "legacy_grade": _g("opencode:a", 70, NOW)}],
+    )
+
+    stats = build_stats(project, now=NOW)
+
+    assert stats[("opencode:a", "code")].score == 70
+    assert stats[("opencode:a", "code")].n == 1
 
 
 def test_decay_prefers_recent(tmp_path):
