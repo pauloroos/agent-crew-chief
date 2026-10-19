@@ -8,7 +8,8 @@ the status then follows from the exit code, the quota patterns and the two
 containment snapshots taken around the run.
 
 The brief travels as a file (``.crew-chief-brief.md``) rather than on the
-command line, so long or accented text survives. Some tools write their answer
+command line, so long or accented text survives; the prompt names it, and the
+worktree, by absolute path (:func:`build_prompt`). Some tools write their answer
 to ``.crew-chief-out.txt`` instead of stdout; that file is read only when
 stdout came back empty. Both files are listed in the worktree's
 ``info/exclude`` by :mod:`crew_chief.worktree`.
@@ -58,14 +59,24 @@ BRIEF_FILE = ".crew-chief-brief.md"
 #: Optional output file some tools write instead of stdout.
 OUTPUT_FILE = ".crew-chief-out.txt"
 
-#: Prompt handed to every executor; it points at the brief file in the cwd.
-PROMPT = (
-    "Read the file .crew-chief-brief.md in the current directory and carry "
-    "out exactly what it asks. Work only inside the current directory."
+#: Prompt handed to every executor, formatted by :func:`build_prompt`. Both
+#: paths are absolute: some agent tools hide dotfiles from their file search,
+#: so a brief named relative to the cwd was not always found.
+PROMPT_TEMPLATE = (
+    "Read the file {brief} and carry out exactly what it asks. "
+    "Work only inside {worktree}."
 )
 
 #: Appended to the prompt for a review: the target must not change.
 REVIEW_SUFFIX = " Do not modify any file; reply with your review."
+
+
+def build_prompt(brief_file: Path, worktree: Path, review: bool = False) -> str:
+    """The prompt for one attempt, naming the brief and worktree absolutely."""
+    prompt = PROMPT_TEMPLATE.format(
+        brief=Path(brief_file).resolve(), worktree=Path(worktree).resolve()
+    )
+    return prompt + (REVIEW_SUFFIX if review else "")
 
 #: How many trailing characters of executor output are kept in the note.
 MAX_NOTE = 4000
@@ -163,7 +174,7 @@ def dispatch(
     brief_file.write_text(brief, encoding="utf-8")
 
     tool = executor.tool
-    prompt = PROMPT + (REVIEW_SUFFIX if role == "review" else "")
+    prompt = build_prompt(brief_file, worktree, role == "review")
     cmd = build_command(
         tool,
         executor.model,

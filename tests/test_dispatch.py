@@ -542,3 +542,44 @@ def test_broken_worktree_after_the_run_is_recorded_as_failed(
     assert "not a git repository" in attempt["note"]
     assert "ran" in attempt["note"]
     assert _stored_attempt(git_repo, job["id"])["status"] == "failed"
+
+
+# --- prompt ----------------------------------------------------------------
+
+
+def test_prompt_names_the_absolute_brief_and_worktree(git_repo, fake_bin):
+    # Some agent tools hide dotfiles from their file search, so a relative
+    # ".crew-chief-brief.md in the current directory" was never found.
+    fake_bin(
+        "stub",
+        "import sys\n"
+        "from pathlib import Path\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+        "print(sys.argv[1])\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    worktree = Path(attempt["worktree"]).resolve()
+    brief = worktree / ".crew-chief-brief.md"
+    assert attempt["note"].strip() == (
+        f"Read the file {brief} and carry out exactly what it asks. "
+        f"Work only inside {worktree}."
+    )
+
+
+def test_review_prompt_names_the_target_and_forbids_changes(git_repo, fake_bin):
+    fake_bin("stub", "import sys\nprint(sys.argv[1])\n")
+    job = _seed_job(git_repo)
+    target, _branch = create_worktree(git_repo, job["id"], 1, 1)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "review it\n", _prefs(),
+        role="review", review_target=target,
+    )
+
+    note = attempt["note"].strip()
+    assert str(target.resolve() / ".crew-chief-brief.md") in note
+    assert f"Work only inside {target.resolve()}." in note
+    assert note.endswith("Do not modify any file; reply with your review.")
