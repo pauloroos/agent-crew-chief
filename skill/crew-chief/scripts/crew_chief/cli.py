@@ -203,9 +203,11 @@ def _cmd_job_new(args: argparse.Namespace) -> int:
 
 def _cmd_piece_add(args: argparse.Namespace) -> int:
     project = _project(args)
-    job = records.load_job(project, args.job)
-    number = records.add_piece(job, args.title, args.type, args.risk)
-    records.save_job(project, job)
+    number = records.update_job(
+        project,
+        args.job,
+        lambda job: records.add_piece(job, args.title, args.type, args.risk),
+    )
     _emit(args, str(number), {"piece": number})
     return 0
 
@@ -215,51 +217,57 @@ def _cmd_pick(args: argparse.Namespace) -> int:
     prefs = load_prefs(project)
     found = discover_full(prefs)
     executors = found.executors
-    job = records.load_job(project, args.job)
-    piece = _piece(job, args.piece)
+    _piece(records.load_job(project, args.job), args.piece)
     _check_models_to_stderr(project, prefs, found, due_only=True)
-
-    exclude = set(args.exclude or [])
-    for attempt in piece.get("attempts") or []:
-        if attempt.get("role") != "exec" or attempt.get("status") == "ok":
-            continue
-        executor_id = attempt.get("executor")
-        if isinstance(executor_id, str) and executor_id:
-            exclude.add(executor_id)
-
-    escalation = ""
-    if free_failures(job, args.piece) >= 2:
-        escalation = _ESCALATION_FREE_FAILURES
-    elif args.strong:
-        escalation = _ESCALATION_STRONG
-    if escalation:
-        exclude |= {executor.id for executor in executors if executor.cost == "free"}
-
     stats = build_stats(project)
-    choice, reason = pick_executor(
-        executors,
-        stats,
-        piece.get("type", ""),
-        piece.get("risk", ""),
-        prefs,
-        exclude,
-        random.Random(),
-    )
 
-    if escalation:
-        records.add_escalation(
-            job, args.piece, escalation, choice.id if choice else ""
+    def choose(job: dict) -> tuple:
+        """Pick under the job lock, so parallel picks see each other's picks."""
+        piece = _piece(job, args.piece)
+        exclude = set(args.exclude or [])
+        for attempt in piece.get("attempts") or []:
+            if attempt.get("role") != "exec" or attempt.get("status") == "ok":
+                continue
+            executor_id = attempt.get("executor")
+            if isinstance(executor_id, str) and executor_id:
+                exclude.add(executor_id)
+
+        escalation = ""
+        if free_failures(job, args.piece) >= 2:
+            escalation = _ESCALATION_FREE_FAILURES
+        elif args.strong:
+            escalation = _ESCALATION_STRONG
+        if escalation:
+            exclude |= {
+                executor.id for executor in executors if executor.cost == "free"
+            }
+
+        choice, reason = pick_executor(
+            executors,
+            stats,
+            piece.get("type", ""),
+            piece.get("risk", ""),
+            prefs,
+            exclude,
+            random.Random(),
         )
 
+        if escalation:
+            records.add_escalation(
+                job, args.piece, escalation, choice.id if choice else ""
+            )
+        if choice is not None:
+            piece.setdefault("picks", []).append(
+                {"pick": choice.id, "reason": reason, "at": _now_iso()}
+            )
+        return choice, reason
+
+    choice, reason = records.update_job(project, args.job, choose)
+
     if choice is None:
-        records.save_job(project, job)
         _emit(args, reason, {"executor": None, "reason": reason})
         return 1
 
-    piece.setdefault("picks", []).append(
-        {"pick": choice.id, "reason": reason, "at": _now_iso()}
-    )
-    records.save_job(project, job)
     _emit(args, f"{choice.id}\n{reason}", {"executor": choice.id, "reason": reason})
     return 0
 
@@ -316,10 +324,12 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
 
 def _cmd_correction(args: argparse.Namespace) -> int:
     project = _project(args)
-    job = records.load_job(project, args.job)
     executor = args.executor or ""
-    records.add_correction(job, args.piece, args.reason, executor)
-    records.save_job(project, job)
+    records.update_job(
+        project,
+        args.job,
+        lambda job: records.add_correction(job, args.piece, args.reason, executor),
+    )
     _emit(
         args,
         f"correction recorded on piece {args.piece}",
@@ -330,15 +340,15 @@ def _cmd_correction(args: argparse.Namespace) -> int:
 
 def _cmd_grade(args: argparse.Namespace) -> int:
     project = _project(args)
-    job = records.load_job(project, args.job)
 
     stored = score_piece(
         args.corrections, args.done, args.missing, args.extra, args.penalty or []
     )
     stored["executor"] = args.executor
     stored["graded_at"] = _now_iso()
-    records.set_grade(job, args.piece, stored)
-    records.save_job(project, job)
+    records.update_job(
+        project, args.job, lambda job: records.set_grade(job, args.piece, stored)
+    )
     _write_scoreboard(project, render_scoreboard(project))
 
     _emit(

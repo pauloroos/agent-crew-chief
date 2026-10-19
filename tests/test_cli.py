@@ -613,3 +613,85 @@ def test_dispatch_with_a_stale_check_writes(git_repo, fake_bin, monkeypatch, cap
     captured = capsys.readouterr()
     assert "status: ok" in captured.out
     assert "new free: stub:n (trains=no)" in captured.err
+
+
+# --- parallel processes ----------------------------------------------------
+
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skill" / "crew-chief" / "scripts"
+
+#: Runs the CLI in a child process with discovery restricted to the stub bins.
+_DRIVER = """
+import shutil, sys
+sys.path.insert(0, sys.argv[1])
+allowed = set(sys.argv[2].split(","))
+real_which = shutil.which
+shutil.which = lambda cmd, *a, **k: real_which(cmd, *a, **k) if cmd in allowed else None
+from crew_chief.cli import main
+sys.exit(main(sys.argv[3:]))
+"""
+
+_SLOW_STUB = (
+    "import time\n"
+    "time.sleep(1)\n"
+    "print('done')\n"
+)
+
+
+def _run_parallel(bins: str, argvs: list[list[str]]) -> list[int]:
+    import sys
+
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-c", _DRIVER, str(_SCRIPTS_DIR), bins, *argv],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        for argv in argvs
+    ]
+    return [proc.wait(timeout=300) for proc in procs]
+
+
+def test_parallel_dispatches_of_one_piece_keep_every_attempt(
+    git_repo, fake_bin, monkeypatch
+):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", _SLOW_STUB)
+    brief = _write(repo.parent / "brief.md", "Do it.\n")
+    job = records.new_job(repo, "Parallel", "do it", True, "parts")
+    records.add_piece(job, "Only piece", "code", "low")
+    records.save_job(repo, job)
+
+    argv = ["dispatch", "--project", str(repo), "--job", job["id"],
+            "--piece", "1", "--executor", "stub:m", "--brief-file", str(brief)]
+    _run_parallel("stub", [argv] * 4)
+
+    attempts = _stored_job(repo, job["id"])["pieces"][0]["attempts"]
+    assert len(attempts) == 4
+    branches = sorted(attempt["branch"] for attempt in attempts)
+    assert branches == sorted(
+        f"crew/{job['id']}-1-{number}" for number in range(1, 5)
+    )
+
+
+def test_parallel_picks_keep_every_pick(git_repo, fake_bin, monkeypatch):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", "print('x')\n")
+    job = records.new_job(repo, "Parallel picks", "do it", True, "parts")
+    for number in range(1, 7):
+        records.add_piece(job, f"Piece {number}", "code", "low")
+    records.save_job(repo, job)
+
+    codes = _run_parallel(
+        "stub",
+        [
+            ["pick", "--project", str(repo), "--job", job["id"],
+             "--piece", str(number)]
+            for number in range(1, 7)
+        ],
+    )
+
+    assert codes == [0] * 6
+    pieces = _stored_job(repo, job["id"])["pieces"]
+    assert all(len(piece.get("picks", [])) == 1 for piece in pieces)

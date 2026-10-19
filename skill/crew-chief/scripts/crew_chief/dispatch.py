@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .briefcheck import check_brief
-from .records import add_attempt, load_job, save_job
+from .records import add_attempt, update_job
 from .tools import (
     QUOTA_PATTERNS,
     Executor,
@@ -93,12 +93,12 @@ def dispatch(
     if role == "review" and review_target is None:
         raise ValueError("role 'review' requires review_target")
 
-    job = load_job(project, job_id)
-    number = _attempt_number(job, piece)
+    number = update_job(project, job_id, lambda job: _reserve_attempt(job, piece))
     started = datetime.now(timezone.utc)
     start = time.monotonic()
 
     attempt: dict = {
+        "n": number,
         "executor": executor.id,
         "role": role,
         "cost": executor.cost,
@@ -116,13 +116,16 @@ def dispatch(
     }
 
     def finish(status: str, note: str | None = None) -> dict:
-        """Set the final status, append the attempt to the job and save it."""
+        """Set the final status and append the attempt to the job on disk.
+
+        The job is re-read under its lock at this moment, so attempts that
+        parallel dispatches recorded meanwhile are kept.
+        """
         attempt["status"] = status
         if note is not None:
             attempt["note"] = note
         attempt["duration_s"] = round(time.monotonic() - start, 1)
-        add_attempt(job, piece, attempt)
-        save_job(project, job)
+        update_job(project, job_id, lambda job: add_attempt(job, piece, attempt))
         return attempt
 
     findings = check_brief(brief, prefs.sensitive_paths)
@@ -211,11 +214,23 @@ def dispatch(
     return finish(_status(timed_out, writes, proc.returncode, stderr, text))
 
 
-def _attempt_number(job: dict, piece: int) -> int:
-    """``1 +`` the attempts already recorded on ``piece``, whatever their role."""
+def _reserve_attempt(job: dict, piece: int) -> int:
+    """Reserve and return the next attempt number of ``piece``.
+
+    Called under the job lock. The number is ``1 +`` the attempts already
+    recorded, whatever their role, but never below the piece's
+    ``next_attempt`` counter, which is then advanced: two parallel dispatches
+    of one piece get distinct numbers (and worktrees) even though neither has
+    recorded its attempt yet.
+    """
     for entry in job.get("pieces") or []:
         if entry.get("n") == piece:
-            return 1 + len(entry.get("attempts") or [])
+            number = max(
+                1 + len(entry.get("attempts") or []),
+                int(entry.get("next_attempt") or 1),
+            )
+            entry["next_attempt"] = number + 1
+            return number
     raise ValueError(f"job {job.get('id')!r} has no piece {piece}")
 
 
