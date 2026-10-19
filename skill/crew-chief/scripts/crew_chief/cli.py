@@ -44,6 +44,7 @@ from pathlib import Path
 
 from . import records
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
+from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
 from .config import Prefs, PrefsError, load_prefs, tool_work_types
 from .decisions import DECISIONS_DIR, next_number, write_adr
 from .discover import Discovery, discover_full
@@ -759,10 +760,55 @@ def _cmd_discard(args: argparse.Namespace) -> int:
 def _cmd_close(args: argparse.Namespace) -> int:
     project = _project(args)
     job = records.load_job(project, args.job)
-    commit, issue = records.summaries(job)
+    written = None if args.no_changelog else _write_changelog(project, job)
+    commit, issue = records.summaries(job, written[0] if written else None)
     _write_scoreboard(project, render_scoreboard(project))
-    _emit(args, f"{commit}\n\n---\n\n{issue}", {"commit": commit, "issue": issue})
+    text = f"{commit}\n\n---\n\n{issue}"
+    payload = {"commit": commit, "issue": issue}
+    if written:
+        text = f"changelog: {written[0]} ({written[1]})\n{text}"
+        payload["changelog"] = {"path": written[0], "category": written[1]}
+    _emit(args, text, payload)
     return 0
+
+
+def _write_changelog(project: Path, job: dict) -> tuple[str, str] | None:
+    """Add the job to the project CHANGELOG; ``(path, category)`` when written.
+
+    Nothing is written when the preference is ``none``, no piece of the job was
+    accepted, the job's commit type has no category, or the job's entry is
+    already in the file (``close`` run twice). The file is read and written
+    without newline translation, so its CRLF and BOM survive.
+    """
+    prefs = load_prefs(project)
+    if prefs.changelog == "none":
+        return None
+    if not any(piece.get("accepted") for piece in job.get("pieces") or []):
+        return None
+    category = CATEGORY_BY_COMMIT.get(records.commit_type(job))
+    if category is None:
+        return None
+
+    relative = prefs.changelog_path
+    path = (project / relative).resolve()
+    if not path.is_relative_to(project.resolve()) or path.is_dir():
+        raise ValueError(
+            f"changelog_path {relative!r} must be a file inside the project"
+        )
+    try:
+        old = None
+        if path.is_file():
+            with path.open(encoding="utf-8", newline="") as handle:
+                old = handle.read()
+        new = insert_entry(old, category, entry_line(job))
+        if new == old:
+            return None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            handle.write(new)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"changelog: cannot update {path}: {exc}") from exc
+    return path.relative_to(project.resolve()).as_posix(), category
 
 
 def _cmd_scoreboard(args: argparse.Namespace) -> int:
@@ -1289,6 +1335,11 @@ def build_parser() -> argparse.ArgumentParser:
         "close", parents=[common], help="print the job's commit message and comment"
     )
     close_parser.add_argument("--job", required=True, help="job id")
+    close_parser.add_argument(
+        "--no-changelog",
+        action="store_true",
+        help="do not add the job to the project CHANGELOG",
+    )
     close_parser.set_defaults(handler=_cmd_close)
 
     spec_parser = subcommands.add_parser(

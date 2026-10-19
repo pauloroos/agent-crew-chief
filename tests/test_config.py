@@ -278,3 +278,35 @@ def test_exec_first_must_be_a_list_of_tool_names(tmp_path, value):
         f"exec_first = {value}\n", encoding="utf-8")
     with pytest.raises(PrefsError, match="exec_first"):
         load_prefs(tmp_path, tmp_path / "n.toml")
+
+
+# --- changelog ---------------------------------------------------------------
+
+
+def test_changelog_prefs_default_and_can_be_set(tmp_path):
+    prefs = load_prefs(tmp_path, tmp_path / "n.toml")
+    assert prefs.changelog == "keep-a-changelog"
+    assert prefs.changelog_path == "CHANGELOG.md"
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        'changelog = "none"\nchangelog_path = "docs/CHANGES.md"\n',
+        encoding="utf-8")
+    prefs = load_prefs(tmp_path, tmp_path / "n.toml")
+    assert prefs.changelog == "none" and prefs.changelog_path == "docs/CHANGES.md"
+
+
+def test_changelog_pref_rejects_unknown_value(tmp_path):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        'changelog = "git-log"\n', encoding="utf-8")
+    with pytest.raises(PrefsError, match="changelog"):
+        load_prefs(tmp_path, tmp_path / "n.toml")
+
+
+@pytest.mark.parametrize("value", ['""', "3", "true"])
+def test_changelog_path_must_be_a_non_empty_string(tmp_path, value):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        f"changelog_path = {value}\n", encoding="utf-8")
+    with pytest.raises(PrefsError, match="changelog_path"):
+        load_prefs(tmp_path, tmp_path / "n.toml")

@@ -539,7 +539,7 @@ def _piece_credit(piece: dict) -> str:
     return text
 
 
-def _commit_type(job: dict) -> str:
+def commit_type(job: dict) -> str:
     """Conventional commit type from the first piece; ``chore`` with no pieces."""
     pieces = job.get("pieces") or []
     if not pieces:
@@ -547,14 +547,16 @@ def _commit_type(job: dict) -> str:
     return _COMMIT_TYPES.get(pieces[0].get("type"), "chore")
 
 
-def _commit_message(job: dict) -> str:
+def _commit_message(job: dict, changelog_file: str | None = None) -> str:
     body = []
     for piece in job.get("pieces") or []:
         body.append(f"- {piece.get('title', '')} — {_piece_credit(piece)}")
-    subject = f"{_commit_type(job)}: {job.get('title', '')}"
-    if not body:
-        return subject
-    return "\n".join([subject, "", *body])
+    subject = f"{commit_type(job)}: {job.get('title', '')}"
+    if body:
+        body.insert(0, "")
+    if changelog_file:
+        body.extend(["", f"Files: {changelog_file} (changelog entry)"])
+    return "\n".join([subject, *body])
 
 
 def _issue_comment(job: dict) -> str:
@@ -575,9 +577,13 @@ def _issue_comment(job: dict) -> str:
     return "\n".join([*lines, "", f"Record: {record}"])
 
 
-def summaries(job: dict) -> tuple[str, str]:
-    """Return ``(commit_message, issue_comment)`` for the job."""
-    return _commit_message(job), _issue_comment(job)
+def summaries(job: dict, changelog_file: str | None = None) -> tuple[str, str]:
+    """Return ``(commit_message, issue_comment)`` for the job.
+
+    ``changelog_file`` is the project CHANGELOG ``close`` just wrote an entry
+    into; the commit message then names it among the files of the commit.
+    """
+    return _commit_message(job, changelog_file), _issue_comment(job)
 
 
 def _attempt_line(index: int, attempt: dict) -> str:

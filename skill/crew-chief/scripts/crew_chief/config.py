@@ -21,6 +21,7 @@ from .records import WORK_TYPES
 COST_VALUES = ("free", "paid", "forbidden")
 KIND_VALUES = ("claude-code", "opencode", "codex", "antigravity", "generic")
 ISSUE_TRACKERS = ("none", "github", "plane", "linear", "other")
+CHANGELOG_VALUES = ("keep-a-changelog", "none")
 
 # Location of the project preferences file, relative to the project root.
 PREFS_RELATIVE_PATH = Path("docs") / "crew-chief" / "preferences.toml"
@@ -38,6 +39,11 @@ DEFAULT_QUOTA_COOLDOWN_MIN = 60
 
 #: Tools whose free executors come first on execution work (``exec_first``).
 DEFAULT_EXEC_FIRST = ["opencode"]
+
+#: ``close`` adds the job to the project CHANGELOG in the Keep a Changelog style.
+DEFAULT_CHANGELOG = "keep-a-changelog"
+#: The project CHANGELOG, relative to the project root.
+DEFAULT_CHANGELOG_PATH = "CHANGELOG.md"
 
 #: Work types each tool kind takes when the tool sets no ``work_types``.
 #: Every kind takes every type: any free model may execute, review or think,
@@ -104,6 +110,10 @@ class Prefs:
     ignore_home_entries: list[str] = field(default_factory=list)
     #: Tools whose free executors are tried first on execution work types.
     exec_first: list[str] = field(default_factory=lambda: list(DEFAULT_EXEC_FIRST))
+    #: ``keep-a-changelog`` (``close`` writes the entry) or ``none``.
+    changelog: str = DEFAULT_CHANGELOG
+    #: Path of the project CHANGELOG, relative to the project root.
+    changelog_path: str = DEFAULT_CHANGELOG_PATH
 
 
 def tool_work_types(tool: dict) -> tuple[str, ...]:
@@ -220,6 +230,21 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
             f"{path}: exec_first must be a list of tool names, got {exec_first!r}"
         )
 
+    changelog = data.get("changelog")
+    if changelog is not None and changelog not in CHANGELOG_VALUES:
+        raise PrefsError(
+            f"{path}: changelog must be one of {', '.join(CHANGELOG_VALUES)}, "
+            f"got {changelog!r}"
+        )
+    changelog_path = data.get("changelog_path")
+    if changelog_path is not None and (
+        not isinstance(changelog_path, str) or not changelog_path.strip()
+    ):
+        raise PrefsError(
+            f"{path}: changelog_path must be a non-empty path, "
+            f"got {changelog_path!r}"
+        )
+
     issue_tracker = data.get("issue_tracker")
     if issue_tracker is not None and issue_tracker not in ISSUE_TRACKERS:
         raise PrefsError(
@@ -324,6 +349,8 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         model_check_hours=pick("model_check_hours", DEFAULT_MODEL_CHECK_HOURS),
         quota_cooldown_min=pick("quota_cooldown_min", DEFAULT_QUOTA_COOLDOWN_MIN),
         exec_first=list(pick("exec_first", DEFAULT_EXEC_FIRST)),
+        changelog=pick("changelog", DEFAULT_CHANGELOG),
+        changelog_path=pick("changelog_path", DEFAULT_CHANGELOG_PATH),
         ignore_home_entries=list(
             dict.fromkeys(
                 [

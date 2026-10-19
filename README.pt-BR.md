@@ -198,6 +198,8 @@ Todas as chaves:
 | `forbid_training` | Quando true, um modelo cuja regra define `trains = true` é tratado como `forbidden` e nunca é despachado. |
 | `sensitive_paths` | Padrões fnmatch de caminhos que um brief nunca pode citar, por exemplo `[".env", "secrets/*"]`. Um brief que cita um deles é recusado como `brief_refused`. |
 | `issue_tracker` | `none`, `github`, `plane`, `linear` ou `other`; usado pelo `close`. |
+| `changelog` | `keep-a-changelog` (padrão) ou `none`. O `close` põe o job no CHANGELOG do projeto em `## [Unreleased]` (`Added` para feat, `Fixed` para fix, `Changed` para refactor e perf), uma vez por job, mantendo CRLF e BOM; docs, tests e chores não geram entrada. `close --no-changelog` pula. |
+| `changelog_path` | Arquivo do CHANGELOG, relativo ao projeto. Padrão `CHANGELOG.md`. |
 | `dispatch_timeout_s` | Limite rígido de uma tentativa, em segundos. Ao estourar, a árvore de processos é morta e a tentativa é registrada como `timeout`. Padrão `900`. |
 | `review_default` | Id de executor usado nas revisões quando o coordenador não tem ideia melhor, por exemplo `codex:gpt-5-codex`. Vazio significa "escolha um você mesmo" (`pick --review`). |
 | `exec_first` | Ferramentas cujos executores grátis o `pick` tenta primeiro no trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`), antes dos outros grátis. Padrão `["opencode"]`; `[]` desliga. |

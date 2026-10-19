@@ -30,6 +30,16 @@
 # Issue tracker used by `close`: none, github, plane, linear or other.
 # issue_tracker = "none"
 
+# `close` adds the delivered job to the project CHANGELOG (Keep a Changelog
+# style: an entry under `## [Unreleased]`, in `### Added` for feat, `### Fixed`
+# for fix, `### Changed` for refactor/perf; docs, tests and chores get none).
+# It never touches a released section and adds a job only once.
+# "keep-a-changelog" (default) or "none". `close --no-changelog` skips it once.
+# changelog = "keep-a-changelog"
+
+# The CHANGELOG file, relative to the project root.
+# changelog_path = "CHANGELOG.md"
+
 # Hard limit for one dispatch attempt, in seconds. On overrun the process tree
 # is killed and the attempt is recorded as `timeout`.
 # dispatch_timeout_s = 900

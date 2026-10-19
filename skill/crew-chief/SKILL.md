@@ -198,7 +198,11 @@ Seven steps, in order.
    a correction it already carries the earlier work); `discard` drops it.
    `close` prints the commit message for the delivery and the issue comment;
    both credit the executor of the last `ok` attempt first and list every
-   other graded executor with its score. Commit with the printed message and show the user the
+   other graded executor with its score. When a piece was accepted and the work is
+   a feat, fix, refactor or perf, `close` also adds the job to the project's
+   `CHANGELOG.md` under `## [Unreleased]` (once per job; `--no-changelog` or
+   `changelog = "none"` skips it) and prints `changelog: <path> (<category>)`
+   first, so stage that file with the commit. Commit with the printed message and show the user the
    result plus the `close` output.
 
 `CC scoreboard --project .` regenerates and prints the scoreboard when the user
