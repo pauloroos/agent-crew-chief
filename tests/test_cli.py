@@ -379,6 +379,33 @@ def test_pick_excludes_an_executor_with_no_change_on_the_piece(
     assert capsys.readouterr().out.splitlines()[0].strip() == "stub:n"
 
 
+def test_pick_hands_a_correction_to_another_executor(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # The executor whose work drew a correction does not get the fix.
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS.replace('models = ["m"]', 'models = ["m", "n"]'))
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+
+    job = records.new_job(repo, "Correct", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+    records.add_attempt(job, 1, {"executor": "stub:m", "role": "exec",
+                                 "status": "ok", "cost": "free"})
+    records.add_correction(job, 1, "wrong name", "stub:m")
+    # Elsewhere in the job, stub:n is used more: spread alone would pick m.
+    records.add_piece(job, "Two", "code", "low")
+    records.add_piece(job, "Three", "code", "low")
+    for n in (2, 3):
+        records.add_attempt(job, n, {"executor": "stub:n", "role": "exec",
+                                     "status": "ok", "cost": "free"})
+    records.save_job(repo, job)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "stub:n"
+
+
 def test_dispatch_with_no_change_exits_1_and_accept_refuses_it(
     git_repo, fake_bin, monkeypatch, capsys
 ):

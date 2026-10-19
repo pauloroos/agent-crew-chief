@@ -308,6 +308,13 @@ def _cmd_pick(args: argparse.Namespace) -> int:
             if attempt.get("role") != role or attempt.get("status") == "ok":
                 continue
             exclude.add(executor_id)
+        if not args.review:
+            # Work that drew a correction goes to someone else for the fix.
+            exclude |= {
+                correction.get("executor")
+                for correction in piece.get("corrections") or []
+                if isinstance(correction, dict) and correction.get("executor")
+            }
         families = {quota_family(executor_id) for executor_id in reviewed}
         exclude |= {
             executor.id
