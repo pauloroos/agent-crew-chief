@@ -57,8 +57,8 @@ flowchart TB
 3. `pick`: an executor is chosen. Hands-on work (`code`, `tests`, `refactor`, `docs`, `data`) only goes to free models, OpenCode first; thinking work (`review`, `design`, `diagnosis`, `research`) goes to any free model and escalates to a paid one only when needed. Within that, decayed score decides, with an occasional second chance. Ties are spread over the job, and a model that just hit its quota sits out for a while.
 4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status, with its duration, agent steps and tokens. An attempt that exits cleanly without changing anything is `no_change`, a failure, not `ok`. Independent pieces can be dispatched in parallel.
 5. `pick --review` + `dispatch --review`: a model outside the executor's quota family reviews the work.
-6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten.
-7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment.
+6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten. After a correction the next `dispatch` starts from the last `ok` attempt's branch, so the brief only describes the adjustment and the diff shows only that (`--fresh` starts over from `HEAD`, `--base <n|branch>` picks the starting attempt). Every executor that worked on the piece keeps its own grade.
+7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment, which list every executor with its score.
 
 ## Install
 
@@ -296,8 +296,9 @@ survives.
 
 ## Scoreboard math
 
-Each graded piece becomes one number — the same one `grade` stores in the job
-and `scoreboard.md` ranks by:
+Each graded piece becomes one number per executor that worked on it — the
+same one `grade --executor <id>` stores in the job (under the piece's
+`grades`, keyed by executor) and `scoreboard.md` ranks by:
 
 ```
 score = 100 * done / (done + missing)
@@ -314,6 +315,9 @@ adherence term is a full 100.
 History is weighted by age with a 30-day half-life: a grade from 30 days ago
 counts half as much as today's, one from 60 days ago a quarter as much. The
 score shown per executor and work type is the weighted mean of its grades.
+When a piece needed a second executor after a correction, both are graded and
+both count: the first with the correction it drew, the second with its own
+result.
 
 Work is split between executing and thinking. The coordinator (the CLI you
 opened) is the strong model: it thinks, splits and judges. Hands-on work

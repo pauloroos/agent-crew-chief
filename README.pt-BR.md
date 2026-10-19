@@ -57,8 +57,8 @@ flowchart TB
 3. `pick`: o executor é escolhido. O trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`) só vai para modelos grátis, OpenCode primeiro; o trabalho de pensar (`review`, `design`, `diagnosis`, `research`) vai para qualquer modelo grátis e só sobe para um pago quando é preciso. Dentro disso decide a nota com decaimento, e às vezes alguém ganha segunda chance. Empates são espalhados pelo job, e um modelo que acabou de bater cota fica de fora por um tempo.
 4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado, com duração, passos do agente e tokens. Uma tentativa que termina sem erro mas não muda nada fica `no_change`, que conta como falha, não como `ok`. Peças independentes podem ser despachadas em paralelo.
 5. `pick --review` + `dispatch --review`: um modelo fora da família de cota do executor revisa o trabalho.
-6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito.
-7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue.
+6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito. Depois de uma correção, o próximo `dispatch` parte do branch da última tentativa `ok`, então o brief descreve só o ajuste e o diff mostra só ele (`--fresh` recomeça do `HEAD`, `--base <n|branch>` escolhe a tentativa de partida). Cada executor que trabalhou na peça fica com a própria nota.
+7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue, que listam cada executor com sua nota.
 
 ## Instalação
 
@@ -296,8 +296,9 @@ histórico. Commitar é o ponto: o placar só serve se sobreviver.
 
 ## Matemática do placar
 
-Cada parte avaliada vira um número — o mesmo que `grade` grava no job e que o
-`scoreboard.md` usa para ranquear:
+Cada parte avaliada vira um número por executor que trabalhou nela — o mesmo
+que `grade --executor <id>` grava no job (em `grades` da peça, por executor) e
+que o `scoreboard.md` usa para ranquear:
 
 ```
 score = 100 * done / (done + missing)
@@ -314,6 +315,9 @@ de aderência vale 100.
 O histórico é ponderado pela idade com meia-vida de 30 dias: uma nota de 30
 dias atrás vale metade da de hoje, uma de 60 dias atrás vale um quarto. A nota
 mostrada por executor e tipo de trabalho é a média ponderada das notas dele.
+Quando uma peça precisou de um segundo executor depois de uma correção, os dois
+recebem nota e os dois contam: o primeiro com a correção que levou, o segundo
+com o próprio resultado.
 
 O trabalho se divide entre executar e pensar. O coordenador (a CLI que você
 abriu) é o modelo forte: pensa, divide e julga. O braçal (`code`, `tests`,

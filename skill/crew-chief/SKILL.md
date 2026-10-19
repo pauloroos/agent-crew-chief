@@ -121,7 +121,8 @@ Seven steps, in order.
    The brief is the whole contract: what to change, where, what "done" means,
    which files may be touched and how to test it. The executor runs in a
    throwaway git worktree and never touches your branch. `dispatch` prints
-   `status`, `branch`, `worktree`, `destructive_suspect`, `outside_writes`,
+   `status`, `branch`, `worktree`, `base` (where the worktree started: `HEAD`
+   or an earlier attempt, see step 6), `destructive_suspect`, `outside_writes`,
    `duration`, `steps` (agent turns, `-` when the tool does not say) and
    `tokens` (`~` and "estimated" when the tool reported none and the count is
    characters / 4), and exits `0` only on `status: ok`. Any other status
@@ -164,6 +165,27 @@ Seven steps, in order.
    `false_done` or `model_mismatch`. `grade` recomputes
    `docs/crew-chief/scoreboard.md`. See **Grading** for the inputs.
 
+   **A correction builds on the earlier work.** When the review or your own
+   reading asks for an adjustment, record the `correction` against the
+   executor that did the work, pick again and dispatch with a brief that
+   describes **only the adjustment** ("add `justify-center` to the card"), not
+   the whole piece again. Once a correction is recorded after the piece's last
+   `ok` exec attempt, the next `dispatch` starts its worktree from that
+   attempt's branch instead of `HEAD`, so the new executor finds the earlier
+   work in place; `dispatch` prints `base: crew/<job>-<piece>-<n> (attempt
+   <n>)` and the attempt records it. Its diffstat, `no_change` and
+   `destructive_suspect` are measured against that earlier work, so a one-line
+   fix shows as one line. Pass `--fresh` to start from `HEAD` anyway (the
+   earlier work is wrong in substance and must be redone), or
+   `--base <attempt-number|branch>` to start from a specific attempt of the
+   piece.
+
+   **Grade every executor that worked on the piece.** Each `grade --executor
+   <id>` keeps its own grade on the piece: grade the first executor with the
+   correction it drew and the one that finished with its own result. Grading
+   the same executor again replaces only that executor's grade. The scoreboard
+   counts every one of them.
+
 7. **Land it.**
 
    ```bash
@@ -172,9 +194,11 @@ Seven steps, in order.
    CC close --project . --job <id>
    ```
 
-   `accept` merges the piece's last `ok` attempt into the current branch;
-   `discard` drops it. `close` prints the commit message for the delivery and
-   the issue comment. Commit with the printed message and show the user the
+   `accept` merges the piece's last `ok` attempt into the current branch (after
+   a correction it already carries the earlier work); `discard` drops it.
+   `close` prints the commit message for the delivery and the issue comment;
+   both credit the executor of the last `ok` attempt first and list every
+   other graded executor with its score. Commit with the printed message and show the user the
    result plus the `close` output.
 
 `CC scoreboard --project .` regenerates and prints the scoreboard when the user
