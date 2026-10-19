@@ -372,6 +372,18 @@ def commit_worktree(worktree: Path, message: str) -> str | None:
     return _git(["rev-parse", "HEAD"], worktree).strip()
 
 
+def commit_paths(project: Path, paths: list[str], message: str) -> None:
+    """Commit ``paths`` of ``project`` (and nothing else) on its current branch.
+
+    Other staged or modified files stay out of the commit. Raises
+    :class:`RuntimeError` when git refuses (for instance a hook, or an ignored
+    path).
+    """
+    project = Path(project)
+    _git(["add", "--", *paths], project)
+    _git(["commit", "-m", message, "--", *paths], project)
+
+
 def accept(project: Path, worktree: Path, branch: str) -> None:
     """Merge the worktree's branch into ``project``, then remove both.
 

@@ -62,12 +62,13 @@ from .speckit import (
     find_spec_dir,
     guess_risk,
     guess_type,
+    mark_done,
     parse_spec_refs,
     parse_tasks,
     readiness,
     resolve_refs,
 )
-from .worktree import NotAGitRepo
+from .worktree import NotAGitRepo, commit_paths
 from .worktree import accept as accept_branch
 from .worktree import discard as discard_branch
 
@@ -402,7 +403,9 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         raise ValueError("--base and --fresh are for exec attempts, not --review")
     if args.review and args.no_proof:
         raise ValueError("--no-proof is for exec attempts, not --review")
-    proof, expect, files = _spec_proof(project, args)
+    if args.review and args.ignore_deps:
+        raise ValueError("--ignore-deps is for exec attempts, not --review")
+    proof, expect, files, ignored_deps = _spec_proof(project, args)
 
     prefs = load_prefs(project)
     found = discover_full(prefs)
@@ -433,6 +436,7 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         proof_expect=expect,
         allowed_files=files,
         skip_proof=args.no_proof,
+        ignored_deps=ignored_deps,
     )
 
     status = attempt["status"]
@@ -484,16 +488,39 @@ def _proof_text(proof: dict) -> str:
     return "failed (no exit)" if code is None else f"failed (exit {code})"
 
 
+def _wait_target(reason: str) -> str:
+    """What a :func:`readiness` reason waits for: ``T012`` or ``phase 'X'``."""
+    if reason.startswith("depends on "):
+        return reason[len("depends on "):]
+    return reason.removesuffix(" incomplete")
+
+
+def _spec_waits(project: Path, job: dict, ref: str, spec_dir: str) -> str:
+    """What the spec task ``ref`` still waits for, or ``""`` when it may start.
+
+    Reuses :func:`readiness` (dependencies from the sidecar, then earlier
+    phases); a ``spec_dir`` without a ``tasks.md`` blocks nothing.
+    """
+    tasks_path = project / spec_dir / "tasks.md"
+    if not tasks_path.is_file():
+        return ""
+    tasks = parse_tasks(_read_text(tasks_path, "tasks.md"))
+    reason = readiness(job, tasks, load_sidecar(project / spec_dir)).get(ref, "")
+    return _wait_target(reason) if reason else ""
+
+
 def _spec_proof(
     project: Path, args: argparse.Namespace
-) -> tuple[str, str, list[str] | None]:
-    """The proof, expected text and allowed files a ``dispatch`` runs with.
+) -> tuple[str, str, list[str] | None, list[str] | None]:
+    """The proof, expected text, allowed files and ignored waits of a ``dispatch``.
 
     Only a piece bound to a spec task (``ref``) of a job with a ``spec_dir``
     has any: they come from the task's ``crew.toml`` entry. A stale piece is
-    refused for exec and review alike. An exec of a hands-on task (see
-    :data:`records.EXEC_TYPES`) without a proof is refused unless
-    ``--no-proof`` was given. Anything else keeps the v0.2.0 behaviour.
+    refused for exec and review alike. An exec waiting for an unaccepted
+    dependency or an incomplete earlier phase is refused unless
+    ``--ignore-deps`` was given, which returns what it ignored. An exec of a
+    hands-on task (see :data:`records.EXEC_TYPES`) without a proof is refused
+    unless ``--no-proof`` was given. Anything else keeps the v0.2.0 behaviour.
     """
     job = records.load_job(project, args.job)
     piece = _piece(job, args.piece)
@@ -504,7 +531,13 @@ def _spec_proof(
         )
     spec_dir = job.get("spec_dir")
     if args.review or not ref or not spec_dir:
-        return "", "", None
+        return "", "", None, None
+    waits = _spec_waits(project, job, ref, spec_dir)
+    ignored_deps = None
+    if waits:
+        if not args.ignore_deps:
+            raise ValueError(f"piece {args.piece} ({ref}) waits for {waits}")
+        ignored_deps = [waits]
     meta = load_sidecar(project / spec_dir).tasks.get(ref)
     work_type = meta.type if meta else piece.get("type")
     proof = meta.proof if meta else ""
@@ -515,7 +548,7 @@ def _spec_proof(
         )
     expect = meta.expect if meta else ""
     files = list(meta.files) if meta and meta.files else None
-    return proof, expect, files
+    return proof, expect, files, ignored_deps
 
 
 def _cmd_correction(args: argparse.Namespace) -> int:
@@ -591,7 +624,42 @@ def _cmd_accept(args: argparse.Namespace) -> int:
             "tasks.md not marked",
             file=sys.stderr,
         )
+    elif piece.get("ref") and job.get("spec_dir"):
+        _mark_task_done(project, job["spec_dir"], piece["ref"])
     return 0
+
+
+def _mark_task_done(project: Path, spec_dir: str, ref: str) -> None:
+    """Tick ``ref`` in the project's ``tasks.md`` and commit just that file.
+
+    The file is read and written without newline translation, so CRLF and BOM
+    stay as the user had them. Problems only warn: the branch is already
+    merged and the piece accepted.
+    """
+    path = project / spec_dir / "tasks.md"
+    try:
+        with open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+    except OSError:
+        print(f"tasks.md not found in {spec_dir}; not marked", file=sys.stderr)
+        return
+    try:
+        marked = mark_done(text, ref)
+    except KeyError:
+        print(f"task {ref} not found in tasks.md; not marked", file=sys.stderr)
+        return
+    if marked == text:
+        return
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(marked)
+    try:
+        commit_paths(
+            project,
+            [(Path(spec_dir) / "tasks.md").as_posix()],
+            f"docs(tasks): mark {ref} done",
+        )
+    except RuntimeError as exc:
+        print(f"{ref} ticked in tasks.md but not committed: {exc}", file=sys.stderr)
 
 
 def _cmd_discard(args: argparse.Namespace) -> int:
@@ -1085,6 +1153,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-proof",
         action="store_true",
         help="dispatch a spec piece without running its proof (recorded as skipped)",
+    )
+    dispatch_parser.add_argument(
+        "--ignore-deps",
+        action="store_true",
+        help="dispatch a spec piece although a dependency or an earlier phase "
+        "is not accepted yet (recorded as ignored_deps)",
     )
     dispatch_parser.add_argument("--effort", default=None, help="effort/reasoning")
     dispatch_parser.add_argument(

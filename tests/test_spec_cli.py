@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 from crew_chief import records
@@ -370,3 +372,200 @@ def test_spec_status_ignores_stale_pieces_and_lists_them(git_repo, capsys):
     assert "T012" in payload["ready"] or "T012" in payload["blocked"]
     assert main(["spec", "status", "--project", str(git_repo), "--job", job]) == 0
     assert "stale: 2 (T012)" in capsys.readouterr().out
+
+
+# --- accept marks [X]; dispatch waits for dependencies and phases ----------
+
+_BOM = "﻿"
+_STUB_PREFS = """
+[[tools]]
+name = "stub"
+kind = "generic"
+bin = "stub"
+models = ["m"]
+run_cmd = ["stub", "{prompt}"]
+
+[[models]]
+match = "stub:*"
+cost = "free"
+"""
+_STUB = (
+    "from pathlib import Path\n"
+    "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+    "print('done')\n"
+)
+
+
+def _git(repo: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True,
+        text=True, encoding="utf-8",
+    )
+    return result.stdout
+
+
+def _imported(repo: Path, tasks_bytes: bytes) -> tuple[str, Path]:
+    """Spec folder holding ``tasks_bytes`` (committed), imported into a job."""
+    folder = repo / "specs" / "003-x"
+    folder.mkdir(parents=True)
+    (folder / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    (folder / "tasks.md").write_bytes(tasks_bytes)
+    _git(repo, "add", "specs/003-x/tasks.md")
+    _git(repo, "commit", "-m", "add tasks")
+    job = _new_job(repo)
+    assert _import(repo, job, "--spec-dir", "specs/003-x") == 0
+    return job, folder
+
+
+def _with_ok_attempt(repo: Path, job: str, piece: int) -> None:
+    """Give ``piece`` an ok exec attempt whose branch adds ``out.py``."""
+    from crew_chief.worktree import commit_worktree, create_worktree
+
+    worktree, branch = create_worktree(repo, job, piece, 1)
+    (worktree / "out.py").write_text("x = 1\n", encoding="utf-8")
+    commit_worktree(worktree, "crew change")
+    attempt = {
+        "n": 1, "executor": "stub:m", "role": "exec", "status": "ok",
+        "branch": branch, "worktree": str(worktree),
+    }
+    records.update_job(repo, job, lambda j: records.add_attempt(j, piece, attempt))
+
+
+def test_accept_marks_task_done_and_commits(git_repo, capsys):
+    text = SAMPLE.replace("T012 [P] Create User model", "T012 [P] Criar modelo Usuário")
+    crlf = (_BOM + text).replace("\n", "\r\n").encode("utf-8")
+    job, folder = _imported(git_repo, crlf)
+    _with_ok_attempt(git_repo, job, 2)
+    capsys.readouterr()
+
+    assert main(["accept", "--project", str(git_repo), "--job", job, "--piece", "2"]) == 0
+
+    expected = crlf.replace(b"- [ ] T012", b"- [X] T012")
+    assert (folder / "tasks.md").read_bytes() == expected
+    assert _git(git_repo, "log", "-1", "--format=%s").strip() == "docs(tasks): mark T012 done"
+    assert _git(git_repo, "show", "--name-only", "--format=", "HEAD").split() == [
+        "specs/003-x/tasks.md"
+    ]
+    assert "accepted" in capsys.readouterr().out
+    assert _stored_job(git_repo, job)["pieces"][1]["accepted"]
+
+
+def test_accept_warns_when_task_vanished(git_repo, capsys):
+    job, folder = _imported(git_repo, SAMPLE.encode("utf-8"))
+    _with_ok_attempt(git_repo, job, 2)
+    (folder / "tasks.md").write_text(SAMPLE.replace("T012", "T099"), encoding="utf-8")
+    _git(git_repo, "add", "specs/003-x/tasks.md")
+    _git(git_repo, "commit", "-m", "renumber")
+    capsys.readouterr()
+
+    assert main(["accept", "--project", str(git_repo), "--job", job, "--piece", "2"]) == 0
+
+    assert "task T012 not found in tasks.md; not marked" in capsys.readouterr().err
+    assert "docs(tasks)" not in _git(git_repo, "log", "--format=%s")
+    assert (folder / "tasks.md").read_text(encoding="utf-8") == SAMPLE.replace("T012", "T099")
+
+
+def test_accept_does_not_mark_stale_piece(git_repo, capsys):
+    job, folder = _imported(git_repo, SAMPLE.encode("utf-8"))
+    _with_ok_attempt(git_repo, job, 2)
+    records.update_job(git_repo, job, lambda j: j["pieces"][1].update(stale=True))
+    capsys.readouterr()
+
+    assert main(["accept", "--project", str(git_repo), "--job", job, "--piece", "2"]) == 0
+
+    assert "stale" in capsys.readouterr().err
+    assert (folder / "tasks.md").read_text(encoding="utf-8") == SAMPLE
+    assert "docs(tasks)" not in _git(git_repo, "log", "--format=%s")
+
+
+def test_accept_without_spec_makes_no_tasks_commit(git_repo, capsys):
+    job = records.new_job(git_repo, "Plain", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+    records.save_job(git_repo, job)
+    _with_ok_attempt(git_repo, job["id"], 1)
+
+    assert main(["accept", "--project", str(git_repo), "--job", job["id"], "--piece", "1"]) == 0
+    assert "docs(tasks)" not in _git(git_repo, "log", "--format=%s")
+
+
+def _dispatch_repo(repo: Path, fake_bin, monkeypatch) -> Path:
+    path = repo / "docs" / "crew-chief" / "preferences.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_STUB_PREFS, encoding="utf-8")
+    fake_bin("stub", _STUB)
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda cmd, *a, **k: real_which(cmd, *a, **k) if cmd == "stub" else None,
+    )
+    brief = repo.parent / "brief.md"
+    brief.write_text("Create out.py.\n", encoding="utf-8")
+    return brief
+
+
+def _dispatch(repo: Path, job: str, piece: int, brief: Path, *extra: str) -> int:
+    return main(["dispatch", "--project", str(repo), "--job", job, "--piece", str(piece),
+                 "--executor", "stub:m", "--brief-file", str(brief), *extra])
+
+
+def test_dispatch_waits_for_dependencies(git_repo, fake_bin, monkeypatch, capsys):
+    brief = _dispatch_repo(git_repo, fake_bin, monkeypatch)
+    job, _ = _imported(git_repo, SAMPLE.encode("utf-8"))
+    capsys.readouterr()
+
+    assert _dispatch(git_repo, job, 3, brief, "--no-proof") == 2
+
+    err = capsys.readouterr().err.strip()
+    assert err.splitlines() == ["piece 3 (T013) waits for T012"]
+    assert _stored_job(git_repo, job)["pieces"][2]["attempts"] == []
+
+
+def test_dispatch_waits_for_phase(git_repo, fake_bin, monkeypatch, capsys):
+    brief = _dispatch_repo(git_repo, fake_bin, monkeypatch)
+    job, _ = _imported(git_repo, SAMPLE.encode("utf-8"))
+    capsys.readouterr()
+
+    assert _dispatch(git_repo, job, 2, brief, "--no-proof") == 2
+
+    assert "piece 2 (T012) waits for phase 'Phase 1: Setup'" in capsys.readouterr().err
+
+
+def test_dispatch_ignore_deps_records_them(git_repo, fake_bin, monkeypatch, capsys):
+    brief = _dispatch_repo(git_repo, fake_bin, monkeypatch)
+    job, _ = _imported(git_repo, SAMPLE.encode("utf-8"))
+
+    assert _dispatch(git_repo, job, 3, brief, "--no-proof", "--ignore-deps") == 0
+
+    attempt = _stored_job(git_repo, job)["pieces"][2]["attempts"][0]
+    assert attempt["ignored_deps"] == ["T012"]
+
+
+def test_dispatch_proceeds_once_dependencies_are_accepted(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    brief = _dispatch_repo(git_repo, fake_bin, monkeypatch)
+    job, _ = _imported(git_repo, SAMPLE.encode("utf-8"))
+    for piece in (1, 2):
+        records.update_job(
+            git_repo, job,
+            lambda j, p=piece: records.mark_accepted(j, p, {"n": 1, "branch": "b"}),
+        )
+
+    assert _dispatch(git_repo, job, 3, brief, "--no-proof") == 0
+
+    assert "ignored_deps" not in _stored_job(git_repo, job)["pieces"][2]["attempts"][0]
+
+
+def test_dispatch_review_is_not_blocked_by_dependencies(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    brief = _dispatch_repo(git_repo, fake_bin, monkeypatch)
+    job, _ = _imported(git_repo, SAMPLE.encode("utf-8"))
+    assert _dispatch(git_repo, job, 1, brief, "--no-proof") == 0     # T001 is ready
+    worktree = _stored_job(git_repo, job)["pieces"][0]["attempts"][0]["worktree"]
+    capsys.readouterr()
+
+    code = _dispatch(git_repo, job, 3, brief, "--review", "--target", worktree)
+
+    assert code == 0
+    assert "waits for" not in capsys.readouterr().err

@@ -117,6 +117,7 @@ def dispatch(
     proof_expect: str = "",
     allowed_files: list[str] | None = None,
     skip_proof: bool = False,
+    ignored_deps: list[str] | None = None,
 ) -> dict:
     """Run one attempt, record it in the job and return the attempt dict.
 
@@ -141,6 +142,9 @@ def dispatch(
     timeout). ``skip_proof`` records ``proof: {"skipped": true}`` instead. When
     ``allowed_files`` is given, the attempt lists the changed files that match
     none of its patterns under ``scope``; that never changes the status.
+
+    ``ignored_deps`` (what the caller dispatched in spite of: a dependency or
+    an earlier phase) is stored on the attempt as given.
 
     Precondition: ``piece`` must exist in the job and ``base`` must name an
     existing branch; otherwise ValueError is raised and nothing is recorded.
@@ -186,6 +190,8 @@ def dispatch(
         "tokens_total": None,
         "tokens_estimated": False,
     }
+    if ignored_deps:
+        attempt["ignored_deps"] = list(ignored_deps)
 
     def finish(status: str, note: str | None = None) -> dict:
         """Set the final status and append the attempt to the job on disk.
