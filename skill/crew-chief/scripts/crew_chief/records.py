@@ -42,6 +42,14 @@ WORK_TYPES = (
     "review",
 )
 
+#: Work types that are hands-on execution: free executors only (see
+#: ``config.DEFAULT_WORK_TYPES_BY_KIND`` and ``scoring.pick``).
+EXEC_TYPES = ("code", "tests", "refactor", "docs", "data")
+
+#: Work types that are thinking (judging, designing, diagnosing, reading up):
+#: free fit executors first, then automatic escalation to paid ones.
+THINK_TYPES = ("design", "research", "diagnosis", "review")
+
 #: Fixed risk vocabulary (see global constraints).
 RISKS = ("low", "medium", "high")
 

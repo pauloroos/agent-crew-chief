@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .records import EXEC_TYPES, WORK_TYPES
+
 # Fixed vocabularies (see global constraints).
 COST_VALUES = ("free", "paid", "forbidden")
 KIND_VALUES = ("claude-code", "opencode", "codex", "antigravity", "generic")
@@ -33,6 +35,21 @@ DEFAULT_DISPATCH_TIMEOUT_S = 900
 DEFAULT_MODEL_CHECK_HOURS = 24
 #: Minutes an executor stays out of ``pick`` after a ``quota`` attempt.
 DEFAULT_QUOTA_COOLDOWN_MIN = 60
+
+#: Tools whose free executors come first on execution work (``exec_first``).
+DEFAULT_EXEC_FIRST = ["opencode"]
+
+#: Work types each tool kind takes when the tool sets no ``work_types``.
+#: This is the one place the execute/think split lives: ``opencode`` runs
+#: cheap or free models, so it only executes; the other kinds execute and
+#: think (review, design, diagnosis, research). See :func:`tool_work_types`.
+DEFAULT_WORK_TYPES_BY_KIND: dict[str, tuple[str, ...]] = {
+    "opencode": EXEC_TYPES,
+    "antigravity": WORK_TYPES,
+    "claude-code": WORK_TYPES,
+    "codex": WORK_TYPES,
+    "generic": WORK_TYPES,
+}
 
 #: Default tool definitions. Preferences merge over these by ``name``
 #: (project over global over defaults).
@@ -84,6 +101,23 @@ class Prefs:
     #: Extra home entries (fnmatch patterns) the containment check ignores, on
     #: top of ``worktree.AGENT_HOME_ENTRIES``; global and project lists add up.
     ignore_home_entries: list[str] = field(default_factory=list)
+    #: Tools whose free executors are tried first on execution work types.
+    exec_first: list[str] = field(default_factory=lambda: list(DEFAULT_EXEC_FIRST))
+
+
+def tool_work_types(tool: dict) -> tuple[str, ...]:
+    """Work types ``tool`` takes, in :data:`WORK_TYPES` order.
+
+    An explicit ``work_types`` list wins, and an empty one means every type;
+    a tool without the key falls back to :data:`DEFAULT_WORK_TYPES_BY_KIND`
+    for its kind (all types for a kind not listed there).
+    """
+    explicit = tool.get("work_types")
+    if explicit is not None:
+        if not explicit:
+            return WORK_TYPES
+        return tuple(work_type for work_type in WORK_TYPES if work_type in explicit)
+    return DEFAULT_WORK_TYPES_BY_KIND.get(tool.get("kind"), WORK_TYPES)
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
@@ -118,6 +152,19 @@ def _validate_tool(path: Path, tool: dict[str, Any]) -> None:
                 f"{path}: tool {name!r}: kind 'generic' requires a non-empty "
                 f"'run_cmd' list"
             )
+    work_types = tool.get("work_types")
+    if work_types is not None:
+        if not isinstance(work_types, list):
+            raise PrefsError(
+                f"{path}: tool {name!r}: work_types must be a list of work "
+                f"types, got {work_types!r}"
+            )
+        for work_type in work_types:
+            if work_type not in WORK_TYPES:
+                raise PrefsError(
+                    f"{path}: tool {name!r}: unknown work type {work_type!r} in "
+                    f"work_types (expected one of {', '.join(WORK_TYPES)})"
+                )
 
 
 def _validate_model(path: Path, rule: dict[str, Any]) -> None:
@@ -161,6 +208,15 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
         raise PrefsError(
             f"{path}: ignore_home_entries must be a list of entry names, "
             f"got {ignore_home!r}"
+        )
+
+    exec_first = data.get("exec_first")
+    if exec_first is not None and (
+        not isinstance(exec_first, list)
+        or not all(isinstance(name, str) and name for name in exec_first)
+    ):
+        raise PrefsError(
+            f"{path}: exec_first must be a list of tool names, got {exec_first!r}"
         )
 
     issue_tracker = data.get("issue_tracker")
@@ -266,6 +322,7 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         review_default=pick("review_default", ""),
         model_check_hours=pick("model_check_hours", DEFAULT_MODEL_CHECK_HOURS),
         quota_cooldown_min=pick("quota_cooldown_min", DEFAULT_QUOTA_COOLDOWN_MIN),
+        exec_first=list(pick("exec_first", DEFAULT_EXEC_FIRST)),
         ignore_home_entries=list(
             dict.fromkeys(
                 [
