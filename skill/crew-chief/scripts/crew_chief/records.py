@@ -463,6 +463,21 @@ def _attempt_line(index: int, attempt: dict) -> str:
         parts.append(f"cost {attempt['cost']}")
     if attempt.get("duration_s") is not None:
         parts.append(f"{attempt['duration_s']}s")
+    if attempt.get("steps") is not None:
+        parts.append(f"{attempt['steps']} steps")
+    if attempt.get("tokens_total") is not None:
+        if attempt.get("tokens_estimated"):
+            parts.append(f"~{attempt['tokens_total']} tokens (estimated)")
+        elif (
+            attempt.get("tokens_in") is not None
+            and attempt.get("tokens_out") is not None
+        ):
+            parts.append(
+                f"{attempt['tokens_total']} tokens "
+                f"(in {attempt['tokens_in']} / out {attempt['tokens_out']})"
+            )
+        else:
+            parts.append(f"{attempt['tokens_total']} tokens")
     if attempt.get("branch"):
         parts.append(f"branch `{attempt['branch']}`")
     if attempt.get("model_mismatch"):

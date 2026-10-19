@@ -126,6 +126,13 @@ class Stat:
     score: float | None
     mean_duration_s: float | None
     last: str | None
+    #: Exec attempts (any status but ``brief_refused``) per piece that passed.
+    attempts_per_pass: float | None = None
+    #: Mean agent steps and tokens of the ``ok`` exec attempts that report them.
+    mean_steps: float | None = None
+    mean_tokens: float | None = None
+    #: Whether any token count behind ``mean_tokens`` is a chars / 4 estimate.
+    tokens_estimated: bool = False
 
 
 def _parse_iso(text: str) -> datetime | None:
@@ -162,6 +169,8 @@ def _collect(
     graded: dict[tuple[str, str], list] = {}
     # (executor, type) -> [duration sum, ok attempt count].
     durations: dict[tuple[str, str], list] = {}
+    # (executor, type) -> {"runs", "passed", "steps", "tokens", "estimated"}.
+    metrics: dict[tuple[str, str], dict] = {}
     skipped: list[tuple[Path, str]] = []
 
     for job, path, error in iter_jobs(project):
@@ -175,20 +184,37 @@ def _collect(
             if work_type not in WORK_TYPES:
                 continue
 
+            passed_here: set[str] = set()
             for attempt in piece.get("attempts") or []:
                 if not isinstance(attempt, dict):
                     continue
                 if attempt.get("role") != "exec":
                     continue
-                if attempt.get("status") != "ok":
-                    continue
-                duration = attempt.get("duration_s")
-                if isinstance(duration, bool):
-                    continue
-                if not isinstance(duration, (int, float)):
-                    continue
                 executor = attempt.get("executor")
                 if not isinstance(executor, str) or not executor:
+                    continue
+                status = attempt.get("status")
+                if status == "brief_refused":
+                    continue
+                metric = metrics.setdefault(
+                    (executor, work_type),
+                    {"runs": 0, "passed": 0, "steps": [], "tokens": [],
+                     "estimated": False},
+                )
+                metric["runs"] += 1
+                if status != "ok":
+                    continue
+                if executor not in passed_here:
+                    passed_here.add(executor)
+                    metric["passed"] += 1
+                if _is_number(attempt.get("steps")):
+                    metric["steps"].append(attempt["steps"])
+                if _is_number(attempt.get("tokens_total")):
+                    metric["tokens"].append(attempt["tokens_total"])
+                    if attempt.get("tokens_estimated"):
+                        metric["estimated"] = True
+                duration = attempt.get("duration_s")
+                if not _is_number(duration):
                     continue
                 accumulator = durations.setdefault(
                     (executor, work_type), [0.0, 0]
@@ -228,6 +254,9 @@ def _collect(
     stats: dict[tuple[str, str], Stat] = {}
     for key, (weighted, weights, count, newest) in graded.items():
         duration = durations.get(key)
+        metric = metrics.get(key) or {
+            "runs": 0, "passed": 0, "steps": [], "tokens": [], "estimated": False
+        }
         stats[key] = Stat(
             executor=key[0],
             type=key[1],
@@ -235,8 +264,24 @@ def _collect(
             score=weighted / weights if weights else None,
             mean_duration_s=duration[0] / duration[1] if duration else None,
             last=newest.isoformat() if newest is not None else None,
+            attempts_per_pass=(
+                metric["runs"] / metric["passed"] if metric["passed"] else None
+            ),
+            mean_steps=_mean(metric["steps"]),
+            mean_tokens=_mean(metric["tokens"]),
+            tokens_estimated=metric["estimated"],
         )
     return stats, skipped
+
+
+def _is_number(value: object) -> bool:
+    """Whether ``value`` is an int or float (a bool is not a number here)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _mean(values: list[float]) -> float | None:
+    """Arithmetic mean, or ``None`` for an empty list."""
+    return sum(values) / len(values) if values else None
 
 
 def build_stats(
@@ -251,7 +296,11 @@ def build_stats(
     ``0.5 ** (age_days / half_life_days)`` and the score is the weighted mean.
     ``mean_duration_s`` is the mean ``duration_s`` of that executor's ``exec``
     attempts with status ``ok`` on pieces of that type; ``last`` is the most
-    recent ``graded_at``. Corrupt jobs are skipped.
+    recent ``graded_at``. ``attempts_per_pass`` divides that executor's exec
+    attempts (every status but ``brief_refused``, which never ran) by the
+    pieces it got an ``ok`` on; ``mean_steps`` and ``mean_tokens`` average the
+    ``ok`` exec attempts that carry them, and ``tokens_estimated`` says when
+    any of those token counts was an estimate. Corrupt jobs are skipped.
     """
     return _collect(Path(project), half_life_days, now)[0]
 
@@ -569,13 +618,22 @@ def _score_cell(value: float | None) -> str:
     return _num(value)
 
 
+def _tokens_cell(value: float | None, estimated: bool) -> str:
+    """Mean tokens as an integer, ``~`` in front when any count was estimated."""
+    if value is None:
+        return "—"
+    return f"{'~' if estimated else ''}{round(value)}"
+
+
 def render_scoreboard(project: Path, now: datetime | None = None) -> str:
     """Render the committed ``scoreboard.md`` text.
 
     One Markdown table per work type, types in :data:`WORK_TYPES` order and
     executors by score descending (unrated last), with the columns executor,
-    score, n, mean duration and last graded date. Corrupt job files are listed
-    in a ``Skipped records`` section instead of crashing the scoreboard.
+    score, n, attempts per pass, mean steps, mean tokens (``~`` when any count
+    was estimated), mean duration and last graded date. Corrupt job files are
+    listed in a ``Skipped records`` section instead of crashing the
+    scoreboard.
     """
     stats, skipped = _collect(Path(project), DEFAULT_HALF_LIFE_DAYS, now)
 
@@ -601,12 +659,18 @@ def render_scoreboard(project: Path, now: datetime | None = None) -> str:
         )
         lines.append(f"## {work_type}")
         lines.append("")
-        lines.append("| executor | score | n | mean duration | last graded |")
-        lines.append("| --- | --- | --- | --- | --- |")
+        lines.append(
+            "| executor | score | n | attempts/pass | mean steps | mean tokens "
+            "| mean duration | last graded |"
+        )
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
         for stat in entries:
             last = stat.last[:10] if stat.last else "—"
             lines.append(
                 f"| {stat.executor} | {_score_cell(stat.score)} | {stat.n} "
+                f"| {_score_cell(stat.attempts_per_pass)} "
+                f"| {_score_cell(stat.mean_steps)} "
+                f"| {_tokens_cell(stat.mean_tokens, stat.tokens_estimated)} "
                 f"| {_duration_cell(stat.mean_duration_s)} | {last} |"
             )
         lines.append("")

@@ -749,7 +749,7 @@ def test_scoreboard_row_shows_score_count_duration_and_date(tmp_path):
     row = next(line for line in text.splitlines() if line.startswith("| opencode:a"))
     cells = [cell.strip() for cell in row.strip("|").split("|")]
 
-    assert cells == ["opencode:a", "80", "1", "—", "2026-10-17"]
+    assert cells == ["opencode:a", "80", "1", "—", "—", "—", "—", "2026-10-17"]
 
 
 def test_scoreboard_orders_types_and_executors(tmp_path):
@@ -936,3 +936,87 @@ def test_quota_cooldown_reads_every_job_of_the_project(tmp_path):
 
     assert cooling == {"antigravity:opus", "opencode:docs"}
     assert quota_cooldown(project, 0, now=NOW) == set()
+
+
+# --- scoreboard metrics: attempts per pass, steps, tokens ------------------
+
+
+def _metered(executor, status="ok", steps=None, tokens=None, estimated=False,
+             duration_s=10.0):
+    attempt = _attempt(executor, status=status, duration_s=duration_s)
+    attempt.update(steps=steps, tokens_total=tokens, tokens_estimated=estimated)
+    return attempt
+
+
+def test_stats_carry_attempts_per_pass_steps_and_tokens(tmp_path):
+    project = _project(
+        tmp_path,
+        [
+            {"type": "code", "grade": _g("opencode:a", 80), "attempts": [
+                _metered("opencode:a", status="failed", steps=3, tokens=900),
+                _metered("opencode:a", steps=6, tokens=2000, duration_s=20.0),
+            ]},
+            {"type": "code", "grade": _g("opencode:a", 90), "attempts": [
+                _metered("opencode:a", steps=4, tokens=1000, duration_s=40.0),
+                _metered("opencode:a", status="brief_refused"),
+            ]},
+        ],
+    )
+
+    stat = build_stats(project, now=NOW)[("opencode:a", "code")]
+
+    assert stat.attempts_per_pass == 1.5  # 3 runs, 2 pieces passed
+    assert stat.mean_steps == 5.0
+    assert stat.mean_tokens == 1500.0
+    assert stat.tokens_estimated is False
+    assert stat.mean_duration_s == 30.0
+
+
+def test_stats_flag_estimated_tokens_and_unknown_steps(tmp_path):
+    project = _project(
+        tmp_path,
+        [{"type": "code", "grade": _g("cursor:a", 70), "attempts": [
+            _metered("cursor:a", tokens=400, estimated=True),
+        ]}],
+    )
+
+    stat = build_stats(project, now=NOW)[("cursor:a", "code")]
+
+    assert stat.mean_steps is None
+    assert stat.mean_tokens == 400.0
+    assert stat.tokens_estimated is True
+
+
+def test_stats_attempts_per_pass_is_none_without_a_pass(tmp_path):
+    project = _project(
+        tmp_path,
+        [{"type": "code", "grade": _g("opencode:a", 0), "attempts": [
+            _metered("opencode:a", status="failed"),
+        ]}],
+    )
+
+    assert build_stats(project, now=NOW)[("opencode:a", "code")].attempts_per_pass is None
+
+
+def test_scoreboard_row_shows_the_new_metric_columns(tmp_path):
+    project = _project(
+        tmp_path,
+        [
+            {"type": "code", "grade": _g("opencode:a", 80, NOW), "attempts": [
+                _metered("opencode:a", status="quota"),
+                _metered("opencode:a", steps=7, tokens=12345, duration_s=95.0),
+            ]},
+            {"type": "code", "grade": _g("cursor:b", 60, NOW), "attempts": [
+                _metered("cursor:b", tokens=800, estimated=True, duration_s=30.0),
+            ]},
+        ],
+    )
+
+    text = render_scoreboard(project, now=NOW)
+
+    assert (
+        "| executor | score | n | attempts/pass | mean steps | mean tokens "
+        "| mean duration | last graded |"
+    ) in text
+    assert "| opencode:a | 80 | 1 | 2 | 7 | 12345 | 95s | 2026-10-17 |" in text
+    assert "| cursor:b | 60 | 1 | 1 | — | ~800 | 30s | 2026-10-17 |" in text

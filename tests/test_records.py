@@ -497,3 +497,23 @@ def test_load_job_retries_a_read_refused_during_a_replace(tmp_path, monkeypatch)
 
     assert load_job(tmp_path / "project", job["id"])["id"] == job["id"]
     assert calls["n"] == 3
+
+
+def test_attempt_line_shows_steps_and_tokens(tmp_path):
+    job = _new_job(tmp_path)
+    add_piece(job, "Piece", "code", "low")
+    add_attempt(job, 1, {
+        "executor": "opencode:a", "role": "exec", "status": "ok",
+        "duration_s": 42.0, "steps": 7, "tokens_in": 12000, "tokens_out": 345,
+        "tokens_total": 12345, "tokens_estimated": False,
+    })
+    add_attempt(job, 1, {
+        "executor": "cursor:b", "role": "exec", "status": "ok",
+        "duration_s": 3.0, "steps": None, "tokens_in": 100, "tokens_out": 20,
+        "tokens_total": 120, "tokens_estimated": True,
+    })
+
+    text = render_markdown(job)
+
+    assert "42.0s, 7 steps, 12345 tokens (in 12000 / out 345)" in text
+    assert "3.0s, ~120 tokens (estimated)" in text
