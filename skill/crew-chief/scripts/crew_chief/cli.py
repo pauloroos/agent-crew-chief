@@ -11,6 +11,9 @@ turns the open tasks of ``tasks.md`` into pieces (``ref`` = task id) and keeps t
 ``crew.toml`` sidecar; ``status`` lists what is ready or blocked. ``brief render``
 turns one spec piece into the minimal brief an executor or reviewer receives.
 
+``ruling add`` records a one-line ruling in the job; ``decision add`` promotes a
+ruling (or a title) to an ADR file in ``docs/decisions``.
+
 All commands take ``--project PATH`` (default: the current directory) and
 ``--json`` (structured output instead of text). A ``PrefsError``,
 ``RecordError``, ``NotAGitRepo`` or ``ValueError`` prints one line to stderr
@@ -36,12 +39,13 @@ import json
 import random
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import records
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .config import Prefs, PrefsError, load_prefs, tool_work_types
+from .decisions import DECISIONS_DIR, next_number, write_adr
 from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
 from .models_seen import changes_payload, check_due, check_models, render_changes
@@ -564,6 +568,73 @@ def _cmd_correction(args: argparse.Namespace) -> int:
         f"correction recorded on piece {args.piece}",
         {"piece": args.piece, "reason": args.reason, "executor": executor},
     )
+    return 0
+
+
+def _cmd_ruling_add(args: argparse.Namespace) -> int:
+    project = _project(args)
+    text = args.text.strip()
+    if not text:
+        raise ValueError("--text must not be empty")
+    number = records.update_job(
+        project, args.job, lambda job: records.add_ruling(job, text)
+    )
+    _emit(args, f"ruling {number} recorded", {"ruling": number})
+    return 0
+
+
+def _cmd_decision_add(args: argparse.Namespace) -> int:
+    project = _project(args)
+    if (args.from_ruling is None) == (args.title is None):
+        raise ValueError("decision add needs exactly one of --from-ruling or --title")
+    title_arg = (args.title or "").strip()
+    if args.from_ruling is None and not title_arg:
+        raise ValueError("--title must not be empty")
+
+    def promote(job: dict) -> tuple[str, Path]:
+        decision_text = ""
+        ruling = None
+        title = title_arg
+        if args.from_ruling is not None:
+            for entry in job.get("rulings") or []:
+                if entry.get("n") == args.from_ruling:
+                    ruling = entry
+            if ruling is None:
+                raise ValueError(f"job has no ruling {args.from_ruling}")
+            if ruling.get("promoted"):
+                raise ValueError(
+                    f"ruling {args.from_ruling} already promoted to ADR "
+                    f"{ruling['promoted']}"
+                )
+            decision_text = str(ruling.get("text", ""))
+            title = decision_text.split(" — ")[0].strip() or decision_text.strip()
+        origin = f"job {job['id']}"
+        if job.get("spec_dir"):
+            origin += f" · {job['spec_dir']}"
+        number = next_number(project)
+        try:
+            path = write_adr(
+                project,
+                number,
+                title,
+                args.context,
+                decision_text or title,
+                args.alternatives,
+                args.consequences,
+                origin,
+                date.today(),
+            )
+        except FileExistsError as exc:
+            raise ValueError(str(exc)) from exc
+        label = f"{number:04d}"
+        if ruling is not None:
+            ruling["promoted"] = label
+        job.setdefault("decisions", []).append(label)
+        return label, path
+
+    label, path = records.update_job(project, args.job, promote)
+    relative = (DECISIONS_DIR / path.name).as_posix()
+    _emit(args, relative, {"number": label, "path": relative})
     return 0
 
 
@@ -1270,6 +1341,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--out", default=None, metavar="FILE", help="write the brief here, not to stdout"
     )
     brief_render.set_defaults(handler=_cmd_brief_render)
+
+    ruling_parser = subcommands.add_parser("ruling", help="rulings recorded in the job")
+    ruling_commands = ruling_parser.add_subparsers(dest="ruling_command", required=True)
+    ruling_add = ruling_commands.add_parser(
+        "add", parents=[common], help="record a ruling in the job"
+    )
+    ruling_add.add_argument("--job", required=True, help="job id")
+    ruling_add.add_argument(
+        "--text", required=True, help='"<decision> — <why> — <cost if wrong>"'
+    )
+    ruling_add.set_defaults(handler=_cmd_ruling_add)
+
+    decision_parser = subcommands.add_parser("decision", help="ADRs in docs/decisions")
+    decision_commands = decision_parser.add_subparsers(
+        dest="decision_command", required=True
+    )
+    decision_add = decision_commands.add_parser(
+        "add", parents=[common], help="write an ADR (from a ruling or a title)"
+    )
+    decision_add.add_argument("--job", required=True, help="job id")
+    decision_add.add_argument(
+        "--from-ruling", type=int, default=None, metavar="N", help="promote ruling N"
+    )
+    decision_add.add_argument("--title", default=None, help="ADR title (no ruling)")
+    decision_add.add_argument("--context", default="", help="why this came up")
+    decision_add.add_argument("--alternatives", default="", help="what was weighed")
+    decision_add.add_argument("--consequences", default="", help="what follows")
+    decision_add.set_defaults(handler=_cmd_decision_add)
 
     scoreboard_parser = subcommands.add_parser(
         "scoreboard", parents=[common], help="regenerate and print the scoreboard"

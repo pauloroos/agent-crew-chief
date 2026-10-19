@@ -426,6 +426,25 @@ def add_escalation(job: dict, piece: int, reason: str, to: str) -> None:
     )
 
 
+def add_ruling(job: dict, text: str) -> int:
+    """Append a ruling to ``job["rulings"]`` and return its number (1-based).
+
+    A ruling reads ``<decision> — <why> — <cost if wrong>``; ``promoted`` holds
+    the ADR number once it becomes a decision record.
+    """
+    rulings = job.setdefault("rulings", [])
+    number = len(rulings) + 1
+    rulings.append(
+        {
+            "n": number,
+            "text": text,
+            "at": datetime.now(timezone.utc).isoformat(),
+            "promoted": None,
+        }
+    )
+    return number
+
+
 def piece_grades(piece: dict) -> dict[str, dict]:
     """Every grade of the piece, keyed by executor id, in grading order.
 
@@ -695,6 +714,19 @@ def render_markdown(job: dict) -> str:
             f"- Reason: {job.get('reason', '')}",
         ]
     )
+
+    rulings = job.get("rulings") or []
+    if rulings:
+        lines.extend(["", "## Rulings", ""])
+        for ruling in rulings:
+            line = f"{ruling.get('n')}. {ruling.get('text', '')}"
+            if ruling.get("promoted"):
+                line += f" → ADR {ruling['promoted']}"
+            lines.append(line)
+    decisions = job.get("decisions") or []
+    if decisions:
+        lines.extend(["", "## Decisions", ""])
+        lines.extend(f"- ADR {number}" for number in decisions)
 
     lines.extend(["", "## Pieces"])
     pieces = job.get("pieces") or []
