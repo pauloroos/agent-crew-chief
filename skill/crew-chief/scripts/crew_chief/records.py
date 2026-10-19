@@ -359,6 +359,18 @@ def add_piece(job: dict, title: str, type: str, risk: str, ref: str = "") -> int
     return piece["n"]
 
 
+def piece_for_ref(job: dict, ref: str) -> dict | None:
+    """The piece bound to spec task ``ref``, ignoring stale ones; else ``None``.
+
+    A piece turns ``stale`` when ``tasks.md`` was regenerated and its ref now
+    names a different task; it keeps its history but never stands for a task.
+    """
+    for piece in job.get("pieces") or []:
+        if piece.get("ref") == ref and not piece.get("stale"):
+            return piece
+    return None
+
+
 def mark_accepted(job: dict, piece: int, attempt: dict) -> None:
     """Record that ``attempt``'s branch was merged for the piece.
 

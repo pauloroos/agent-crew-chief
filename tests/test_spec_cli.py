@@ -161,13 +161,15 @@ def test_spec_import_after_renumbering_warns_and_never_repoints(git_repo, capsys
     _write_spec(git_repo, "specs/003-x", renumbered)
     assert _import(git_repo, job) == 0
     out = capsys.readouterr().out
-    assert "changed task text: T012" in out
+    assert "stale pieces: 2 (T012)" in out
     assert "orphan pieces: T013" in out
     pieces = _stored_job(git_repo, job)["pieces"]
     by_ref = {p["ref"]: p for p in pieces}
-    assert by_ref["T012"]["title"] == "T012 Create User model in src/a.py"   # untouched
+    assert pieces[1]["title"] == "T012 Create User model in src/a.py"   # untouched
+    assert pieces[1]["stale"] is True and "stale" not in by_ref["T020"]
+    assert by_ref["T012"]["title"] == "T012 Totally different work"     # the new piece
     assert "T020" in by_ref and "T021" in by_ref
-    assert len(pieces) == 5
+    assert len(pieces) == 6
     assert "orphan sidecar entries: T013" in out
 
 
@@ -292,3 +294,79 @@ def test_spec_status_after_accepting_the_first_piece(git_repo, capsys):
 def test_spec_status_without_spec_exits_2(git_repo, capsys):
     job = _new_job(git_repo)
     assert main(["spec", "status", "--project", str(git_repo), "--job", job]) == 2
+
+
+RENUMBERED = (
+    "## Phase 1: Setup\n- [ ] T001 Create project structure\n"
+    "## Phase 2: Core\n"
+    "- [ ] T012 Totally different work\n"
+    "- [ ] T020 [P] Create User model in src/a.py\n"
+)
+
+
+def test_reimport_after_renumber_marks_old_piece_stale_and_creates_new(git_repo, capsys):
+    _write_spec(git_repo, "specs/003-x")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    first = {p["ref"]: p for p in _stored_job(git_repo, job)["pieces"]}
+    assert first["T012"]["task_text"] == "Create User model in src/a.py"
+    _write_spec(git_repo, "specs/003-x", RENUMBERED)
+    capsys.readouterr()
+    assert _import(git_repo, job) == 0
+    out = capsys.readouterr().out
+    assert "stale pieces: 2 (T012)" in out
+    pieces = _stored_job(git_repo, job)["pieces"]
+    old = next(p for p in pieces if p["n"] == 2)
+    assert old["stale"] is True and old["ref"] == "T012"
+    assert old["task_text"] == "Create User model in src/a.py"       # kept for history
+    new = [p for p in pieces if p["ref"] == "T012" and not p.get("stale")]
+    assert len(new) == 1 and new[0]["n"] > 3
+    assert new[0]["title"] == "T012 Totally different work"
+    assert new[0]["task_text"] == "Totally different work"
+    assert records.piece_for_ref({"pieces": pieces}, "T012")["n"] == new[0]["n"]
+    # a third import changes nothing
+    assert _import(git_repo, job) == 0
+    assert len(_stored_job(git_repo, job)["pieces"]) == len(pieces)
+    assert "stale pieces" not in capsys.readouterr().out
+
+
+def test_reimport_detects_staleness_of_pieces_without_task_text(git_repo, capsys):
+    _write_spec(git_repo, "specs/003-x")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+
+    def drop_task_text(stored):
+        for piece in stored["pieces"]:
+            piece.pop("task_text", None)
+
+    records.update_job(git_repo, job, drop_task_text)
+    _write_spec(git_repo, "specs/003-x", RENUMBERED)
+    capsys.readouterr()
+    assert _import(git_repo, job) == 0
+    assert "stale pieces: 2 (T012)" in capsys.readouterr().out
+
+
+def test_reimport_with_unchanged_text_marks_nothing_stale(git_repo, capsys):
+    _write_spec(git_repo, "specs/003-x")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    assert _import(git_repo, job) == 0
+    assert not any(p.get("stale") for p in _stored_job(git_repo, job)["pieces"])
+
+
+def test_spec_status_ignores_stale_pieces_and_lists_them(git_repo, capsys):
+    _write_spec(git_repo, "specs/003-x")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    records.update_job(git_repo, job, lambda j: records.mark_accepted(j, 2, {"n": 1, "branch": "b"}))
+    _write_spec(git_repo, "specs/003-x", RENUMBERED)
+    assert _import(git_repo, job) == 0
+    capsys.readouterr()
+    assert main(["spec", "status", "--project", str(git_repo), "--job", job, "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    # the accepted piece belonged to the OLD T012, so the new T012 is not accepted
+    assert payload["phases"][1] == {"phase": "Phase 2: Core", "accepted": 0, "total": 2}
+    assert payload["stale"] == [{"piece": 2, "ref": "T012"}]
+    assert "T012" in payload["ready"] or "T012" in payload["blocked"]
+    assert main(["spec", "status", "--project", str(git_repo), "--job", job]) == 0
+    assert "stale: 2 (T012)" in capsys.readouterr().out

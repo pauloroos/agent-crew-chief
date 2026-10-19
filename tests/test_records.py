@@ -643,3 +643,16 @@ def test_mark_accepted_records_attempt_branch_and_time(tmp_path):
     assert datetime.fromisoformat(piece["accepted"]["at"]).tzinfo is not None
     with pytest.raises(ValueError):
         mark_accepted(job, 99, {"n": 1, "branch": "b"})
+
+
+def test_piece_for_ref_ignores_stale_pieces(tmp_path):
+    from crew_chief.records import piece_for_ref
+
+    job = _new_job(tmp_path)
+    old = add_piece(job, "T012 old", "code", "low", ref="T012")
+    assert piece_for_ref(job, "T012")["n"] == old
+    assert piece_for_ref(job, "T999") is None
+    job["pieces"][old - 1]["stale"] = True
+    assert piece_for_ref(job, "T012") is None
+    new = add_piece(job, "T012 new", "code", "low", ref="T012")
+    assert piece_for_ref(job, "T012")["n"] == new

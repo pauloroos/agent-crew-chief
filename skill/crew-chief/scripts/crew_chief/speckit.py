@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from . import records
+
 if TYPE_CHECKING:
     from .sidecar import Sidecar
 
@@ -282,7 +284,7 @@ def readiness(
 ) -> dict[str, str]:
     """Which spec tasks of ``job`` may start.
 
-    Maps every task id that has a piece (``piece["ref"]``) and is not accepted
+    Maps every task id that has a live piece (``piece["ref"]``, stale ones ignored) and is not accepted
     to ``""`` (ready) or the reason it waits: ``depends on T012`` (first
     dependency not accepted; dependencies come from the sidecar, falling back
     to the task text) or ``phase '<name>' incomplete`` (an earlier phase has
@@ -290,10 +292,10 @@ def readiness(
     as accepted.
     """
     pieces = {}
-    for piece in job.get("pieces") or []:
-        ref = piece.get("ref")
-        if ref and ref not in pieces:
-            pieces[ref] = piece
+    for task in tasks:
+        piece = records.piece_for_ref(job, task.id)
+        if piece is not None:
+            pieces[task.id] = piece
     ticked = {task.id for task in tasks if task.done}
 
     def accepted(task_id: str) -> bool:

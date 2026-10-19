@@ -222,3 +222,18 @@ def test_find_spec_dir_prefers_argument_then_feature_json(tmp_path):
     feature.write_text("{not json", encoding="utf-8")
     with pytest.raises(SpecError):
         find_spec_dir(tmp_path, None)
+
+
+def test_readiness_ignores_stale_pieces():
+    from crew_chief.sidecar import Sidecar
+    from crew_chief.speckit import parse_tasks, readiness
+
+    tasks = parse_tasks("## Phase 1: A\n- [ ] T001 a\n- [ ] T002 b (depends on T001)\n")
+    job = {"pieces": [
+        {"n": 1, "ref": "T001", "stale": True, "accepted": {"attempt": 1}},
+        {"n": 2, "ref": "T001"},
+        {"n": 3, "ref": "T002"},
+    ]}
+    assert readiness(job, tasks, Sidecar(spec_dir="s")) == {
+        "T001": "", "T002": "depends on T001",
+    }

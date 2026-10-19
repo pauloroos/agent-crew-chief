@@ -522,6 +522,12 @@ def _cmd_accept(args: argparse.Namespace) -> int:
         f"accepted {attempt['branch']}",
         {"branch": attempt["branch"], "worktree": attempt["worktree"]},
     )
+    if piece.get("stale"):
+        print(
+            f"piece {args.piece} is stale (task {piece.get('ref')} changed); "
+            "tasks.md not marked",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -657,17 +663,50 @@ def _parallel_conflicts(
     return conflicts
 
 
+def _squash(text: str) -> str:
+    """Collapse whitespace so only real wording changes make a piece stale."""
+    return " ".join(text.split())
+
+
+def _piece_task_text(piece: dict) -> str | None:
+    """The task text a piece was created from, squashed; ``None`` if unknown.
+
+    Pieces made before ``task_text`` existed carry it in their title
+    (``"<ref> <text>"``).
+    """
+    text = piece.get("task_text")
+    if isinstance(text, str):
+        return _squash(text)
+    prefix = f"{piece.get('ref')} "
+    title = piece.get("title")
+    if isinstance(title, str) and title.startswith(prefix):
+        return _squash(title[len(prefix):])
+    return None
+
+
+def _stale_text(stale: list[dict]) -> str:
+    return ", ".join(f"{entry['piece']} ({entry['ref']})" for entry in stale)
+
+
 def _cmd_spec_import(args: argparse.Namespace) -> int:
     project = _project(args)
     job = records.load_job(project, args.job)
     folder, relative, tasks, sidecar = _load_spec(project, job, args.spec_dir)
     original = copy.deepcopy(sidecar)
 
-    def apply(stored: dict) -> tuple[list[dict], list[dict]]:
-        existing = {p.get("ref") for p in stored.get("pieces") or [] if p.get("ref")}
+    def apply(stored: dict) -> tuple[list[dict], list[dict], list[dict]]:
+        stale = []
+        for task in tasks:
+            piece = records.piece_for_ref(stored, task.id)
+            if piece is not None and _piece_task_text(piece) not in (
+                None,
+                _squash(task.text),
+            ):
+                piece["stale"] = True
+                stale.append({"piece": piece["n"], "ref": task.id})
         created = []
         for task in tasks:
-            if task.done or task.id in existing:
+            if task.done or records.piece_for_ref(stored, task.id) is not None:
                 continue
             meta = sidecar.tasks.get(task.id)
             work_type = meta.type if meta else guess_type(task)
@@ -675,15 +714,18 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
             number = records.add_piece(
                 stored, f"{task.id} {task.text}", work_type, risk, ref=task.id
             )
+            stored["pieces"][number - 1]["task_text"] = task.text
             created.append(
                 {"piece": number, "ref": task.id, "type": work_type, "risk": risk}
             )
         stored["spec_dir"] = relative
-        return created, [dict(p) for p in stored["pieces"]]
+        return created, stale, [dict(p) for p in stored["pieces"]]
 
-    created, pieces = records.update_job(project, args.job, apply)
+    created, stale, pieces = records.update_job(project, args.job, apply)
 
-    by_ref = {p["ref"]: p for p in reversed(pieces) if p.get("ref")}
+    by_ref = {
+        p["ref"]: p for p in reversed(pieces) if p.get("ref") and not p.get("stale")
+    }
     for task in tasks:
         meta = sidecar.tasks.get(task.id)
         if meta is None:
@@ -714,13 +756,9 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
     ]
     orphan_sidecar = sorted(set(sidecar.tasks) - ids)
     orphan_pieces = [
-        p["ref"] for p in pieces if p.get("ref") and p["ref"] not in ids
-    ]
-    changed = [
-        task.id
-        for task in tasks
-        if task.id in by_ref
-        and by_ref[task.id].get("title") != f"{task.id} {task.text}"
+        p["ref"]
+        for p in pieces
+        if p.get("ref") and not p.get("stale") and p["ref"] not in ids
     ]
     conflicts = _parallel_conflicts(tasks, sidecar)
 
@@ -733,8 +771,8 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
         lines.append("orphan sidecar entries: " + ", ".join(orphan_sidecar))
     if orphan_pieces:
         lines.append("orphan pieces: " + ", ".join(orphan_pieces))
-    if changed:
-        lines.append("changed task text: " + ", ".join(changed))
+    if stale:
+        lines.append("stale pieces: " + _stale_text(stale))
     lines.extend(
         f"parallel conflict: {a}/{b} share {', '.join(shared)}"
         for a, b, shared in conflicts
@@ -745,7 +783,7 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
         "missing_proof": missing_proof,
         "orphan_sidecar": orphan_sidecar,
         "orphan_pieces": orphan_pieces,
-        "changed_text": changed,
+        "stale": stale,
         "parallel_conflicts": [
             {"tasks": [a, b], "files": shared} for a, b, shared in conflicts
         ],
@@ -761,8 +799,15 @@ def _cmd_spec_status(args: argparse.Namespace) -> int:
 
     waiting = readiness(job, tasks, sidecar)
     accepted_refs = {
-        p["ref"] for p in job.get("pieces") or [] if p.get("ref") and p.get("accepted")
+        task.id
+        for task in tasks
+        if (piece := records.piece_for_ref(job, task.id)) and piece.get("accepted")
     }
+    stale = [
+        {"piece": p["n"], "ref": p["ref"]}
+        for p in job.get("pieces") or []
+        if p.get("ref") and p.get("stale")
+    ]
     phases: list[dict] = []
     for task in tasks:
         entry = next((p for p in phases if p["phase"] == task.phase), None)
@@ -785,8 +830,11 @@ def _cmd_spec_status(args: argparse.Namespace) -> int:
         lines.extend(f"  {task_id}: {reason}" for task_id, reason in blocked.items())
     else:
         lines.append("blocked: -")
+    if stale:
+        lines.append("stale: " + _stale_text(stale))
     payload = {
         "spec_dir": relative,
+        "stale": stale,
         "phases": phases,
         "ready": ready,
         "blocked": blocked,

@@ -1174,3 +1174,29 @@ def test_entry_script_writes_no_bytecode(tmp_path):
     )
 
     assert not list(copy.rglob("__pycache__"))
+
+
+def test_accept_on_a_stale_piece_merges_and_warns(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    _write_prefs(repo, _STUB_PREFS)
+    fake_bin("stub", _STUB)
+    _only_bins(monkeypatch, {"stub"})
+    brief = _write(repo.parent / "brief.md", "Create out.py.\n")
+    job = records.new_job(repo, "Stale", "do it", True, "parts")
+    records.add_piece(job, "T012 old text", "code", "low", ref="T012")
+    job["pieces"][0]["stale"] = True
+    records.save_job(repo, job)
+    assert main(["dispatch", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--executor", "stub:m",
+                 "--brief-file", str(brief)]) == 0
+    capsys.readouterr()
+
+    assert main(["accept", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1"]) == 0
+    captured = capsys.readouterr()
+    assert "accepted crew/" in captured.out
+    assert "piece 1 is stale (task T012 changed); tasks.md not marked" in captured.err
+    assert (repo / "out.py").is_file()
+    assert _stored_job(repo, job["id"])["pieces"][0]["accepted"]["attempt"] == 1
