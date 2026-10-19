@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from crew_chief.speckit import mark_done, parse_tasks
+from crew_chief.speckit import mark_done, parse_spec_refs, parse_tasks, resolve_refs
 
 SAMPLE = (
     "# Tasks\n\n## Phase 1: Setup\n"
@@ -72,3 +72,68 @@ def test_mark_done_keeps_lf_files_lf_and_accented_text():
     text = "## Fase 1\n- [ ] T001 Criar configuração\n- [ ] T002 Outra\n"
     out = mark_done(text, "T001")
     assert out == "## Fase 1\n- [X] T001 Criar configuração\n- [ ] T002 Outra\n"
+
+
+SPEC = (
+    "### User Story 1 - Export CSV (Priority: P1)\n\nAs a user...\n\n"
+    "**Acceptance Scenarios**:\n\n"
+    "1. **Given** rows exist, **When** I export, **Then** a CSV is saved\n"
+    "2. **Given** no rows, **When** I export, **Then** I see an empty-state message\n\n"
+    "### Functional Requirements\n\n"
+    "- **FR-001**: System MUST export UTF-8 CSV\n"
+    "- FR-002: System MUST use ';' as separator\n\n"
+    "- **SC-001**: Export of 10k rows takes under 2 s\n"
+)
+
+
+def test_parse_spec_refs_indexes_stories_scenarios_requirements_and_criteria():
+    idx = parse_spec_refs(SPEC)
+    assert idx["US1"].startswith("Export CSV")
+    assert "a CSV is saved" in idx["US1/AC1"]
+    assert "empty-state" in idx["US1/AC2"]
+    assert idx["FR-002"] == "System MUST use ';' as separator"
+    assert "10k rows" in idx["SC-001"]
+
+
+def test_resolve_refs_returns_texts_and_missing():
+    found, missing = resolve_refs(["FR-001", "US1/AC9"], parse_spec_refs(SPEC))
+    assert found == ["FR-001: System MUST export UTF-8 CSV"]
+    assert missing == ["US1/AC9"]
+
+
+def test_parse_spec_refs_numbers_scenarios_per_story_and_ignores_other_lists():
+    text = (
+        "### User Story 1 - First (Priority: P1)\n"
+        "**Acceptance Scenarios**:\n"
+        "1. **Given** a, **When** b, **Then** c\n\n"
+        "### User Story 2 - Second (Priority: P2)\n"
+        "Steps:\n1. Not a scenario\n"
+        "**Acceptance Scenarios**:\n"
+        "1. Given x, When y, Then z\n"
+        "### Edge Cases\n"
+        "1. **Given** stray, **When** it, **Then** is ignored\n"
+    )
+    idx = parse_spec_refs(text)
+    assert "Given** a" in idx["US1/AC1"]
+    assert idx["US2"] == "Second (Priority: P2)"
+    assert idx["US2/AC1"] == "Given x, When y, Then z"
+    assert "US2/AC2" not in idx and "US1/AC2" not in idx
+
+
+def test_parse_spec_refs_handles_crlf_bom_accents_and_bold_variants():
+    text = "﻿" + (
+        "### User Story 1 - Exportação (Priority: P1)\n"
+        "**Acceptance Scenarios**:\n"
+        "1. **Given** linhas, **When** exporto, **Then** salvo\n"
+        "- **FR-001:** Sistema DEVE exportar\n"
+        "* SC-002: Tempo menor que 2 s\n"
+    ).replace("\n", "\r\n")
+    idx = parse_spec_refs(text)
+    assert idx["US1"] == "Exportação (Priority: P1)"
+    assert idx["US1/AC1"].endswith("salvo")
+    assert idx["FR-001"] == "Sistema DEVE exportar"
+    assert idx["SC-002"] == "Tempo menor que 2 s"
+
+
+def test_parse_spec_refs_empty_text_gives_empty_index():
+    assert parse_spec_refs("") == {}

@@ -125,3 +125,72 @@ def mark_done(text: str, task_id: str) -> str:
         lines[index] = raw[:offset] + "X" + raw[offset + 1:]
         return "\n".join(lines)
     raise KeyError(task_id)
+
+
+_STORY_RE = re.compile(r"^#{2,4}\s+User Story\s+(\d+)\s*[-–—:]\s*(.+?)\s*$")
+_HEADING_RE = re.compile(r"^#{1,6}\s")
+_SCENARIOS_RE = re.compile(r"Acceptance Scenarios")
+_SCENARIO_RE = re.compile(r"^\s*\d+[.)]\s+(.+?)\s*$")
+_REQ_RE = re.compile(
+    r"^\s*[-*]\s+\*{0,2}((?:FR|SC)-\d{3,})\*{0,2}\s*:\s*\*{0,2}\s*(.+?)\s*$"
+)
+
+
+def parse_spec_refs(text: str) -> dict[str, str]:
+    """Index a ``spec.md`` by reference.
+
+    Keys: ``US<n>`` (story title with priority), ``US<n>/AC<m>`` (the
+    m-th Given/When/Then item under that story's ``Acceptance Scenarios``),
+    ``FR-###`` and ``SC-###`` (requirement and success-criterion text).
+    The first occurrence of a key wins.
+    """
+    if text.startswith(_BOM):
+        text = text[len(_BOM):]
+    index: dict[str, str] = {}
+    story: str | None = None
+    in_scenarios = False
+    count = 0
+    for raw in _lines(text):
+        line = raw.rstrip("\r")
+        heading = _STORY_RE.match(line)
+        if heading:
+            story = f"US{heading.group(1)}"
+            index.setdefault(story, heading.group(2))
+            in_scenarios = False
+            count = 0
+            continue
+        if _HEADING_RE.match(line):
+            story = None
+            in_scenarios = False
+            continue
+        if story and _SCENARIOS_RE.search(line):
+            in_scenarios = True
+            continue
+        if in_scenarios:
+            item = _SCENARIO_RE.match(line)
+            if item and "Given" in item.group(1):
+                count += 1
+                index.setdefault(f"{story}/AC{count}", item.group(1))
+                continue
+        req = _REQ_RE.match(line)
+        if req:
+            index.setdefault(req.group(1), req.group(2))
+    return index
+
+
+def resolve_refs(
+    refs: list[str], index: dict[str, str]
+) -> tuple[list[str], list[str]]:
+    """Look ``refs`` up in ``index``.
+
+    Returns ``(found, missing)``: ``found`` holds ``"REF: text"`` lines in
+    the order given, ``missing`` the refs the index does not know.
+    """
+    found: list[str] = []
+    missing: list[str] = []
+    for ref in refs:
+        if ref in index:
+            found.append(f"{ref}: {index[ref]}")
+        else:
+            missing.append(ref)
+    return found, missing
