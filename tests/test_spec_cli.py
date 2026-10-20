@@ -173,6 +173,17 @@ def test_spec_import_after_renumbering_warns_and_never_repoints(git_repo, capsys
     assert "T020" in by_ref and "T021" in by_ref
     assert len(pieces) == 6
     assert "orphan sidecar entries: T013" in out
+    # the crew.toml entry T012 still belongs to the old task: flagged, kept,
+    # and the new T012 piece cannot get a brief from it
+    assert "crew.toml entry T012 was written for another task; review it" in out
+    sidecar = load_sidecar(git_repo / "specs" / "003-x")
+    assert sidecar.tasks["T012"].task == "Create User model in src/a.py"
+    assert sidecar.tasks["T020"].task == "Create User model in src/a.py"
+    assert main(["brief", "render", "--project", str(git_repo), "--job", job,
+                 "--piece", str(by_ref["T012"]["n"])]) == 2
+    assert "crew.toml entry T012" in capsys.readouterr().err
+    assert main(["brief", "render", "--project", str(git_repo), "--job", job,
+                 "--piece", str(by_ref["T020"]["n"])]) == 0
 
 
 def test_spec_import_warns_parallel_conflict(git_repo, capsys):
@@ -675,3 +686,66 @@ def test_spec_import_rejects_unknown_crew_toml_key(git_repo, capsys):
     err = capsys.readouterr().err.strip().splitlines()
     assert len(err) == 1 and "T012" in err[0] and "unknown key 'expectt'" in err[0]
     assert _stored_job(git_repo, job)["pieces"] == []
+
+
+def test_spec_import_stores_the_task_text_in_crew_toml(git_repo):
+    spec = _write_spec(git_repo, "specs/003-x")
+    (spec / SIDECAR_NAME).write_text(
+        '[tasks.T012]\ntype = "data"\nrisk = "high"\n', encoding="utf-8"
+    )   # written before the task field existed
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    tasks = load_sidecar(spec).tasks
+    assert tasks["T012"].task == "Create User model in src/a.py"
+    assert tasks["T013"].task == "Implement UserService in src/svc.py (depends on T012)"
+    assert (tasks["T012"].type, tasks["T012"].risk) == ("data", "high")
+
+
+def test_renumbered_task_never_inherits_the_old_crew_toml_entry(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    brief = _dispatch_repo(git_repo, fake_bin, monkeypatch)
+    spec = _write_spec(git_repo, "specs/003-x")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    meta = load_sidecar(spec)
+    meta.tasks["T012"].files = ["src/a.py"]
+    meta.tasks["T012"].proof = "python -c pass"
+    meta.tasks["T012"].type, meta.tasks["T012"].risk = "data", "high"
+    from crew_chief.sidecar import save_sidecar as _save
+    _save(spec, meta)
+    _write_spec(git_repo, "specs/003-x", RENUMBERED)
+    capsys.readouterr()
+
+    assert _import(git_repo, job, "--json") == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["sidecar_mismatch"] == ["T012"]
+    assert _import(git_repo, job) == 0
+    assert "crew.toml entry T012 was written for another task; review it" in (
+        capsys.readouterr().out
+    )
+    entry = load_sidecar(spec).tasks["T012"]
+    assert entry.task == "Create User model in src/a.py"     # left as it was
+    assert entry.proof == "python -c pass"
+    new = records.piece_for_ref(_stored_job(git_repo, job), "T012")
+    assert (new["type"], new["risk"]) != ("data", "high")    # not inherited
+
+    n = str(new["n"])
+    assert main(["brief", "render", "--project", str(git_repo), "--job", job,
+                 "--piece", n]) == 2
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1 and "crew.toml entry T012" in err[0]
+    assert _dispatch(git_repo, job, new["n"], brief, "--ignore-deps") == 2
+    assert "crew.toml entry T012" in capsys.readouterr().err
+    assert _dispatch(git_repo, job, new["n"], brief, "--review", "--target",
+                     str(git_repo)) == 2
+    assert "crew.toml entry T012" in capsys.readouterr().err
+
+    # the user points the entry at the new task: it is accepted again
+    text = (spec / SIDECAR_NAME).read_text(encoding="utf-8")
+    (spec / SIDECAR_NAME).write_text(
+        text.replace('task = "Create User model in src/a.py"',
+                     'task = "Totally different work"'), encoding="utf-8")
+    assert main(["brief", "render", "--project", str(git_repo), "--job", job,
+                 "--piece", n]) == 0
+    assert "# T012 Totally different work" in capsys.readouterr().out

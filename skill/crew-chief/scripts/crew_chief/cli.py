@@ -539,7 +539,18 @@ def _spec_proof(
             f"piece {args.piece} is stale (task {ref} changed); re-import the spec"
         )
     spec_dir = job.get("spec_dir")
-    if args.review or not ref or not spec_dir:
+    if not ref or not spec_dir:
+        return "", "", None, None
+    meta = load_sidecar(project / spec_dir).tasks.get(ref)
+    tasks_path = project / spec_dir / "tasks.md"
+    if meta is not None and tasks_path.is_file():
+        task = next(
+            (t for t in parse_tasks(_read_text(tasks_path, "tasks.md")) if t.id == ref),
+            None,
+        )
+        if task is not None:
+            _check_entry(ref, meta, task.text, f"piece {args.piece} ({ref}): ")
+    if args.review:
         return "", "", None, None
     waits = _spec_waits(project, job, ref, spec_dir)
     ignored_deps = None
@@ -547,7 +558,6 @@ def _spec_proof(
         if not args.ignore_deps:
             raise ValueError(f"piece {args.piece} ({ref}) waits for {waits}")
         ignored_deps = [waits]
-    meta = load_sidecar(project / spec_dir).tasks.get(ref)
     work_type = meta.type if meta else piece.get("type")
     proof = meta.proof if meta else ""
     if not proof and work_type in records.EXEC_TYPES and not args.no_proof:
@@ -985,6 +995,27 @@ def _piece_task_text(piece: dict) -> str | None:
     return None
 
 
+def _entry_mismatch(meta: TaskMeta | None, task_text: str) -> bool:
+    """Whether a ``crew.toml`` entry was written for a task with other text.
+
+    Entries without a ``task`` (written before the field existed) never
+    mismatch.
+    """
+    return (
+        meta is not None and bool(meta.task) and _squash(meta.task) != _squash(task_text)
+    )
+
+
+def _check_entry(ref: str, meta: TaskMeta | None, task_text: str, prefix: str = "") -> None:
+    """Refuse (:class:`ValueError`) a ``crew.toml`` entry made for another task."""
+    if _entry_mismatch(meta, task_text):
+        raise ValueError(
+            f"{prefix}crew.toml entry {ref} was written for another task "
+            f"({meta.task!r}); set its task to the current text once its fields "
+            "fit, then retry"
+        )
+
+
 def _stale_text(stale: list[dict]) -> str:
     return ", ".join(f"{entry['piece']} ({entry['ref']})" for entry in stale)
 
@@ -997,6 +1028,11 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
     if bound and bound != relative:
         raise ValueError(f"job is bound to {bound}; use a new job")
     original = copy.deepcopy(sidecar)
+    # Entries written for another task (spec-kit renumbered tasks.md): never
+    # reused, never rewritten; dispatch and brief render refuse them.
+    mismatched = [
+        task.id for task in tasks if _entry_mismatch(sidecar.tasks.get(task.id), task.text)
+    ]
 
     def apply(stored: dict) -> tuple[list[dict], list[dict], list[dict]]:
         stale = []
@@ -1012,7 +1048,7 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
         for task in tasks:
             if task.done or records.piece_for_ref(stored, task.id) is not None:
                 continue
-            meta = sidecar.tasks.get(task.id)
+            meta = None if task.id in mismatched else sidecar.tasks.get(task.id)
             work_type = meta.type if meta else guess_type(task)
             risk = meta.risk if meta else guess_risk(task)
             number = records.add_piece(
@@ -1031,6 +1067,8 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
         p["ref"]: p for p in reversed(pieces) if p.get("ref") and not p.get("stale")
     }
     for task in tasks:
+        if task.id in mismatched:
+            continue
         meta = sidecar.tasks.get(task.id)
         if meta is None:
             if task.done:
@@ -1040,8 +1078,12 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
                 piece["type"] if piece else guess_type(task),
                 piece["risk"] if piece else guess_risk(task),
                 depends=list(task.depends),
+                task=task.text,
             )
-        elif not meta.depends and task.depends:
+            continue
+        if not meta.task:
+            meta.task = task.text
+        if not meta.depends and task.depends:
             meta.depends = list(task.depends)
     sidecar.spec_dir = relative
     sidecar.job = args.job
@@ -1056,7 +1098,11 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
         and task.id in by_ref
         and not by_ref[task.id].get("accepted")
         and by_ref[task.id].get("type") in records.EXEC_TYPES
-        and not (task.id in sidecar.tasks and sidecar.tasks[task.id].proof)
+        and not (
+            task.id in sidecar.tasks
+            and task.id not in mismatched
+            and sidecar.tasks[task.id].proof
+        )
     ]
     orphan_sidecar = sorted(set(sidecar.tasks) - ids)
     orphan_pieces = [
@@ -1078,6 +1124,10 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
     if stale:
         lines.append("stale pieces: " + _stale_text(stale))
     lines.extend(
+        f"crew.toml entry {ref} was written for another task; review it"
+        for ref in mismatched
+    )
+    lines.extend(
         f"parallel conflict: {a}/{b} share {', '.join(shared)}"
         for a, b, shared in conflicts
     )
@@ -1088,6 +1138,7 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
         "orphan_sidecar": orphan_sidecar,
         "orphan_pieces": orphan_pieces,
         "stale": stale,
+        "sidecar_mismatch": mismatched,
         "parallel_conflicts": [
             {"tasks": [a, b], "files": shared} for a, b, shared in conflicts
         ],
@@ -1180,6 +1231,7 @@ def _cmd_brief_render(args: argparse.Namespace) -> int:
             raise ValueError(
                 f"task {ref} not found in {relative}/tasks.md; re-import the spec"
             )
+        _check_entry(ref, sidecar.tasks.get(ref), task.text, f"piece {number} ({ref}): ")
         meta = sidecar.tasks.get(ref) or TaskMeta(
             piece.get("type") or "code", piece.get("risk") or "medium"
         )
