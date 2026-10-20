@@ -64,3 +64,23 @@ def test_identical_match_is_reported_once():
 def test_detects_cookie_header():
     findings = check_brief("Cookie: session=abc123456789", [])
     assert any(f.startswith("cookie-header:") for f in findings)
+
+
+def test_path_is_sensitive_matches_at_token_boundaries():
+    from crew_chief.briefcheck import path_is_sensitive
+
+    entries = ["referencia/", "Planilhas"]
+    assert path_is_sensitive("referencia/x.txt", entries)
+    assert path_is_sensitive("docs/Referencia", entries)
+    assert path_is_sensitive(r"data\planilhas\a.csv", entries)
+    assert not path_is_sensitive("dereferencia/x.txt", entries)
+    assert not path_is_sensitive("src/main.py", entries)
+    assert not path_is_sensitive("referencia/x.txt", [])
+
+
+def test_path_is_sensitive_accepts_fnmatch_entries():
+    from crew_chief.briefcheck import path_is_sensitive
+
+    assert path_is_sensitive("reports/2026.xlsx", ["*.xlsx"])
+    assert path_is_sensitive("a.xlsx", ["*.xlsx"])
+    assert not path_is_sensitive("reports/2026.csv", ["*.xlsx"])

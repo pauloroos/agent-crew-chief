@@ -62,8 +62,11 @@ from .worktree import (
     diffstat,
     branch_exists,
     head_commit,
+    hide_sensitive,
     next_free_attempt,
     outside_writes,
+    remove_paths,
+    sensitive_present,
     snapshot,
 )
 
@@ -130,6 +133,13 @@ def dispatch(
     saved, whatever the status: ``ok``, ``no_change`` (an exec that exited
     cleanly without changing the worktree), ``failed``, ``timeout``,
     ``quota``, ``outside_write``, ``proof_failed`` or ``brief_refused``.
+
+    The project's ``sensitive_paths`` stay out of the executor's reach: an exec
+    worktree is created without the tracked ones (:func:`hide_sensitive`), and
+    after the run, exec or review, any sensitive path found in the worktree is
+    deleted and makes the attempt ``outside_write`` with the note
+    ``sensitive path in worktree: <paths>``; an exec of that kind is not
+    committed.
 
     An exec attempt starts from what :func:`resolve_base` returns for
     ``base`` and ``fresh``; a review takes neither.
@@ -233,6 +243,10 @@ def dispatch(
         attempt["branch"] = branch
         attempt["worktree"] = str(worktree)
         attempt["base"] = start_from
+        try:
+            hide_sensitive(worktree, prefs.sensitive_paths)
+        except (RuntimeError, OSError) as exc:
+            return finish("failed", f"cannot hide sensitive paths: {exc}")
 
     brief_file = worktree / BRIEF_FILE
     output_file = worktree / OUTPUT_FILE
@@ -297,6 +311,12 @@ def dispatch(
     if not answer.strip() and (stderr or "").strip():
         # A run that printed nothing would leave no clue; keep its stderr.
         attempt["note"] = f"stderr:\n{stderr}"[-MAX_NOTE:]
+    sensitive = _clean_sensitive(worktree, prefs.sensitive_paths)
+    if sensitive:
+        writes = [*writes, *(f"sensitive: {name}" for name in sensitive)]
+        attempt["outside_writes"] = writes
+        found = f"sensitive path in worktree: {', '.join(sensitive)}"
+        attempt["note"] = f"{found}\n\n{attempt['note']}".rstrip()
     attempt.update(_metrics(tool, brief, text, answer, stderr))
     attempt["cost_known"] = attempt["cost_usd"] is not None
     _record_spend(attempt, project, job_id, piece)
@@ -326,9 +346,10 @@ def dispatch(
                 if outside:
                     attempt["scope"] = outside
             changed = bool(rows) or head_commit(worktree) != start_head
-            commit_worktree(
-                worktree, f"crew: {job_id} piece {piece} attempt {number}"
-            )
+            if not sensitive:
+                commit_worktree(
+                    worktree, f"crew: {job_id} piece {piece} attempt {number}"
+                )
             # What a reviewer must find in the worktree (see brief render).
             attempt["start_sha"] = start_head
             attempt["end_sha"] = head_commit(worktree)
@@ -350,6 +371,23 @@ def dispatch(
             status = "proof_failed"
             attempt["note"] = f"{proof_note}\n\n{attempt['note']}".rstrip()
     return finish(status)
+
+
+def _clean_sensitive(worktree: Path, patterns: list[str]) -> list[str]:
+    """Delete the sensitive paths found in ``worktree`` and return them.
+
+    A failure to look or to delete never fails the attempt by itself: what
+    was found is still reported.
+    """
+    try:
+        found = sensitive_present(worktree, patterns)
+    except (RuntimeError, OSError):
+        return []
+    try:
+        remove_paths(worktree, found)
+    except OSError:
+        pass
+    return found
 
 
 def _in_scope(path: str, allowed: list[str]) -> bool:

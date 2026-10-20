@@ -16,7 +16,9 @@ from crew_chief.worktree import (
     diffstat,
     next_free_attempt,
     discard,
+    hide_sensitive,
     outside_writes,
+    sensitive_present,
     snapshot,
 )
 
@@ -549,3 +551,122 @@ def test_branch_exists(git_repo: Path, home_dir: Path):
 
     assert branch_exists(git_repo, branch)
     assert not branch_exists(git_repo, "crew/job1-1-9")
+
+
+# --- sensitive paths --------------------------------------------------------
+
+
+def _track(repo: Path, files: dict[str, str]) -> None:
+    """Write ``files`` (relative path -> text) into ``repo`` and commit them."""
+    for name, text in files.items():
+        target = repo / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add files")
+
+
+def test_hide_sensitive_removes_tracked_files_without_dirtying_status(
+    git_repo: Path, home_dir: Path
+):
+    _track(
+        git_repo,
+        {
+            "referencia/a.txt": "client a\n",
+            "referencia/sub/b.txt": "client b\n",
+            "docs/ok.md": "fine\n",
+        },
+    )
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    assert (worktree / "referencia" / "a.txt").exists()
+
+    hidden = hide_sensitive(worktree, ["referencia/"])
+
+    assert hidden == ["referencia/a.txt", "referencia/sub/b.txt"]
+    assert not (worktree / "referencia" / "a.txt").exists()
+    assert not (worktree / "referencia" / "sub" / "b.txt").exists()
+    assert (worktree / "docs" / "ok.md").exists()
+    assert _git(worktree, "status", "--porcelain").strip() == ""
+    assert diffstat(worktree) == ([], [])
+    assert commit_worktree(worktree, "nothing") is None
+    assert sensitive_present(worktree, ["referencia/"]) == []
+    # The main project keeps its copy.
+    assert (git_repo / "referencia" / "a.txt").read_text(encoding="utf-8") == (
+        "client a\n"
+    )
+
+
+def test_hide_sensitive_without_patterns_or_matches_does_nothing(
+    git_repo: Path, home_dir: Path
+):
+    _track(git_repo, {"docs/ok.md": "fine\n"})
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+
+    assert hide_sensitive(worktree, []) == []
+    assert hide_sensitive(worktree, ["referencia"]) == []
+    assert (worktree / "docs" / "ok.md").exists()
+
+
+def test_hide_sensitive_uses_the_brief_matching_rule(
+    git_repo: Path, home_dir: Path
+):
+    _track(
+        git_repo,
+        {
+            "data/Planilhas/x.csv": "1\n",
+            "src/planilhas.py": "x = 1\n",
+            "reports/2026.xlsx": "binary\n",
+            "notes/environment.md": "fine\n",
+        },
+    )
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+
+    hidden = hide_sensitive(worktree, ["planilhas", "*.xlsx"])
+
+    assert hidden == [
+        "data/Planilhas/x.csv",
+        "reports/2026.xlsx",
+        "src/planilhas.py",
+    ]
+    assert (worktree / "notes" / "environment.md").exists()
+
+
+def test_sensitive_present_finds_untracked_ignored_and_returned_files(
+    git_repo: Path, home_dir: Path
+):
+    _track(git_repo, {".gitignore": "private/\n", "referencia/a.txt": "a\n"})
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    hide_sensitive(worktree, ["referencia", "private", "clientes"])
+    (worktree / "clientes" / "deep").mkdir(parents=True)
+    (worktree / "clientes" / "deep" / "c.txt").write_text("c\n", encoding="utf-8")
+    (worktree / "private").mkdir()
+    (worktree / "private" / "p.txt").write_text("p\n", encoding="utf-8")
+    (worktree / "referencia").mkdir()
+    (worktree / "referencia" / "a.txt").write_text("a\n", encoding="utf-8")
+    (worktree / "fine.txt").write_text("ok\n", encoding="utf-8")
+
+    found = sensitive_present(worktree, ["referencia", "private", "clientes"])
+
+    assert found == ["clientes", "private", "referencia"]
+    assert sensitive_present(worktree, []) == []
+
+
+def test_accept_after_hidden_files_keeps_them_in_project(
+    git_repo: Path, home_dir: Path
+):
+    _track(git_repo, {"referencia/a.txt": "client a\n", "keep.txt": "keep\n"})
+    worktree, branch = create_worktree(git_repo, "job1", 1, 1)
+    hide_sensitive(worktree, ["referencia"])
+    (worktree / "feature.txt").write_text("feature\n", encoding="utf-8")
+    assert commit_worktree(worktree, "add feature") is not None
+
+    accept(git_repo, worktree, branch)
+
+    assert (git_repo / "referencia" / "a.txt").read_text(encoding="utf-8") == (
+        "client a\n"
+    )
+    assert (git_repo / "feature.txt").read_text(encoding="utf-8") == "feature\n"
+    assert _git(git_repo, "status", "--porcelain").strip() == ""
+    assert "referencia/a.txt" in _git(git_repo, "ls-files")
+    shown = _git(git_repo, "show", "--stat", "--format=", "HEAD^2")
+    assert "referencia" not in shown

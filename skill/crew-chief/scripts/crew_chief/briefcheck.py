@@ -10,6 +10,7 @@ a path is not a secret.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 
 MASK = "…"
@@ -63,6 +64,36 @@ def _path_token_matches(haystack: str, token: str) -> bool:
         start = index + 1
 
 
+def _entry_token(entry: object) -> str:
+    """A path entry as it is matched: normalised, without a trailing ``/``."""
+    return _normalise(str(entry)).rstrip("/")
+
+
+def path_is_sensitive(path: str, entries: list[str] | tuple[str, ...]) -> bool:
+    """Whether the project-relative ``path`` is named by one of ``entries``.
+
+    The same rule :func:`check_brief` applies to a brief: an entry matches at
+    a path-token boundary (so ``referencia`` matches ``referencia/x.txt`` and
+    ``docs/referencia`` but not ``dereferencia``), case-insensitively and
+    with backslashes read as slashes. An entry holding ``*``, ``?`` or ``[`` is an
+    :mod:`fnmatch` pattern instead, tried on the whole path and on every
+    ``/``-separated tail of it.
+    """
+    haystack = _normalise(path).strip("/")
+    for entry in entries:
+        token = _entry_token(entry)
+        if not token:
+            continue
+        if any(char in token for char in "*?["):
+            parts = haystack.split("/")
+            tails = ("/".join(parts[i:]) for i in range(len(parts)))
+            if any(fnmatch.fnmatchcase(tail, token) for tail in tails):
+                return True
+        elif _path_token_matches(haystack, token):
+            return True
+    return False
+
+
 def check_brief(text: str, sensitive_paths: list[str]) -> list[str]:
     """Findings for a brief's secrets and sensitive paths.
 
@@ -84,7 +115,7 @@ def check_brief(text: str, sensitive_paths: list[str]) -> list[str]:
 
     haystack = _normalise(text)
     for entry in (*DEFAULT_SENSITIVE_PATHS, *sensitive_paths):
-        token = _normalise(str(entry)).rstrip("/")
+        token = _entry_token(entry)
         if not token:
             continue
         if _path_token_matches(haystack, token):

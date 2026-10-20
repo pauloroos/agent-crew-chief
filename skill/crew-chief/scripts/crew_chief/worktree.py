@@ -16,11 +16,16 @@ whether an attempt is allowed to land:
   CLIs keep in the home directory (:data:`AGENT_HOME_ENTRIES`), nor the
   records parallel crew-chief commands rewrite in the main repo
   (:data:`COORDINATOR_RECORDS`).
+* :func:`hide_sensitive` and :func:`sensitive_present` keep the project's
+  ``sensitive_paths`` out of an attempt's worktree: the tracked ones are
+  removed right after checkout (and marked ``skip-worktree`` so the removal
+  never shows as a deletion), and whatever sensitive path exists in the
+  worktree after the run is found so the caller can delete it.
 * :func:`diffstat` reports what the attempt changed and calls out deletions
   that look destructive, so a merge can be refused before it happens.
 
 Everything here shells out to ``git`` through the single helper :func:`_git`;
-nothing else is imported from the package.
+the only import from the package is the path matcher of :mod:`briefcheck`.
 """
 
 from __future__ import annotations
@@ -34,6 +39,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+from .briefcheck import path_is_sensitive
 
 #: Files the coordinator writes inside the worktree; they never count as work.
 EXCLUDED_FILES: tuple[str, ...] = (".crew-chief-brief.md", ".crew-chief-out.txt")
@@ -90,6 +97,9 @@ _TRANSIENT_RETRY_S = 2.0
 #: deletes: at least this many lines gone with more than twice the added lines.
 _DESTRUCTIVE_MIN_DELETED = 30
 _DESTRUCTIVE_RATIO = 2
+
+#: Paths per ``git update-index`` call, to stay under command-line limits.
+_UPDATE_INDEX_BATCH = 200
 
 
 class NotAGitRepo(Exception):
@@ -352,6 +362,107 @@ def diffstat(worktree: Path, base: str = "HEAD") -> tuple[list[dict], list[str]]
         )
     ]
     return rows, destructive
+
+
+def hide_sensitive(worktree: Path, patterns: list[str]) -> list[str]:
+    """Remove the tracked files matching ``patterns`` from the worktree.
+
+    ``patterns`` are ``sensitive_paths`` entries, matched like a brief's
+    (:func:`briefcheck.path_is_sensitive`). Each tracked match is marked
+    ``git update-index --skip-worktree`` and deleted from disk, so it is not
+    shown as deleted by ``git status``, the diff stats or the attempt's commit,
+    and a merge of the branch leaves the project's copy alone. Folders left
+    empty are removed too. Returns the hidden paths, sorted; nothing happens
+    without patterns.
+    """
+    worktree = Path(worktree)
+    if not patterns:
+        return []
+    hidden = sorted(
+        name for name in _tracked_files(worktree) if path_is_sensitive(name, patterns)
+    )
+    for start in range(0, len(hidden), _UPDATE_INDEX_BATCH):
+        batch = hidden[start : start + _UPDATE_INDEX_BATCH]
+        _git(["update-index", "--skip-worktree", "--", *batch], worktree)
+    for name in hidden:
+        _remove_path(worktree / name)
+        _prune_empty_parents(worktree, worktree / name)
+    return hidden
+
+
+def sensitive_present(worktree: Path, patterns: list[str]) -> list[str]:
+    """Paths in the worktree that match ``patterns`` and exist on disk.
+
+    Tracked, untracked and git-ignored paths all count (the real incident was
+    a folder git knew nothing about). Each match is reported as its top-most
+    matching path, ``/``-separated and relative to the worktree, so a copied
+    folder is one entry, ``referencia``, not one per file. Sorted; empty
+    without patterns.
+    """
+    worktree = Path(worktree)
+    if not patterns:
+        return []
+    found: set[str] = set()
+    for name in (*_tracked_files(worktree), *_untracked_files(worktree)):
+        if not (worktree / name).exists():
+            continue
+        parts = name.rstrip("/").split("/")
+        for end in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:end])
+            if path_is_sensitive(prefix, patterns):
+                found.add(prefix)
+                break
+    return sorted(found)
+
+
+def remove_paths(worktree: Path, paths: list[str]) -> None:
+    """Delete ``paths`` (relative to ``worktree``), files and folders alike."""
+    worktree = Path(worktree)
+    for name in paths:
+        _remove_path(worktree / name)
+
+
+def _tracked_files(worktree: Path) -> list[str]:
+    """``git ls-files`` of the worktree: every path in the index."""
+    return [
+        name
+        for name in _git(["ls-files", "-z"], worktree).split("\0")
+        if name
+    ]
+
+
+def _untracked_files(worktree: Path) -> list[str]:
+    """Untracked and ignored paths; an ignored folder is one ``dir/`` entry."""
+    names: list[str] = []
+    for extra in ([], ["--ignored", "--directory"]):
+        listing = _git(
+            ["ls-files", "--others", "--exclude-standard", "-z", *extra], worktree
+        )
+        names.extend(name for name in listing.split("\0") if name)
+    return names
+
+
+def _remove_path(path: Path) -> None:
+    """Delete a file or a whole folder; a missing path is not an error."""
+    if path.is_dir() and not path.is_symlink():
+        _remove_tree(path)
+    else:
+        try:
+            path.unlink(missing_ok=True)
+        except PermissionError:  # pragma: no cover - read-only file on Windows
+            os.chmod(path, stat.S_IWRITE)
+            path.unlink(missing_ok=True)
+
+
+def _prune_empty_parents(root: Path, path: Path) -> None:
+    """Remove the folders above ``path`` that became empty, up to ``root``."""
+    parent = path.parent
+    while parent != root and root in parent.parents:
+        try:
+            parent.rmdir()
+        except OSError:
+            return
+        parent = parent.parent
 
 
 def head_commit(worktree: Path) -> str:

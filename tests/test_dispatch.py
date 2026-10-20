@@ -1155,3 +1155,146 @@ def test_a_run_that_never_started_records_no_spend(git_repo, fake_bin):
 
     assert attempt["status"] == "brief_refused"
     assert _spend_rows() == []
+
+
+# --- sensitive paths --------------------------------------------------------
+
+
+def _commit_all(repo, message: str = "add files") -> None:
+    for args in (["add", "."], ["commit", "-q", "-m", message]):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def _client_data(repo) -> None:
+    (repo / "referencia").mkdir()
+    (repo / "referencia" / "x.txt").write_text("client data\n", encoding="utf-8")
+
+
+def _copy_referencia_stub(fake_bin) -> None:
+    # The stub runs in <tmp>/repo.crew/<attempt>; the project is two levels up.
+    fake_bin(
+        "stub",
+        "import shutil\n"
+        "from pathlib import Path\n"
+        "src = Path('../../repo/referencia')\n"
+        "Path('referencia').mkdir(exist_ok=True)\n"
+        "for item in src.iterdir():\n"
+        "    shutil.copy(item, Path('referencia') / item.name)\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+        "print('copied the reference folder')\n",
+    )
+
+
+def test_executor_copying_sensitive_dir_is_outside_write_and_cleaned(
+    git_repo, fake_bin
+):
+    _client_data(git_repo)
+    _copy_referencia_stub(fake_bin)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n",
+        _prefs(sensitive_paths=["referencia"]),
+    )
+
+    worktree = Path(attempt["worktree"])
+    assert attempt["status"] == "outside_write"
+    assert "sensitive path in worktree: referencia" in attempt["note"]
+    assert "copied the reference folder" in attempt["note"]
+    assert not (worktree / "referencia").exists()
+    assert _head(worktree) == _head(git_repo)
+    # Nothing was committed and the project's folder is intact.
+    assert (git_repo / "referencia" / "x.txt").read_text(encoding="utf-8") == (
+        "client data\n"
+    )
+    assert _stored_attempt(git_repo, job["id"])["status"] == "outside_write"
+
+
+def test_executor_that_never_touches_sensitive_paths_is_ok(git_repo, fake_bin):
+    _client_data(git_repo)
+    fake_bin("stub", _WRITES + "print('done')\n")
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n",
+        _prefs(sensitive_paths=["referencia"]),
+    )
+
+    assert attempt["status"] == "ok", attempt["note"]
+
+
+def test_tracked_sensitive_files_are_hidden_from_the_executor(git_repo, fake_bin):
+    _client_data(git_repo)
+    _commit_all(git_repo)
+    fake_bin(
+        "stub",
+        _WRITES + "print('has referencia:', Path('referencia').exists())\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n",
+        _prefs(sensitive_paths=["referencia"]),
+    )
+
+    assert attempt["status"] == "ok", attempt["note"]
+    assert "has referencia: False" in attempt["note"]
+    assert [row["file"] for row in attempt["diffstat"]] == ["out.py"]
+    assert attempt["destructive_suspect"] == []
+    assert (git_repo / "referencia" / "x.txt").exists()
+
+
+def test_hidden_tracked_files_do_not_make_an_idle_run_a_change(git_repo, fake_bin):
+    _client_data(git_repo)
+    _commit_all(git_repo)
+    fake_bin("stub", "print('nothing to do')\n")
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n",
+        _prefs(sensitive_paths=["referencia"]),
+    )
+
+    assert attempt["status"] == "no_change"
+    assert attempt["destructive_suspect"] == []
+
+
+def test_executor_restoring_a_hidden_tracked_file_is_outside_write(
+    git_repo, fake_bin
+):
+    _client_data(git_repo)
+    _commit_all(git_repo)
+    _copy_referencia_stub(fake_bin)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n",
+        _prefs(sensitive_paths=["referencia"]),
+    )
+
+    worktree = Path(attempt["worktree"])
+    assert attempt["status"] == "outside_write"
+    assert "sensitive path in worktree: referencia" in attempt["note"]
+    assert not (worktree / "referencia").exists()
+    assert _head(worktree) == _head(git_repo)
+
+
+def test_review_that_copies_a_sensitive_dir_is_flagged_and_cleaned(
+    git_repo, fake_bin
+):
+    _client_data(git_repo)
+    _copy_referencia_stub(fake_bin)
+    job = _seed_job(git_repo)
+    target, _branch = create_worktree(git_repo, job["id"], 1, 1)
+    head_before = _head(target)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "review it\n",
+        _prefs(sensitive_paths=["referencia"]),
+        role="review", review_target=target,
+    )
+
+    assert attempt["status"] == "outside_write"
+    assert "sensitive path in worktree: referencia" in attempt["note"]
+    assert not (target / "referencia").exists()
+    assert _head(target) == head_before
