@@ -84,6 +84,10 @@ from .worktree import discard as discard_branch
 #: Path of the committed scoreboard, relative to the project root.
 _SCOREBOARD_RELATIVE_PATH = Path("docs") / "crew-chief" / "scoreboard.md"
 
+#: How much of the reviewer's answer (the end of the attempt note) ``dispatch
+#: --review`` prints.
+_REVIEW_ANSWER_CHARS = 3000
+
 #: Escalation reasons recorded by ``pick``.
 _ESCALATION_FREE_FAILURES = "2 free failures"
 _ESCALATION_STRONG = "--strong: complex, cannot be split"
@@ -483,6 +487,10 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         payload["proof"] = attempt["proof"]
     if attempt.get("scope"):
         payload["scope"] = attempt["scope"]
+    if args.review:
+        answer = (attempt.get("note") or "")[-_REVIEW_ANSWER_CHARS:]
+        lines += ["answer:", answer.rstrip("\n") or "-"]
+        payload["answer"] = answer
     _emit(args, "\n".join(lines), payload)
     return 0 if status == "ok" else 1
 

@@ -749,3 +749,24 @@ def test_renumbered_task_never_inherits_the_old_crew_toml_entry(
     assert main(["brief", "render", "--project", str(git_repo), "--job", job,
                  "--piece", n]) == 0
     assert "# T012 Totally different work" in capsys.readouterr().out
+
+
+def test_dispatch_review_prints_the_reviewers_answer(git_repo, fake_bin, monkeypatch, capsys):
+    brief = _dispatch_repo(git_repo, fake_bin, monkeypatch)
+    job, _ = _imported(git_repo, SAMPLE.encode("utf-8"))
+    assert _dispatch(git_repo, job, 1, brief, "--no-proof") == 0
+    worktree = _stored_job(git_repo, job)["pieces"][0]["attempts"][0]["worktree"]
+    capsys.readouterr()
+
+    assert _dispatch(git_repo, job, 1, brief, "--review", "--target", worktree) == 0
+    out = capsys.readouterr().out
+    assert "answer:" in out and out.rstrip().endswith("done")
+
+    assert _dispatch(git_repo, job, 1, brief, "--review", "--target", worktree,
+                     "--json") == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["answer"].strip() == "done"
+
+    capsys.readouterr()
+    assert _dispatch(git_repo, job, 2, brief, "--no-proof", "--ignore-deps", "--json") == 0
+    assert "answer" not in json.loads(capsys.readouterr().out)   # exec: no answer
