@@ -94,6 +94,12 @@ def path_is_sensitive(path: str, entries: list[str] | tuple[str, ...]) -> bool:
     return False
 
 
+def _words(text: str) -> list[str]:
+    """Path-like words of ``text``: split on spaces, quotes, brackets, commas."""
+    words = re.split(r"""[\s"'`()<>,;]+""", text)
+    return [word.rstrip(".:") for word in words if word]
+
+
 def check_brief(text: str, sensitive_paths: list[str]) -> list[str]:
     """Findings for a brief's secrets and sensitive paths.
 
@@ -118,7 +124,12 @@ def check_brief(text: str, sensitive_paths: list[str]) -> list[str]:
         token = _entry_token(entry)
         if not token:
             continue
-        if _path_token_matches(haystack, token):
+        if any(char in token for char in "*?["):
+            # A wildcard entry names no literal text: test each path-like
+            # word of the brief with the matcher the worktree uses.
+            if any(path_is_sensitive(word, [token]) for word in _words(text)):
+                add("sensitive-path", token, excerpt=token)
+        elif _path_token_matches(haystack, token):
             add("sensitive-path", token, excerpt=token)
 
     return findings

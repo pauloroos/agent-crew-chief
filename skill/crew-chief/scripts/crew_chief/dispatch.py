@@ -311,7 +311,10 @@ def dispatch(
     if not answer.strip() and (stderr or "").strip():
         # A run that printed nothing would leave no clue; keep its stderr.
         attempt["note"] = f"stderr:\n{stderr}"[-MAX_NOTE:]
-    sensitive = _clean_sensitive(worktree, prefs.sensitive_paths)
+    sensitive, check_error = _clean_sensitive(worktree, prefs.sensitive_paths)
+    if check_error:
+        failed = f"sensitive path check failed: {check_error}"
+        attempt["note"] = f"{failed}\n\n{attempt['note']}".rstrip()
     if sensitive:
         writes = [*writes, *(f"sensitive: {name}" for name in sensitive)]
         attempt["outside_writes"] = writes
@@ -373,21 +376,25 @@ def dispatch(
     return finish(status)
 
 
-def _clean_sensitive(worktree: Path, patterns: list[str]) -> list[str]:
-    """Delete the sensitive paths found in ``worktree`` and return them.
+def _clean_sensitive(
+    worktree: Path, patterns: list[str]
+) -> tuple[list[str], str]:
+    """Delete the sensitive paths found in ``worktree``.
 
-    A failure to look or to delete never fails the attempt by itself: what
-    was found is still reported.
+    Returns ``(found, error)``. A failure to look or to delete never fails
+    the attempt by itself: what was found is still reported and ``error``
+    says what went wrong (empty when all went well), so the caller can
+    note it instead of failing open silently.
     """
     try:
         found = sensitive_present(worktree, patterns)
-    except (RuntimeError, OSError):
-        return []
+    except (RuntimeError, OSError) as exc:
+        return [], str(exc)
     try:
         remove_paths(worktree, found)
-    except OSError:
-        pass
-    return found
+    except OSError as exc:
+        return found, str(exc)
+    return found, ""
 
 
 def _in_scope(path: str, allowed: list[str]) -> bool:

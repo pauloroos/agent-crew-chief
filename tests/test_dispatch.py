@@ -1298,3 +1298,23 @@ def test_review_that_copies_a_sensitive_dir_is_flagged_and_cleaned(
     assert "sensitive path in worktree: referencia" in attempt["note"]
     assert not (target / "referencia").exists()
     assert _head(target) == head_before
+
+
+def test_failing_sensitive_check_is_noted_not_silent(
+    git_repo, fake_bin, monkeypatch
+):
+    from crew_chief import dispatch as dispatch_module
+
+    def boom(worktree, patterns):
+        raise RuntimeError("git exploded")
+
+    monkeypatch.setattr(dispatch_module, "sensitive_present", boom)
+    fake_bin("stub", _WRITES + "print('done')\n")
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _executor(), "go\n",
+        _prefs(sensitive_paths=["referencia"]),
+    )
+
+    assert "sensitive path check failed: git exploded" in attempt["note"]

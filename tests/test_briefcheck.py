@@ -84,3 +84,14 @@ def test_path_is_sensitive_accepts_fnmatch_entries():
     assert path_is_sensitive("reports/2026.xlsx", ["*.xlsx"])
     assert path_is_sensitive("a.xlsx", ["*.xlsx"])
     assert not path_is_sensitive("reports/2026.csv", ["*.xlsx"])
+
+
+def test_wildcard_entries_refuse_briefs_naming_matching_paths():
+    assert check_brief("edit reports/2026.xlsx please", ["*.xlsx"]) == [
+        "sensitive-path: *.xlsx"
+    ]
+    assert check_brief("read `secrets/a.txt`, then stop", ["secrets/*"]) == [
+        "sensitive-path: secrets/*"
+    ]
+    assert check_brief("edit reports/2026.csv", ["*.xlsx"]) == []
+    assert check_brief("nothing about files", ["secrets/*"]) == []
