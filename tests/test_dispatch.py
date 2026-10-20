@@ -29,16 +29,6 @@ from crew_chief.tools import Executor
 from crew_chief.worktree import create_worktree
 
 
-@pytest.fixture(autouse=True)
-def home_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Redirect ``Path.home()`` to an empty temporary directory."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    return home
-
-
 #: Stub prelude that changes the worktree, so a clean exit is ``ok`` and not
 #: ``no_change``.
 _WRITES = (
@@ -216,6 +206,42 @@ def test_outside_write_is_rejected(git_repo, fake_bin):
     assert attempt["status"] == "outside_write"
     assert any("escaped.txt" in entry for entry in attempt["outside_writes"])
     assert _stored_attempt(git_repo, job["id"])["status"] == "outside_write"
+
+
+def test_python_cache_in_the_project_is_not_outside_write(git_repo, fake_bin):
+    # The executor runs pytest in the project, which leaves __pycache__ there;
+    # that is interpreter noise, not the attempt writing outside its worktree.
+    fake_bin(
+        "stub",
+        "from pathlib import Path\n"
+        "cache = Path('../../repo/tests/__pycache__')\n"
+        "cache.mkdir(parents=True, exist_ok=True)\n"
+        "(cache / 'x.cpython-314.pyc').write_bytes(b'pyc')\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+        "print('ok')\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "ok", attempt["outside_writes"]
+    assert (git_repo / "tests" / "__pycache__" / "x.cpython-314.pyc").exists()
+
+
+def test_untracked_file_in_the_project_is_still_outside_write(git_repo, fake_bin):
+    fake_bin(
+        "stub",
+        "from pathlib import Path\n"
+        "Path('../../repo/notes.txt').write_text('notes\\n', encoding='utf-8')\n"
+        "Path('out.py').write_text('x = 1\\n', encoding='utf-8')\n"
+        "print('ok')\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "outside_write"
+    assert "repo: ?? notes.txt" in attempt["outside_writes"]
 
 
 # --- timeout ---------------------------------------------------------------

@@ -461,7 +461,10 @@ def _cmd_pick(args: argparse.Namespace) -> int:
 def _cmd_dispatch(args: argparse.Namespace) -> int:
     project = _project(args)
     if args.review and not args.target:
-        raise ValueError("--review requires --target")
+        raise ValueError(
+            "--review requires --target (the attempt worktree to review) "
+            "and --brief-file"
+        )
     if args.review and (args.base or args.fresh):
         raise ValueError("--base and --fresh are for exec attempts, not --review")
     if args.review and args.no_proof:
@@ -1373,7 +1376,8 @@ def _cmd_brief_render(args: argparse.Namespace) -> int:
         ref = piece.get("ref")
         if not ref:
             print(
-                f"piece {number} has no spec task; write the brief yourself",
+                f"piece {number} has no spec task; write the brief to a file "
+                "and pass it with --brief-file, or link the piece to a spec task",
                 file=sys.stderr,
             )
             return 1

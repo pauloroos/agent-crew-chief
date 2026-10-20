@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+
+def test_home_dir_points_path_home_at_the_throwaway_home(home_dir):
+    """The autouse fixture redirects ``Path.home()`` for every test.
+
+    A background program writing ``~/.grokbot`` during the suite must land in
+    the throwaway home, not the developer's, so containment never sees it.
+    """
+    assert Path.home() == home_dir
+    (home_dir / ".grokbot").mkdir()
+    assert (Path.home() / ".grokbot").is_dir()
 
 
 def test_fake_bin_prefixes_an_absolute_interpreter_shebang(fake_bin):

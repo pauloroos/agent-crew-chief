@@ -27,6 +27,23 @@ def isolated_global_prefs(tmp_path: Path, monkeypatch) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def home_dir(tmp_path_factory, monkeypatch) -> Path:
+    """Redirect ``Path.home()`` (and HOME/USERPROFILE) to an empty temp dir.
+
+    The containment snapshot compares the top level of ``Path.home()``, so on
+    a developer machine another program (a background agent CLI, say) writing
+    ``~/.grokbot`` mid-suite would turn an ``ok`` attempt into
+    ``outside_write``. Autouse for every test, so no dispatch test can forget.
+    The home lives outside ``tmp_path`` so tests that assert on the contents
+    of ``tmp_path`` keep passing.
+    """
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return home
+
+
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(
         ["git", *args],

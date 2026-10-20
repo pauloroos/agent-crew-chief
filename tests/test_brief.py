@@ -144,7 +144,10 @@ def test_brief_render_cli_without_ref_exits_1(git_repo, capsys):
     records.update_job(git_repo, job, lambda j: records.add_piece(j, "manual", "code", "low"))
     capsys.readouterr()
     assert _render(git_repo, job, "--piece", "1") == 1
-    assert "piece 1 has no spec task; write the brief yourself" in capsys.readouterr().err
+    assert (
+        "piece 1 has no spec task; write the brief to a file and pass it with "
+        "--brief-file, or link the piece to a spec task"
+    ) in capsys.readouterr().err
 
 
 def test_brief_render_cli_stale_piece_exits_1(git_repo, capsys):

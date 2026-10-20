@@ -215,7 +215,8 @@ def snapshot(
     """A containment snapshot: main repo status, siblings and home entries.
 
     ``repo`` is the set of ``git status --porcelain=v1 -uall`` lines of the
-    main repo, minus :data:`COORDINATOR_RECORDS`; ``sibling`` and ``home`` map each top-level entry name to its
+    main repo, minus :data:`COORDINATOR_RECORDS` and untracked Python bytecode
+    caches; ``sibling`` and ``home`` map each top-level entry name to its
     ``st_mtime_ns``, for ``worktree.parent`` and for ``Path.home()``. Nothing
     is walked recursively.
 
@@ -247,7 +248,9 @@ def snapshot(
     }
     return {
         "repo": {
-            line for line in status.splitlines() if not _is_coordinator_record(line)
+            line
+            for line in status.splitlines()
+            if not _is_coordinator_record(line) and not _is_untracked_cache(line)
         },
         "sibling": siblings,
         "home": home,
@@ -269,6 +272,21 @@ def _is_coordinator_record(line: str) -> bool:
         )
 
     return all(is_record(path) for path in paths)
+
+
+def _is_untracked_cache(line: str) -> bool:
+    """Whether a porcelain status line is an untracked Python bytecode cache.
+
+    Interpreters (a test run the executor starts in the project, say) leave
+    ``__pycache__/*.pyc`` behind; the project does not need a ``.gitignore``
+    for that not to read as an outside write. Only ``??`` lines qualify: a
+    tracked file under ``__pycache__`` that the attempt changes or deletes
+    still counts as a write.
+    """
+    if not line.startswith("?? "):
+        return False
+    path = line[3:].strip().strip('"').replace("\\", "/")
+    return path.endswith(".pyc") or "__pycache__" in path.split("/")[:-1]
 
 
 def _registered_worktree_names(project: Path, directory: Path) -> set[str]:

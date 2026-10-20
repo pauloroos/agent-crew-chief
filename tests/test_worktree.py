@@ -48,16 +48,6 @@ def _make_repo(path: Path) -> Path:
     return path
 
 
-@pytest.fixture
-def home_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Redirect ``Path.home()`` to an empty temporary directory."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    return home
-
-
 # --- cases from the brief --------------------------------------------------
 
 
@@ -184,6 +174,57 @@ def test_write_in_main_repo_is_outside_write(git_repo: Path, home_dir: Path):
     after = snapshot(git_repo, worktree)
     writes = outside_writes(before, after)
     assert any(w.startswith("repo:") and "leak.txt" in w for w in writes), writes
+
+
+def test_untracked_python_cache_is_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    # An executor that runs pytest in the project leaves __pycache__ behind;
+    # a project without .gitignore should not fail containment for that.
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+    cache = git_repo / "tests" / "__pycache__"
+    cache.mkdir(parents=True)
+    (cache / "x.cpython-314.pyc").write_bytes(b"pyc")
+
+    after = snapshot(git_repo, worktree)
+
+    assert outside_writes(before, after) == []
+
+
+def test_untracked_notes_file_is_still_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    (git_repo / "notes.txt").write_text("notes\n", encoding="utf-8")
+
+    after = snapshot(git_repo, worktree)
+
+    assert outside_writes(before, after) == ["repo: ?? notes.txt"]
+
+
+def test_tracked_python_cache_change_is_still_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    # Only untracked bytecode is interpreter noise; a project that tracks a
+    # .pyc sees a modification to it as a write like any other.
+    tracked = git_repo / "tests" / "__pycache__" / "x.cpython-314.pyc"
+    tracked.parent.mkdir(parents=True)
+    tracked.write_bytes(b"pyc")
+    _git(git_repo, "add", "-f", str(tracked))
+    _git(git_repo, "commit", "-m", "track cache")
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    tracked.write_bytes(b"changed")
+
+    after = snapshot(git_repo, worktree)
+
+    assert outside_writes(before, after) == [
+        "repo:  M tests/__pycache__/x.cpython-314.pyc"
+    ]
 
 
 def test_write_in_sibling_dir_is_outside_write(git_repo: Path, home_dir: Path):
