@@ -15,10 +15,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import tiers
 from .records import WORK_TYPES
 
 # Fixed vocabularies (see global constraints).
-COST_VALUES = ("free", "paid", "forbidden")
+#: Cost ladder, cheapest first; ``forbidden`` stays outside it.
+TIER_ORDER = tiers.TIER_ORDER
+COST_VALUES = (*TIER_ORDER, "forbidden")
 KIND_VALUES = ("claude-code", "opencode", "codex", "antigravity", "generic")
 ISSUE_TRACKERS = ("none", "github", "plane", "linear", "other")
 CHANGELOG_VALUES = ("keep-a-changelog", "none")
@@ -41,6 +44,10 @@ DEFAULT_QUOTA_COOLDOWN_MIN = 60
 DEFAULT_ALERT_COORDINATOR_SHARE = 0.5
 DEFAULT_ALERT_ATTEMPTS_PER_PIECE = 2.5
 DEFAULT_ALERT_JOB_MINUTES = 180
+
+#: Markers of the block ``acc setup`` manages in the global preferences file.
+SETUP_BEGIN = "# >>> acc setup >>>"
+SETUP_END = "# <<< acc setup <<<"
 
 #: Tools whose free executors come first on execution work (``exec_first``).
 DEFAULT_EXEC_FIRST = ["opencode"]
@@ -123,6 +130,14 @@ class Prefs:
     changelog: str = DEFAULT_CHANGELOG
     #: Path of the project CHANGELOG, relative to the project root.
     changelog_path: str = DEFAULT_CHANGELOG_PATH
+    #: Paid-by-use spending limits in US dollars (``0`` = no cheap models).
+    cheap_budget_usd_day: float = 0.0
+    cheap_budget_usd_job: float = 0.0
+    #: ``[[models]]`` rules of the ``acc setup`` block (global file), kept
+    #: apart: they rank below the user's own rules and above the built-ins.
+    setup_models: list[dict] = field(default_factory=list)
+    #: Whether :data:`tiers.BUILTIN_RULES` take part in :func:`classify`.
+    builtin_tiers: bool = True
 
 
 def tool_work_types(tool: dict) -> tuple[str, ...]:
@@ -140,12 +155,50 @@ def tool_work_types(tool: dict) -> tuple[str, ...]:
     return DEFAULT_WORK_TYPES_BY_KIND.get(tool.get("kind"), WORK_TYPES)
 
 
-def _read_toml(path: Path) -> dict[str, Any]:
-    """Read and parse one TOML file, converting errors to :class:`PrefsError`."""
+def _read_toml(path: Path, split_setup: bool = False) -> Any:
+    """Read and parse one TOML file, converting errors to :class:`PrefsError`.
+
+    With ``split_setup`` the managed ``acc setup`` block is cut out of the
+    text (its lines are blanked so error line numbers stay right) and the
+    result is ``(data, setup_data)``; ``setup_data`` is ``{}`` without a block.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise PrefsError(f"{path}: cannot read preferences file: {exc}") from exc
+    if split_setup:
+        rest, block = _split_setup_block(text)
+        data = _parse_toml(path, rest)
+        setup_data = _parse_toml(path, block) if block is not None else {}
+        return data, setup_data
+    return _parse_toml(path, text)
+
+
+def _split_setup_block(text: str) -> tuple[str, str | None]:
+    """Cut the first complete ``acc setup`` block out of ``text``.
+
+    Returns ``(rest, block)``: ``rest`` keeps one blank line per line removed,
+    ``block`` is the text between the markers (``None`` when there is no
+    complete block; a lone marker is then just a TOML comment).
+    """
+    lines = text.splitlines(keepends=True)
+    begin = next(
+        (i for i, line in enumerate(lines) if line.strip() == SETUP_BEGIN), None
+    )
+    if begin is None:
+        return text, None
+    end = next(
+        (i for i in range(begin + 1, len(lines)) if lines[i].strip() == SETUP_END),
+        None,
+    )
+    if end is None:
+        return text, None
+    block = "".join(lines[begin + 1 : end])
+    blanks = ["\n"] * (end - begin + 1)
+    return "".join([*lines[:begin], *blanks, *lines[end + 1 :]]), block
+
+
+def _parse_toml(path: Path, text: str) -> dict[str, Any]:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
@@ -197,6 +250,13 @@ def _validate_model(path: Path, rule: dict[str, Any]) -> None:
             f"{path}: [[models]] rule {match!r}: invalid cost {cost!r} "
             f"(expected one of {', '.join(COST_VALUES)})"
         )
+    cap = rule.get("cap_usd_day")
+    if cap is not None:
+        if isinstance(cap, bool) or not isinstance(cap, (int, float)) or cap < 0:
+            raise PrefsError(
+                f"{path}: [[models]] rule {match!r}: cap_usd_day must be a "
+                f"number of 0 or more, got {cap!r}"
+            )
 
 
 def _validate_file(path: Path, data: dict[str, Any]) -> None:
@@ -217,6 +277,8 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
         "alert_coordinator_share",
         "alert_attempts_per_piece",
         "alert_job_minutes",
+        "cheap_budget_usd_day",
+        "cheap_budget_usd_job",
     ):
         value = data.get(key)
         if value is None:
@@ -234,6 +296,12 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
         raise PrefsError(
             f"{path}: ignore_home_entries must be a list of entry names, "
             f"got {ignore_home!r}"
+        )
+
+    builtin_tiers = data.get("builtin_tiers")
+    if builtin_tiers is not None and not isinstance(builtin_tiers, bool):
+        raise PrefsError(
+            f"{path}: builtin_tiers must be true or false, got {builtin_tiers!r}"
         )
 
     exec_first = data.get("exec_first")
@@ -324,11 +392,13 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
     if global_path is None:
         global_path = default_global_path()
     global_data: dict[str, Any] = {}
+    setup_data: dict[str, Any] = {}
     if global_path is not None:
         global_path = Path(global_path)
         if global_path.is_file():
-            global_data = _read_toml(global_path)
+            global_data, setup_data = _read_toml(global_path, split_setup=True)
             _validate_file(global_path, global_data)
+            _validate_file(global_path, setup_data)
 
     project_data: dict[str, Any] = {}
     if project_file.is_file():
@@ -349,6 +419,8 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
             return project_data[key]
         if key in global_data:
             return global_data[key]
+        if key in setup_data:
+            return setup_data[key]
         return default
 
     return Prefs(
@@ -373,9 +445,14 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         exec_first=list(pick("exec_first", DEFAULT_EXEC_FIRST)),
         changelog=pick("changelog", DEFAULT_CHANGELOG),
         changelog_path=pick("changelog_path", DEFAULT_CHANGELOG_PATH),
+        cheap_budget_usd_day=float(pick("cheap_budget_usd_day", 0.0)),
+        cheap_budget_usd_job=float(pick("cheap_budget_usd_job", 0.0)),
+        setup_models=list(setup_data.get("models", [])),
+        builtin_tiers=pick("builtin_tiers", True),
         ignore_home_entries=list(
             dict.fromkeys(
                 [
+                    *setup_data.get("ignore_home_entries", []),
                     *global_data.get("ignore_home_entries", []),
                     *project_data.get("ignore_home_entries", []),
                 ]
@@ -384,26 +461,43 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
     )
 
 
+def _rule_layers(prefs: Prefs) -> list[list[dict]]:
+    """Rule lists in precedence order: user, setup block, built-ins."""
+    layers = [prefs.models, prefs.setup_models]
+    if prefs.builtin_tiers:
+        layers.append(list(tiers.BUILTIN_RULES))
+    return layers
+
+
+def _first_match(executor_id: str, prefs: Prefs) -> dict | None:
+    for layer in _rule_layers(prefs):
+        for rule in layer:
+            if fnmatch.fnmatchcase(executor_id, rule["match"]):
+                return rule
+    return None
+
+
 def classify(
     executor_id: str, prefs: Prefs, tool_default: str | None = None
 ) -> tuple[str, bool]:
     """Classify an executor id as ``(cost, trains)``.
 
-    A ``cost = "forbidden"`` rule at any level (project or global) wins over
-    every other match, so an operator can forbid an executor globally even
-    when the project grants it. Otherwise the first matching ``[[models]]``
-    rule (fnmatch on the executor id) wins. With no match the result is
-    ``(tool_default or "paid", False)``. When ``prefs.forbid_training`` is set
-    and the matched rule trains, the cost becomes ``"forbidden"``.
+    A ``cost = "forbidden"`` rule in any layer wins over every other match, so
+    an operator can forbid an executor globally even when the project grants
+    it. Otherwise the first matching rule (fnmatch on the executor id) wins:
+    the user's own ``[[models]]`` (project, then global outside the setup
+    block), then the ``acc setup`` block, then :data:`tiers.BUILTIN_RULES`.
+    With no match the result is ``(tool_default or "paid", False)``. When
+    ``prefs.forbid_training`` is set and the matched rule trains, the cost
+    becomes ``"forbidden"``.
     """
-    first: dict | None = None
-    for rule in prefs.models:
-        if not fnmatch.fnmatchcase(executor_id, rule["match"]):
-            continue
-        if rule["cost"] == "forbidden":
-            return "forbidden", bool(rule.get("trains", False))
-        if first is None:
-            first = rule
+    for layer in _rule_layers(prefs):
+        for rule in layer:
+            if rule["cost"] == "forbidden" and fnmatch.fnmatchcase(
+                executor_id, rule["match"]
+            ):
+                return "forbidden", bool(rule.get("trains", False))
+    first = _first_match(executor_id, prefs)
     if first is None:
         return (tool_default or "paid"), False
     cost = first["cost"]
@@ -411,3 +505,14 @@ def classify(
     if prefs.forbid_training and trains:
         cost = "forbidden"
     return cost, trains
+
+
+def model_cap(executor_id: str, prefs: Prefs) -> float | None:
+    """``cap_usd_day`` of the first rule matching ``executor_id``, else ``None``.
+
+    Uses the same precedence as :func:`classify`.
+    """
+    rule = _first_match(executor_id, prefs)
+    if rule is None or rule.get("cap_usd_day") is None:
+        return None
+    return float(rule["cap_usd_day"])

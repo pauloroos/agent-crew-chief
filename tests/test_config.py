@@ -63,7 +63,7 @@ def test_invalid_toml_names_file(tmp_path):
 
 def test_bad_cost_value_rejected(tmp_path):
     (tmp_path / "docs/crew-chief").mkdir(parents=True)
-    (tmp_path / "docs/crew-chief/preferences.toml").write_text('[[models]]\nmatch="*"\ncost="cheap"\n', encoding="utf-8")
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text('[[models]]\nmatch="*"\ncost="bogus"\n', encoding="utf-8")
     with pytest.raises(PrefsError, match="cost"):
         load_prefs(tmp_path, tmp_path / "n.toml")
 
@@ -310,3 +310,86 @@ def test_changelog_path_must_be_a_non_empty_string(tmp_path, value):
         f"changelog_path = {value}\n", encoding="utf-8")
     with pytest.raises(PrefsError, match="changelog_path"):
         load_prefs(tmp_path, tmp_path / "n.toml")
+
+
+def test_cap_usd_day_validated_and_read(tmp_path):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    path = tmp_path / "docs/crew-chief/preferences.toml"
+    path.write_text(
+        '[[models]]\nmatch = "opencode:openrouter/a"\ncost = "cheap"\ncap_usd_day = 1.5\n',
+        encoding="utf-8")
+    prefs = load_prefs(tmp_path, tmp_path / "n.toml")
+    assert prefs.models[0]["cap_usd_day"] == 1.5
+    for bad in ("-1", '"3"', "true"):
+        path.write_text(
+            f'[[models]]\nmatch = "x"\ncost = "cheap"\ncap_usd_day = {bad}\n',
+            encoding="utf-8")
+        with pytest.raises(PrefsError, match="cap_usd_day"):
+            load_prefs(tmp_path, tmp_path / "n.toml")
+
+
+def test_cheap_budget_prefs_default_zero_and_reject_negative(tmp_path):
+    prefs = load_prefs(tmp_path, tmp_path / "n.toml")
+    assert prefs.cheap_budget_usd_day == 0.0 and prefs.cheap_budget_usd_job == 0.0
+    assert prefs.setup_models == [] and prefs.builtin_tiers is True
+    g = tmp_path / "g.toml"
+    g.write_text("cheap_budget_usd_day = 2\ncheap_budget_usd_job = 0.5\n", encoding="utf-8")
+    prefs = load_prefs(tmp_path, g)
+    assert prefs.cheap_budget_usd_day == 2.0 and prefs.cheap_budget_usd_job == 0.5
+    for key in ("cheap_budget_usd_day", "cheap_budget_usd_job"):
+        g.write_text(f"{key} = -1\n", encoding="utf-8")
+        with pytest.raises(PrefsError, match=key):
+            load_prefs(tmp_path, g)
+
+
+SETUP_GLOBAL = (
+    'explore_rate = 0.3\n'
+    '[[models]]\nmatch = "opencode:mine/*"\ncost = "free"\n'
+    '# >>> acc setup >>>\n'
+    'cheap_budget_usd_day = 3\n'
+    'explore_rate = 0.9\n'
+    'forbid_training = true\n'
+    '[[models]]\nmatch = "claude:*"\ncost = "included"\n'
+    '# <<< acc setup <<<\n'
+    '[[models]]\nmatch = "opencode:late/*"\ncost = "cheap"\n'
+)
+
+
+def test_setup_block_parsed_from_global_file(tmp_path):
+    g = tmp_path / "g.toml"
+    g.write_text(SETUP_GLOBAL, encoding="utf-8")
+    prefs = load_prefs(tmp_path, g)
+    assert [r["match"] for r in prefs.setup_models] == ["claude:*"]
+    # Rules outside the block stay with the user's own models.
+    assert [r["match"] for r in prefs.models] == ["opencode:mine/*", "opencode:late/*"]
+    # Scalars: the user's text outside the block wins; the block fills the rest.
+    assert prefs.explore_rate == 0.3
+    assert prefs.cheap_budget_usd_day == 3.0 and prefs.forbid_training is True
+
+
+def test_project_scalar_beats_setup_block_scalar(tmp_path):
+    g = tmp_path / "g.toml"
+    g.write_text(SETUP_GLOBAL, encoding="utf-8")
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        "cheap_budget_usd_day = 0\n", encoding="utf-8")
+    assert load_prefs(tmp_path, g).cheap_budget_usd_day == 0.0
+
+
+def test_setup_block_handles_crlf_and_reports_block_errors(tmp_path):
+    g = tmp_path / "g.toml"
+    g.write_bytes(SETUP_GLOBAL.replace("\n", "\r\n").encode("utf-8"))
+    prefs = load_prefs(tmp_path, g)
+    assert [r["match"] for r in prefs.setup_models] == ["claude:*"]
+    g.write_text(
+        '# >>> acc setup >>>\n[[models]]\nmatch = "x"\ncost = "nope"\n# <<< acc setup <<<\n',
+        encoding="utf-8")
+    with pytest.raises(PrefsError, match="invalid cost"):
+        load_prefs(tmp_path, g)
+
+
+def test_lone_setup_marker_is_just_a_comment(tmp_path):
+    g = tmp_path / "g.toml"
+    g.write_text('# >>> acc setup >>>\nexplore_rate = 0.4\n', encoding="utf-8")
+    prefs = load_prefs(tmp_path, g)
+    assert prefs.explore_rate == 0.4 and prefs.setup_models == []

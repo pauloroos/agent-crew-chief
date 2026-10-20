@@ -435,7 +435,7 @@ def test_dispatch_with_no_change_exits_1_and_accept_refuses_it(
 
 def test_errors_exit_2_with_one_line(git_repo, capsys):
     repo = git_repo
-    _write_prefs(repo, '[[models]]\nmatch = "x:*"\ncost = "cheap"\n')
+    _write_prefs(repo, '[[models]]\nmatch = "x:*"\ncost = "bogus"\n')
 
     assert main(["discover", "--project", str(repo)]) == 2
 
@@ -739,7 +739,7 @@ def test_job_new_survives_a_broken_discovery(git_repo, monkeypatch, capsys):
 
 def test_job_new_survives_invalid_preferences(git_repo, capsys):
     repo = git_repo
-    _write_prefs(repo, '[[models]]\nmatch = "x:*"\ncost = "cheap"\n')
+    _write_prefs(repo, '[[models]]\nmatch = "x:*"\ncost = "bogus"\n')
     request = _write(repo / "request.md", "Do it.\n")
     assert main(["job", "new", "--project", str(repo), "--title", "T",
                  "--request-file", str(request)]) == 0
