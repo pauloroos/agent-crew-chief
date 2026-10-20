@@ -71,6 +71,14 @@
 # alert_attempts_per_piece = 2.5
 # alert_job_minutes = 180
 
+# Paid-by-use spending limits, in US dollars. `cheap` models are used only while
+# the day's spend across every project is under cheap_budget_usd_day; 0 keeps
+# the cheap tier closed ("run setup to allow cheap models"). cheap_budget_usd_job
+# (0 = no job ceiling) caps a single job. One attempt can go over the daily
+# ceiling by at most its own cost, since the check runs before the attempt.
+# cheap_budget_usd_day = 2
+# cheap_budget_usd_job = 1
+
 # Tools whose free executors `pick` tries first on hands-on work (code, tests,
 # refactor, docs, data), before any other free executor. Hands-on work never
 # goes to a paid executor unless the coordinator passes `--strong`; thinking
@@ -89,9 +97,13 @@
 # --- models ----------------------------------------------------------------
 #
 # `match` is an fnmatch glob tested against the executor id "<tool>:<model>".
-# The first matching rule wins. `cost` is free, paid or forbidden; `trains` says
-# whether the provider may train on what you send it. A model matched by no
-# rule is `paid`.
+# The first matching rule wins. `cost` is free, included, cheap, paid or
+# forbidden; `trains` says whether the provider may train on what you send it.
+# `included` means a subscription you already pay for (a Codex or Claude plan,
+# promoted by `acc setup`); `cheap` is pay per use, used only within the
+# budget. `cap_usd_day` (optional) caps what one executor may spend per day and
+# also lets an executor whose cost is unknown in, up to that cap. A model
+# matched by no rule is `paid`.
 
 # Preview and contributor models are free but may train on your traffic; these
 # two rules must stay before the generic ones below, because the first match
@@ -117,6 +129,17 @@ cost = "free"
 [[models]]
 match = "antigravity:*"
 cost = "free"
+
+# A subscription you pay for, promoted by `acc setup` when it detects the plan:
+# [[models]]
+# match = "codex:*"
+# cost = "included"
+
+# A pay-per-use model with a daily cap (also lets an unknown-cost model in):
+# [[models]]
+# match = "opencode:openrouter/*"
+# cost = "cheap"
+# cap_usd_day = 1
 
 # --- tools -----------------------------------------------------------------
 #

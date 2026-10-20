@@ -159,6 +159,64 @@ duração do job fica no registro do job (a linha `Time` do `.md`) e é o que o
 `0` desliga um alerta. A skill manda o coordenador ler os alertas: se ele gasta
 mais do que delega, deve dividir menos e fazer o trabalho direto.
 
+### Degraus de custo, o teto e o `setup`
+
+Todo executor fica numa escada de quatro degraus, do mais barato ao mais caro;
+`forbidden` fica fora dela:
+
+| Degrau | Significado | Quando o `pick` usa |
+| --- | --- | --- |
+| `free` | Sem dinheiro e sem assinatura (prévias grátis, modelos contributor, cota do Antigravity) | Primeiro, em toda peça |
+| `included` | Coberto por uma assinatura que você já paga (um plano Codex ou Claude) | Quando não sobra executor grátis para a peça |
+| `cheap` | Pago por uso (OpenRouter, modelos pagos do OpenCode) | Só enquanto o gasto do dia estiver abaixo de `cheap_budget_usd_day` |
+| `paid` | Pago por uso, o recurso forte | Só trabalho de pensar, ou qualquer trabalho com `--strong` |
+
+O `pick` sobe um degrau só quando um degrau acaba — nunca só porque um executor
+grátis falhou. Trabalho braçal nunca chega a `paid` sem `--strong`; com ele,
+`included` e `cheap` ainda são tentados antes. As tentativas começam no esforço
+mais baixo que serve à peça, e uma tentativa `quota` ou `brief_refused` não sobe
+esse teto. Rode o CLI como coordenador com `--coordinator <tool>` (padrão
+`$CREW_CHIEF_COORDINATOR`) para o `pick` usar o seu próprio CLI — ou a família
+de assinatura dele — por último entre os `included`; `--allow-own-cli` desliga
+isso.
+
+O `setup` lê a máquina e escreve os degraus para você:
+
+```bash
+crew-chief setup --project .          # pergunta uma coisa de cada vez
+crew-chief setup --yes --project .    # não pergunta nada: assinaturas não, teto 0, sem treino
+```
+
+Ele encontra os CLIs no `PATH`, seus modelos e o tipo de cada login (conta ou
+chave de API — nunca o valor), pergunta só o que não consegue deduzir, imprime a
+contagem por degrau e escreve um bloco gerenciado em
+`~/.config/agent-crew-chief/preferences.toml`, entre `# >>> acc setup >>>` e
+`# <<< acc setup <<<`, sem tocar no resto do arquivo. Precisa de um terminal, a
+menos que use `--yes`; nunca guarda o valor de uma chave, só o tipo de login e
+os nomes das variáveis de ambiente. `--lang pt|en` escolhe o idioma (padrão: o
+idioma do sistema). Enquanto não existe bloco, o `discover` imprime
+`run setup to configure cost tiers`. **Numa primeira instalação, rode
+`setup --yes`.**
+
+Toda tentativa `cheap` ou `paid` grava uma linha JSON em `spend.jsonl`, ao lado
+do arquivo global de preferências, seja qual for o projeto. O `pick` e o
+`dispatch` o leem antes de gastar: `cheap_budget_usd_day` é o teto diário entre
+projetos (`0` mantém o degrau barato fechado), `cheap_budget_usd_job` limita um
+job e uma regra `[[models]]` pode ter `cap_usd_day` para limitar um executor.
+Dois limites honestos: uma tentativa pode passar do teto diário em no máximo o
+próprio custo (a checagem acontece antes da tentativa) e várias tentativas ao
+mesmo tempo podem passar na checagem e, juntas, estourar o teto. Não há limite
+de tokens por tentativa, porque nenhum CLI suportado aceita um. Um modelo barato
+de custo desconhecido, sem `cap_usd_day`, ganha uma tentativa de sondagem por
+executor por dia (só enquanto o teto está aberto); depois disso fica fechado até
+você definir um teto.
+
+Os `sensitive_paths` do projeto escondem arquivos e pastas de uma worktree de
+execução: cada entrada é um prefixo de caminho ou um curinga fnmatch, e um
+prefixo como `.env` também esconde `.env.example`. Um brief que cita um caminho
+sensível é recusado como `brief_refused`, e a worktree é checada de novo depois
+da execução — um caminho achado ali é anotado na tentativa.
+
 ### Junto com o superpowers
 
 Se as skills do [superpowers](https://github.com/obra/superpowers) também estão
@@ -168,11 +226,11 @@ plano. O trecho instalado diz isso numa linha.
 ## Instalação
 
 ```bash
-git clone --branch v0.3.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.3.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe o `agent-crew-chief-v0.3.0.zip` da
+Sem git? Baixe o `agent-crew-chief-v0.3.1.zip` da
 [última release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 descompacte e rode `python install.py /caminho/do/projeto` de dentro da pasta.
 Fixe uma tag (`--branch vX.Y.Z`) para nunca instalar código no meio de uma mudança;
@@ -231,7 +289,8 @@ vence), e as tabelas `[[tools]]` / `[[models]]` são mescladas por `name` /
 Os ids de executor têm o formato `<tool>:<model>`, por exemplo
 `opencode:opencode-go/longcat-2.5-preview-free`. Os vocabulários fixos são os
 tipos de trabalho `code, tests, refactor, design, docs, research, diagnosis,
-data, review`, o risco `low, medium, high` e o custo `free, paid, forbidden`.
+data, review`, o risco `low, medium, high` e o custo `free, included, cheap,
+paid, forbidden`.
 
 Exemplo:
 
@@ -301,13 +360,15 @@ Todas as chaves:
 | `strong_order` | Ferramentas tentadas quando o trabalho escala para um modelo pago, da melhor para a pior. Uma ferramenta não listada vai para o fim. |
 | `explore_rate` | Chance (de 0 a 1) de uma parte de risco baixo ir para um executor sem histórico ou abaixo da mediana em vez do melhor colocado. Padrão `0.1`. |
 | `forbid_training` | Quando true, um modelo cuja regra define `trains = true` é tratado como `forbidden` e nunca é despachado. |
-| `sensitive_paths` | Padrões fnmatch de caminhos que um brief nunca pode citar, por exemplo `[".env", "secrets/*"]`. Um brief que cita um deles é recusado como `brief_refused`. |
+| `sensitive_paths` | Padrões fnmatch e prefixos de caminho que um brief nunca pode citar, por exemplo `[".env", "secrets/*"]`. Um brief que cita um deles é recusado como `brief_refused`; os arquivos rastreados também são escondidos de uma pasta de execução. Um prefixo como `.env` também esconde `.env.example`. |
 | `issue_tracker` | `none`, `github`, `plane`, `linear` ou `other`; usado pelo `close`. |
 | `changelog` | `keep-a-changelog` (padrão) ou `none`. O `close` põe o job no CHANGELOG do projeto em `## [Unreleased]` (`Added` para feat, `Fixed` para fix, `Changed` para refactor e perf), uma vez por job, mantendo CRLF e BOM; docs, tests e chores não geram entrada. `close --no-changelog` pula. |
 | `changelog_path` | Arquivo do CHANGELOG, relativo ao projeto. Padrão `CHANGELOG.md`. |
 | `alert_coordinator_share` | Alerta quando o coordenador gastou mais que essa fatia (0 a 1) dos tokens de um job. Padrão `0.5`; `0` desliga. |
 | `alert_attempts_per_piece` | Alerta quando um job tem, em média, mais tentativas de execução por peça que isso. Padrão `2.5`; `0` desliga. |
 | `alert_job_minutes` | Alerta quando um job demorou mais que esses minutos. Padrão `180`; `0` desliga. |
+| `cheap_budget_usd_day` | Teto diário, em dólares, para modelos `cheap` em todos os projetos. `0` (padrão) mantém o degrau barato fechado. Uma tentativa pode passar do teto em no máximo o próprio custo. |
+| `cheap_budget_usd_job` | Teto, em dólares, para modelos `cheap` em um job. `0` (padrão) significa sem teto por job. |
 | `dispatch_timeout_s` | Limite rígido de uma tentativa, em segundos. Ao estourar, a árvore de processos é morta e a tentativa é registrada como `timeout`. Padrão `900`. |
 | `review_default` | Id de executor usado nas revisões quando o coordenador não tem ideia melhor, por exemplo `codex:gpt-5-codex`. Vazio significa "escolha um você mesmo" (`pick --review`). |
 | `exec_first` | Ferramentas cujos executores grátis o `pick` tenta primeiro no trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`), antes dos outros grátis. Padrão `["opencode"]`; `[]` desliga. |
@@ -318,8 +379,9 @@ regra que casa vence:
 | Chave | Significado |
 | --- | --- |
 | `match` | Glob testado contra `<tool>:<model>`. |
-| `cost` | `free`, `paid` ou `forbidden`. |
+| `cost` | `free`, `included` (uma assinatura que você paga), `cheap` (pago por uso), `paid` ou `forbidden`. |
 | `trains` | Se o provedor pode treinar com o que você envia. Com `forbid_training = true`, esse modelo vira `forbidden`. |
+| `cap_usd_day` | Opcional: o máximo que esse executor pode gastar num dia. Também deixa entrar um executor de custo desconhecido, até o teto. |
 
 `[[tools]]` descreve um CLI executor (as ferramentas embutidas `opencode`,
 `antigravity`, `codex`, `claude` e `cursor` sempre existem; uma entrada com o
@@ -502,6 +564,12 @@ que qualquer agente que leia um deles o encontre.
 - **Cotas são texto.** Uma falha de cota ou rate limit é detectada pelo texto de
   erro do próprio executor (`429`, `quota`, `rate limit`, `usage limit`, `too
   many requests`), então uma mensagem fora do padrão é registrada como `failed`.
+- **O teto de gasto é checado antes da tentativa.** Uma tentativa pode passar de
+  `cheap_budget_usd_day` em no máximo o próprio custo, e várias tentativas ao
+  mesmo tempo podem passar na checagem e, juntas, estourar o teto. Não existe
+  limite de tokens por tentativa, porque nenhum CLI suportado aceita um. Um
+  modelo barato de custo desconhecido, sem `cap_usd_day`, ganha uma única
+  tentativa de sondagem por executor por dia, enquanto o teto está aberto.
 - **Um timeout mata a árvore de processos** (`taskkill /T` no Windows, o grupo de
   processos nos demais) e deixa a worktree para inspeção; ele não desfaz efeitos
   colaterais que o executor já tenha causado fora da worktree.

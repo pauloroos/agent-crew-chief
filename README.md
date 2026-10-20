@@ -155,6 +155,62 @@ record (the `Time` line of its `.md`) and is what `alert_job_minutes` checks:
 `0` turns an alert off. The skill tells the coordinator to read them: if it
 spends more than it delegates, it should split less and do the work itself.
 
+### Cost tiers, the budget and `setup`
+
+Every executor sits on a four-step ladder, cheapest first; `forbidden` stays
+outside it:
+
+| Tier | Meaning | When `pick` uses it |
+| --- | --- | --- |
+| `free` | No money, no subscription (free previews, contributor models, Antigravity quota) | First, for every piece |
+| `included` | Covered by a subscription you already pay for (a Codex or Claude plan) | When no free executor is left for the piece |
+| `cheap` | Pay per use (OpenRouter, OpenCode paid models) | Only while the day's spend is under `cheap_budget_usd_day` |
+| `paid` | Pay per use, the strong fallback | Thinking work only, or any work with `--strong` |
+
+`pick` climbs a step only when a tier runs out — never because a free executor
+merely failed. Execution work never reaches `paid` without `--strong`; with it,
+`included` and `cheap` are still tried first. Attempts start at the lowest
+effort that suits the piece, and a `quota` or `brief_refused` attempt does not
+raise that ceiling. Run the CLI as the coordinator with `--coordinator <tool>`
+(default `$CREW_CHIEF_COORDINATOR`) so `pick` uses your own CLI — or its
+subscription family — last among the `included` executors; `--allow-own-cli`
+turns that off.
+
+`setup` reads the machine and writes the tiers for you:
+
+```bash
+crew-chief setup --project .          # asks one question at a time
+crew-chief setup --yes --project .    # asks nothing: subscriptions no, budget 0, no training
+```
+
+It finds the CLIs on `PATH`, their models and the kind of each login (account
+or API key — never the value), asks only what it cannot deduce, prints the count
+per tier and writes one managed block to
+`~/.config/agent-crew-chief/preferences.toml`, between `# >>> acc setup >>>`
+and `# <<< acc setup <<<`, leaving everything outside it alone. It needs a
+terminal unless `--yes` is given; it never stores a key value, only the kind of
+login and the names of environment variables. `--lang pt|en` sets the language
+(default: the system language). While no block exists, `discover` prints
+`run setup to configure cost tiers`. **For a first install, run `setup --yes`.**
+
+Every `cheap` or `paid` attempt appends one JSON line to `spend.jsonl`, next to
+the global preferences file, whichever project it ran in. `pick` and `dispatch`
+read it before spending: `cheap_budget_usd_day` is the daily ceiling across
+projects (`0` keeps the cheap tier closed), `cheap_budget_usd_job` caps one job,
+and a `[[models]]` rule may carry `cap_usd_day` to cap one executor. Two honest
+limits: one attempt can go over the daily ceiling by at most its own cost (the
+check runs before the attempt), and several attempts at once can each pass the
+check and together exceed it. There is no per-attempt token limit, because no
+supported CLI accepts one. A cheap model whose cost is unknown and which has no
+`cap_usd_day` gets one probe attempt per executor per day (only while the
+budget is open); afterwards it stays closed until you set a cap.
+
+The project's `sensitive_paths` hide files and folders from an exec worktree:
+each entry is a path prefix or an fnmatch wildcard, and a prefix like `.env`
+also hides `.env.example`. A brief that names a sensitive path is refused as
+`brief_refused`, and the worktree is checked again after the run — a path found
+then is noted on the attempt.
+
 ### Together with superpowers
 
 If the [superpowers](https://github.com/obra/superpowers) skills are installed
@@ -164,11 +220,11 @@ installed snippet says so in one line.
 ## Install
 
 ```bash
-git clone --branch v0.3.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.3.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.3.0.zip` from the
+No git? Download `agent-crew-chief-v0.3.1.zip` from the
 [latest release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 Pin a tag (`--branch vX.Y.Z`) so you never install code in the middle of a change;
@@ -227,7 +283,7 @@ project winning. A model matched by no rule is `paid`, and a rule with
 Executor ids look like `<tool>:<model>`, for example
 `opencode:opencode-go/longcat-2.5-preview-free`. The fixed vocabularies are work
 types `code, tests, refactor, design, docs, research, diagnosis, data, review`,
-risk `low, medium, high` and cost `free, paid, forbidden`.
+risk `low, medium, high` and cost `free, included, cheap, paid, forbidden`.
 
 Example:
 
@@ -296,13 +352,15 @@ Every key:
 | `strong_order` | Tools tried when the work escalates to a paid model, best first. A tool that is not listed sorts last. |
 | `explore_rate` | Chance (0 to 1) that a low-risk piece goes to an unrated or below-median executor instead of the best-scoring one. Default `0.1`. |
 | `forbid_training` | When true, a model whose rule sets `trains = true` is treated as `forbidden` and never dispatched. |
-| `sensitive_paths` | fnmatch patterns for paths a brief must never point at, for example `[".env", "secrets/*"]`. A brief that names one is refused as `brief_refused`. |
+| `sensitive_paths` | fnmatch patterns and path prefixes for files a brief must never point at, for example `[".env", "secrets/*"]`. A brief that names one is refused as `brief_refused`; the tracked matches are also hidden from an exec worktree. A prefix like `.env` also hides `.env.example`. |
 | `issue_tracker` | `none`, `github`, `plane`, `linear` or `other`; used by `close`. |
 | `changelog` | `keep-a-changelog` (default) or `none`. `close` adds the job to the project CHANGELOG under `## [Unreleased]` (`Added` for feat, `Fixed` for fix, `Changed` for refactor and perf), once per job, keeping CRLF and BOM; docs, tests and chores get no entry. `close --no-changelog` skips it. |
 | `changelog_path` | CHANGELOG file, relative to the project. Default `CHANGELOG.md`. |
 | `alert_coordinator_share` | Alert when the coordinator spent more than this share (0 to 1) of a job's tokens. Default `0.5`; `0` turns it off. |
 | `alert_attempts_per_piece` | Alert when a job averages more exec attempts per piece than this. Default `2.5`; `0` turns it off. |
 | `alert_job_minutes` | Alert when a job took longer than this many minutes. Default `180`; `0` turns it off. |
+| `cheap_budget_usd_day` | Daily ceiling, in US dollars, for `cheap` models across every project. `0` (default) keeps the cheap tier closed. One attempt can go over it by at most its own cost. |
+| `cheap_budget_usd_job` | Ceiling, in US dollars, for `cheap` models in one job. `0` (default) means no job ceiling. |
 | `dispatch_timeout_s` | Hard limit for one attempt, in seconds. On overrun the process tree is killed and the attempt is recorded as `timeout`. Default `900`. |
 | `review_default` | Executor id used for reviews when the coordinator has no better idea, for example `codex:gpt-5-codex`. Empty means "choose one yourself" (`pick --review`). |
 | `exec_first` | Tools whose free executors `pick` tries first on hands-on work (`code`, `tests`, `refactor`, `docs`, `data`), before the other free ones. Default `["opencode"]`; `[]` turns it off. |
@@ -313,8 +371,9 @@ wins:
 | Key | Meaning |
 | --- | --- |
 | `match` | Glob tested against `<tool>:<model>`. |
-| `cost` | `free`, `paid` or `forbidden`. |
+| `cost` | `free`, `included` (a subscription you pay for), `cheap` (pay per use), `paid` or `forbidden`. |
 | `trains` | Whether the provider may train on what you send it. With `forbid_training = true`, such a model becomes `forbidden`. |
+| `cap_usd_day` | Optional: the most this executor may spend in one day. It also lets an executor of unknown cost in, up to the cap. |
 
 `[[tools]]` describes one executor CLI (the built-in tools `opencode`,
 `antigravity`, `codex`, `claude` and `cursor` are always present; an entry with
@@ -494,6 +553,12 @@ agent that reads one of those picks it up.
 - **Quotas are text.** A quota or rate-limit failure is detected from the
   executor's own error text (`429`, `quota`, `rate limit`, `usage limit`, `too
   many requests`), so an unusual message is recorded as a plain `failed`.
+- **The spend ceiling is checked before the attempt.** `cheap_budget_usd_day`
+  can be passed by at most one attempt's own cost, and several attempts running
+  at once can each pass the check and together exceed the ceiling. There is no
+  per-attempt token limit, because no supported CLI accepts one. A cheap model
+  whose cost is unknown and has no `cap_usd_day` gets a single probe attempt per
+  executor per day, while the budget is open.
 - **A timeout kills the process tree** (`taskkill /T` on Windows, the process
   group elsewhere) and leaves the worktree for inspection; it cannot undo side
   effects the executor already had outside the worktree.

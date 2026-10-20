@@ -393,14 +393,30 @@ the piece or write the proof first. Tell the user when an alert fired.
 
 ### Cost tiers and `CC setup`
 
-Every executor sits on a four-step ladder: `free`, `included`, `cheap`, `paid`
-(plus `forbidden`, which wins at any level). `pick` climbs it on its own only
-when a tier runs out: execution work never reaches `paid` without `--strong`,
-and `cheap` is used only while the day's spend is under the global budget.
+Every executor sits on a four-step ladder, cheapest first, with `forbidden`
+outside it:
+
+| Tier | What it means | How `pick` uses it |
+| --- | --- | --- |
+| `free` | No money, no subscription (free previews, contributor models, Antigravity quota) | The first choice for every piece |
+| `included` | Covered by a subscription you already pay for (a Codex or Claude plan) | Next, once no free executor is left for the piece |
+| `cheap` | Pay per use (OpenRouter, OpenCode's paid models) | Only while the day's spend is under `cheap_budget_usd_day` |
+| `paid` | Pay per use, the strong fallback | Thinking work only, or any work with `--strong` |
+
+`pick` climbs one step only when a tier runs out (nobody free is left for the
+piece), never because a free executor merely failed. On execution work it never
+reaches `paid` without `--strong`; with `--strong` it still tries `included` and
+`cheap` before `paid`. Executors start at the **lowest effort** that suits the
+piece (a `-low` variant before `-medium`), and a `quota` or `brief_refused`
+attempt does not raise that ceiling. `--coordinator <tool>` (default
+`$CREW_CHIEF_COORDINATOR`) names the CLI you are running in, so `pick` uses its
+own CLI — or its subscription family — **last** among the `included` executors;
+`--allow-own-cli` drops that rule.
 
 When `discover` prints `run setup to configure cost tiers`, the global
-preferences file has no `acc setup` block yet: run it once with the user
-present, or accept the defaults:
+preferences file has no `acc setup` block yet. **For beginners: run
+`CC setup --yes`.** Otherwise run it once with the user present, or accept the
+defaults:
 
 ```bash
 CC setup --project .          # asks one question at a time
@@ -413,9 +429,40 @@ the Claude subscription is paid for, the daily budget for cheap models, and
 whether free models that train on what the user sends may be used), prints the
 count per tier and writes one managed block between `# >>> acc setup >>>` and
 `# <<< acc setup <<<` in `~/.config/agent-crew-chief/preferences.toml`,
-leaving everything outside it alone. It needs a terminal: without one and
-without `--yes` it exits `2` and writes nothing. `--lang pt|en` picks the
-language of the questions (default: the system language).
+leaving everything outside it alone. It never stores a key value — only the
+kind of login and the names of environment variables. It needs a terminal:
+without one and without `--yes` it exits `2` and writes nothing. `--lang pt|en`
+picks the language of the questions (default: the system language).
+
+A session looks like this:
+
+```text
+Do you pay for a Claude subscription (Pro/Max)? [y/N]
+Are you willing to spend money on cheap pay-per-use models when the free ones run out? How much per day, in dollars? [0] 2
+May we use free models that train on what you send? [y/N]
+your tiers: free 6 · included 1 · cheap 3 (budget US$ 2) · paid 2
+```
+
+**The spend log.** Every `cheap` or `paid` attempt writes one JSON line to
+`spend.jsonl`, next to the global preferences file, whichever project it ran
+in; `pick` and `dispatch` read it to check the budget. `cheap_budget_usd_day`
+is the global daily ceiling (`0` keeps the cheap tier closed; raise it in
+`setup` or in the preferences file), `cheap_budget_usd_job` caps one job, and a
+`[[models]]` rule may carry `cap_usd_day` to cap one executor. Two honest
+limits: **one attempt can go over the daily budget by at most its own cost**
+(the check happens before the run, and the cost is only known afterwards), and
+several attempts running at once can each pass the check and together exceed
+the budget. There is no per-attempt token limit because no supported CLI
+accepts one. A cheap model whose cost is unknown and which has no `cap_usd_day`
+gets **one probe attempt per executor per day** (only while the budget is above
+`0` and has room); after that it stays closed until a cap is set.
+
+**Sensitive paths.** The project's `sensitive_paths` name files and folders an
+executor must never see. Each entry is a path prefix or an fnmatch wildcard
+(`.env`, `secrets/*`): a prefix like `.env` also hides `.env.example`. `pick`
+and `dispatch` refuse a brief that names one, and `dispatch` hides the tracked
+matches from the exec worktree and checks the worktree again after the run — a
+path found afterwards is noted on the attempt.
 
 ## What stays with the coordinator
 

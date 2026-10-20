@@ -92,14 +92,29 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
-def test_version_is_0_3_0_and_changelog_has_its_section():
-    assert __version__ == "0.3.0"
+def test_version_is_0_3_1_and_changelog_has_its_section():
+    assert __version__ == "0.3.1"
     text = _read(CHANGELOG)
     heading = next(
         line for line in text.splitlines()
-        if line.startswith(("## [Unreleased]", "## [0.3.0]"))
+        if line.startswith(("## [Unreleased]", "## [0.3.1]"))
     )
     unreleased = text.split(heading + "\n", 1)[1].split("\n## [", 1)[0]
+    for needle in (
+        "included",
+        "cheap",
+        "setup",
+        "spend.jsonl",
+        "sensitive",
+        "0.3.1",
+    ):
+        assert needle in unreleased, needle
+
+
+def test_changelog_keeps_the_0_3_0_section():
+    """Bumping the version must not rewrite the released section."""
+    text = _read(CHANGELOG)
+    section = text.split("## [0.3.0]", 1)[1].split("\n## [", 1)[0]
     for needle in (
         "spec import",
         "brief render",
@@ -109,7 +124,81 @@ def test_version_is_0_3_0_and_changelog_has_its_section():
         "economy",
         "crew.toml",
     ):
-        assert needle in unreleased, needle
+        assert needle in section, needle
+
+
+def test_skill_documents_tiers_and_setup():
+    text = _read(SKILL_MD)
+    for needle in (
+        "free",
+        "included",
+        "cheap",
+        "paid",
+        "setup --yes",
+        "--allow-own-cli",
+        "cheap_budget_usd_day",
+    ):
+        assert needle in text, needle
+
+
+def test_readmes_mention_spend_log():
+    for path in (README, README_PT):
+        assert "spend.jsonl" in _read(path), path.name
+
+
+def test_skill_documents_the_cost_ladder_and_its_limits():
+    text = " ".join(_read(SKILL_MD).split())
+    for needle in (
+        "free",
+        "included",
+        "cheap",
+        "paid",
+        "setup --yes",
+        "For beginners",
+        "--allow-own-cli",
+        "CREW_CHIEF_COORDINATOR",
+        "cheap_budget_usd_day",
+        "cheap_budget_usd_job",
+        "cap_usd_day",
+        "spend.jsonl",
+        "sensitive_paths",
+        "its own cost",
+        "lowest effort",
+    ):
+        assert needle in text, needle
+
+
+def test_readmes_document_the_cost_ladder_and_setup():
+    for path in (README, README_PT):
+        text = _read(path)
+        for needle in (
+            "free",
+            "included",
+            "cheap",
+            "paid",
+            "setup --yes",
+            "cheap_budget_usd_day",
+            "cheap_budget_usd_job",
+            "cap_usd_day",
+            "sensitive_paths",
+        ):
+            assert needle in text, (path.name, needle)
+
+
+def test_preferences_example_documents_the_cost_keys():
+    text = _read(
+        ROOT / "skill" / "crew-chief" / "templates" / "preferences.example.toml"
+    )
+    for needle in (
+        "cheap_budget_usd_day",
+        "cheap_budget_usd_job",
+        "cap_usd_day",
+        "sensitive_paths",
+        "forbid_training",
+        "quota_cooldown_min",
+        "included",
+    ):
+        assert needle in text, needle
 
 
 def test_no_invisible_bom_characters_in_sources():

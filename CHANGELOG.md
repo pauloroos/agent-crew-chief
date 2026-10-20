@@ -4,6 +4,21 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [Unreleased]
+
+### Added
+- **Cost tiers:** every executor now sits on a four-step ladder, cheapest first: `free`, `included`, `cheap`, `paid` (`forbidden` stays outside it). A `[[models]]` rule may set `cost = "included"` for a model a subscription already pays for. Built-in patterns (`scripts/crew_chief/tiers.py`) classify the common free models and the subscription CLIs, and a tool's `cost_default` covers the rest; the user's own rules win, then the `acc setup` block, then the built-ins. `discover` prints each executor's cost.
+- **`acc setup`:** detects the executor CLIs on `PATH`, their models and the kind of each login (account or API key — never the value), asks only what it cannot deduce (whether the Claude subscription is paid for, the daily budget for cheap models, whether free models that train on your traffic may be used), prints the count per tier and writes one managed block between `# >>> acc setup >>>` and `# <<< acc setup <<<` in the global preferences file, leaving everything the user wrote outside it byte for byte (CRLF and BOM kept). `--yes` accepts every default (subscriptions no, budget `0`, no training) and needs no terminal; without a terminal and without `--yes` it exits `2` and writes nothing. `--lang pt|en` sets the language (default: the system language). `discover` prints `run setup to configure cost tiers` while no block exists.
+- **Spend log and budget:** `spend.jsonl`, next to the global preferences file, gets one JSON line per `cheap`/`paid` attempt across every project, appended under `spend.lock`. New preferences `cheap_budget_usd_day` (daily ceiling across projects; `0` keeps the cheap tier closed) and `cheap_budget_usd_job` (per-job ceiling), plus an optional `cap_usd_day` on a `[[models]]` rule. `pick` uses the cheap tier only while the budget is open and `dispatch` re-checks it before running. An executor whose cost is unknown, with no cap, gets at most one probe attempt per day until a cap is set.
+- **Sensitive paths:** the project's `sensitive_paths` are hidden from an exec worktree (tracked matches are marked `git update-index --skip-worktree` and deleted, so they never show as a deletion) and checked again after the run; a path found afterwards is noted on the attempt.
+- `pick --coordinator <tool>` (default `$CREW_CHIEF_COORDINATOR`) and `--allow-own-cli`: the coordinator's own CLI, or its subscription family, is used last among the `included` executors unless `--allow-own-cli` is given.
+
+### Changed
+- `pick` climbs the cost ladder instead of choosing free executors only: a tier is left only when nobody in it is available, `cheap` only within the budget, and execution work reaches `paid` only with `--strong` (which tries `included` and `cheap` before `paid`).
+- Attempts start at the lowest effort that suits the piece, and a `quota` or `brief_refused` attempt no longer raises the effort ceiling.
+- `SKILL.md`, `README.md` and `README.pt-BR.md` document the ladder, `setup`, the budget, the spend log and the sensitive paths; `preferences.example.toml` gains the new keys.
+- `__version__` is `0.3.1`.
+
 ## [0.3.0] - 2026-10-20
 
 ### Added
