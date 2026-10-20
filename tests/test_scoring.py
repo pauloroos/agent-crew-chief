@@ -18,11 +18,15 @@ from crew_chief.records import (
     set_grade,
 )
 from crew_chief.scoring import (
+    _rank_key,
     PENALTIES,
     Stat,
     build_stats,
+    effort_ceiling,
+    effort_rank,
     free_failures,
     grade,
+    next_effort,
     pick,
     quota_cooldown,
     quota_family,
@@ -1302,3 +1306,174 @@ def test_pick_not_for_note_groups_by_tool():
 
     assert reason.endswith("; not for design: opencode")
     assert "m3-free" not in reason
+
+
+# --- subscription families and minimum effort ------------------------------
+
+
+def test_included_executors_share_subscription_family():
+    a = _ex("codex:a", cost="included")
+    b = _ex("codex:b-high", cost="included")
+
+    assert quota_family(a.id, a.cost) == "sub:codex"
+    assert quota_family(b.id, b.cost) == "sub:codex"
+    # Without the cost the behavior is the old per-model one.
+    assert quota_family(a.id) == "codex:a"
+    assert quota_family("codex:b-high") == "codex:b"
+    assert quota_family("claude:opus", "paid") == "claude:opus"
+    assert quota_family("sub:claude") == "sub:claude"
+
+
+def test_included_quota_pauses_every_model_of_the_cli():
+    opus = _ex("claude:opus", cost="included")
+    sonnet = _ex("claude:sonnet", cost="included")
+    flash = _ex("opencode:flash")
+
+    chosen, reason = pick(
+        [opus, sonnet, flash], {}, "code", "medium", _prefs(), set(),
+        _Rng(0.9), cooling={"claude:opus"},
+    )
+
+    assert chosen is flash
+    assert reason.endswith("skipped for quota: claude:opus, claude:sonnet")
+
+
+def test_quota_cooldown_adds_the_subscription_family_for_included(tmp_path):
+    attempt = _quota_attempt("claude:opus", 10)
+    attempt["cost"] = "included"
+    project = _project(tmp_path, [{"type": "code", "attempts": [attempt]}])
+
+    assert quota_cooldown(project, 60, now=NOW) == {"claude:opus", "sub:claude"}
+
+
+def test_rank_key_spread_counts_the_subscription_family():
+    # codex:a and codex:b share one plan: use of codex:a counts against codex:b.
+    b = _ex("codex:b", cost="included")
+    other = _ex("opencode:zeta", cost="included")
+    usage = ({"codex:a": 2}, {"codex": 2})
+    costs = {"codex:a": "included", "codex:b": "included",
+             "opencode:zeta": "included"}
+
+    assert _rank_key(b, {}, "code", usage, costs)[1] == 2
+    assert _rank_key(other, {}, "code", usage, costs)[1] == 0
+    # Without the cost map the two codex models would not be told apart.
+    assert _rank_key(b, {}, "code", usage)[1] == 0
+
+
+def test_effort_rank_by_suffix():
+    assert effort_rank("antigravity:gemini-3-pro-minimal") == 0
+    assert effort_rank("antigravity:gemini-3-pro-low") == 1
+    assert effort_rank("codex:gpt-5.5-medium") == 2
+    assert effort_rank("codex:gpt-5.5-high") == 3
+    assert effort_rank("codex:gpt-5.5-xhigh") == 4
+    assert effort_rank("claude:opus-max") == 5
+    assert effort_rank("opencode:deepseek-flash") == 1
+
+
+def test_pick_prefers_lowest_effort_variant():
+    low = _ex("antigravity:gemini-3-pro-low")
+    medium = _ex("antigravity:gemini-3-pro-medium")
+    high = _ex("antigravity:gemini-3-pro-high")
+    # A better score on the high variant does not lift it above the ceiling.
+    stats = _stats(("antigravity:gemini-3-pro-high", "code", 95.0, 10.0))
+    job = _job_with_picks([])
+
+    chosen, _ = pick([high, medium, low], stats, "code", "medium", _prefs(),
+                     set(), _Rng(0.9), job=job, piece=1)
+
+    assert chosen is low
+
+
+def test_pick_without_a_piece_still_takes_the_lowest_effort():
+    low = _ex("antigravity:gemini-3-pro-low")
+    high = _ex("antigravity:gemini-3-pro-high")
+
+    chosen, _ = pick([high, low], {}, "code", "medium", _prefs(), set(),
+                     _Rng(0.9))
+
+    assert chosen is low
+
+
+def test_pick_keeps_a_model_that_only_exists_at_high_effort():
+    high = _ex("antigravity:gemini-3-pro-high")
+
+    chosen, _ = pick([high], {}, "code", "medium", _prefs(), set(), _Rng(0.9))
+
+    assert chosen is high
+
+
+def _failed_attempt(executor: str, cost: str = "free") -> dict:
+    return {"executor": executor, "role": "exec", "status": "failed",
+            "cost": cost}
+
+
+def test_effort_ceiling_grows_with_family_failures():
+    job = _job_with_picks([])
+    piece = job["pieces"][0]
+
+    assert effort_ceiling(job, 1, "antigravity:gemini") == 1
+    assert effort_ceiling(None, None, "antigravity:gemini") == 1
+
+    piece["attempts"] = [
+        _failed_attempt("antigravity:gemini-3-pro-low"),
+        _failed_attempt("antigravity:gemini-3-pro-medium"),
+        _failed_attempt("opencode:other"),
+        {"executor": "antigravity:gemini-3-pro-low", "role": "exec",
+         "status": "ok", "cost": "free"},
+    ]
+    piece["corrections"] = [{"executor": "antigravity:gemini-3-pro-high"}]
+
+    assert effort_ceiling(job, 1, "antigravity:gemini") == 4
+    assert effort_ceiling(job, 1, "opencode:other") == 2
+    assert effort_ceiling(job, 9, "antigravity:gemini") == 1
+
+
+def test_effort_rises_after_failure_before_tier():
+    low = _ex("antigravity:gemini-3-pro-low")
+    medium = _ex("antigravity:gemini-3-pro-medium")
+    high = _ex("antigravity:gemini-3-pro-high")
+    included = _ex("codex:gpt-5.5-low", cost="included")
+    job = _job_with_picks([])
+    job["pieces"][0]["attempts"] = [
+        _failed_attempt("antigravity:gemini-3-pro-low")
+    ]
+
+    # Same outcome whether or not the caller excludes the variant that failed.
+    for exclude in (set(), {"antigravity:gemini-3-pro-low"}):
+        chosen, _ = pick(
+            [low, medium, high, included], {}, "code", "medium", _prefs(),
+            exclude, _Rng(0.9), job=job, piece=1,
+        )
+        assert chosen is medium
+
+    job["pieces"][0]["attempts"].append(
+        _failed_attempt("antigravity:gemini-3-pro-medium")
+    )
+    chosen, _ = pick([low, medium, high, included], {}, "code", "medium",
+                     _prefs(), set(), _Rng(0.9), job=job, piece=1)
+    assert chosen is high
+
+
+def test_effort_ceiling_ignores_other_families():
+    gemini_low = _ex("antigravity:gemini-3-pro-low")
+    gemini_med = _ex("antigravity:gemini-3-pro-medium")
+    job = _job_with_picks([])
+    job["pieces"][0]["attempts"] = [_failed_attempt("opencode:x-free")]
+
+    chosen, _ = pick([gemini_med, gemini_low], {}, "code", "medium", _prefs(),
+                     set(), _Rng(0.9), job=job, piece=1)
+
+    assert chosen is gemini_low
+
+
+def test_next_effort_for_flag_tools():
+    codex = {"name": "codex", "kind": "codex", "bin": "codex"}
+    generic = {"name": "g", "kind": "generic", "bin": "g"}
+    forced = {"name": "g", "kind": "generic", "bin": "g", "effort": True}
+    off = {"name": "ag", "kind": "antigravity", "bin": "ag", "effort": False}
+
+    assert [next_effort(codex, n) for n in range(5)] == [
+        "low", "medium", "high", "high", "high"]
+    assert next_effort(forced, 1) == "medium"
+    assert next_effort(generic, 1) is None
+    assert next_effort(off, 0) is None

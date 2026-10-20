@@ -26,6 +26,7 @@ from pathlib import Path
 
 from .discover import Discovery
 from .records import RecordError, crew_chief_dir, write_atomic
+from .tiers import TIER_ORDER
 from .tools import Executor
 
 #: File name of the registry inside ``docs/crew-chief``.
@@ -226,8 +227,18 @@ def _yes_no(value: object) -> str:
     return "yes" if value else "no"
 
 
+def _tier_index(cost: object) -> int:
+    """Position of ``cost`` on the ladder (``free`` first); others come last."""
+    return TIER_ORDER.index(cost) if cost in TIER_ORDER else len(TIER_ORDER)
+
+
 def render_changes(changes: ModelChanges) -> list[str]:
-    """Human-readable lines for ``changes``, free models first."""
+    """Human-readable lines for ``changes``, cheapest tier first.
+
+    Any tier change is reported as ``now <tier>: <id> (was <tier>, ...)``,
+    for example ``now cheap`` or ``now included`` after a rule moved a model
+    off ``paid``.
+    """
     if changes.error:
         return [f"models: not updated: {changes.error}"]
 
@@ -239,20 +250,22 @@ def render_changes(changes: ModelChanges) -> list[str]:
         lines.append(line)
 
     details: list[str] = []
-    for cost in ("free", "paid"):
-        for item in changes.added:
-            if (item["cost"] == "free") == (cost == "free"):
-                details.append(
-                    f"new {item['cost']}: {item['id']} "
-                    f"(trains={_yes_no(item['trains'])})"
-                )
+    for item in sorted(changes.added, key=lambda c: _tier_index(c["cost"])):
+        details.append(
+            f"new {item['cost']}: {item['id']} "
+            f"(trains={_yes_no(item['trains'])})"
+        )
     cost_changes = [c for c in changes.changed if c["cost"] != c["was_cost"]]
-    for item in sorted(cost_changes, key=lambda c: (c["cost"] != "free", c["id"])):
+    for item in sorted(
+        cost_changes, key=lambda c: (_tier_index(c["cost"]), c["id"])
+    ):
         details.append(
             f"now {item['cost']}: {item['id']} "
             f"(was {item['was_cost']}, trains={_yes_no(item['trains'])})"
         )
-    for item in sorted(changes.removed, key=lambda c: (c["cost"] != "free", c["id"])):
+    for item in sorted(
+        changes.removed, key=lambda c: (_tier_index(c["cost"]), c["id"])
+    ):
         details.append(f"gone: {item['id']} (was {item['cost']})")
     for item in changes.changed:
         if item["cost"] == item["was_cost"]:

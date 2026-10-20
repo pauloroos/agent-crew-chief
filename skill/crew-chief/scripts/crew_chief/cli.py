@@ -349,11 +349,15 @@ def _cmd_pick(args: argparse.Namespace) -> int:
                 for correction in piece.get("corrections") or []
                 if isinstance(correction, dict) and correction.get("executor")
             }
-        families = {quota_family(executor_id) for executor_id in reviewed}
+        costs = {executor.id: executor.cost for executor in executors}
+        families = {
+            quota_family(executor_id, costs.get(executor_id, ""))
+            for executor_id in reviewed
+        }
         exclude |= {
             executor.id
             for executor in executors
-            if quota_family(executor.id) in families
+            if quota_family(executor.id, executor.cost) in families
         }
 
         escalation = ""
@@ -381,6 +385,7 @@ def _cmd_pick(args: argparse.Namespace) -> int:
             job=job,
             cooling=cooling,
             strong=args.strong,
+            piece=args.piece,
         )
         if reviewed:
             reason += (

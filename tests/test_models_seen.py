@@ -323,3 +323,43 @@ def test_check_due_with_a_broken_file_or_stamp(tmp_path):
 
     models_seen_path(tmp_path).write_text("{oops", encoding="utf-8")
     assert check_due(tmp_path, 24) is True
+
+
+def test_render_reports_every_tier_change():
+    a, b, c = _ex("oc:a", cost="cheap"), _ex("oc:b", cost="included"), _ex("oc:c")
+    previous = {
+        "last_check": T0,
+        "models": {
+            "oc:a": _entry(cost="paid"),
+            "oc:b": _entry(cost="paid"),
+            "oc:c": _entry(cost="cheap"),
+        },
+    }
+
+    _snapshot_after, changes = diff_models(previous, [a, b, c], _listed(a, b, c), T1)
+
+    assert render_changes(changes) == [
+        f"models: changes since {T0}",
+        "now free: oc:c (was cheap, trains=no)",
+        "now included: oc:b (was paid, trains=no)",
+        "now cheap: oc:a (was paid, trains=no)",
+    ]
+
+
+def test_render_lists_new_models_by_tier():
+    keep = _ex("oc:keep")
+    paid, cheap, included, free = (
+        _ex("oc:p", cost="paid"), _ex("oc:c", cost="cheap"),
+        _ex("oc:i", cost="included"), _ex("oc:f"),
+    )
+    previous = {"last_check": T0, "models": {"oc:keep": _entry()}}
+    executors = [keep, paid, cheap, included, free]
+
+    _snapshot_after, changes = diff_models(previous, executors, _listed(*executors), T1)
+
+    assert render_changes(changes)[1:] == [
+        "new free: oc:f (trains=no)",
+        "new included: oc:i (trains=no)",
+        "new cheap: oc:c (trains=no)",
+        "new paid: oc:p (trains=no)",
+    ]

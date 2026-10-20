@@ -34,7 +34,7 @@ from pathlib import Path
 
 from .config import Prefs, tool_work_types
 from .records import EXEC_TYPES, WORK_TYPES, iter_jobs, piece_grades
-from .tools import Executor
+from .tools import Executor, wants_effort
 
 #: Deductions applied by :func:`grade`, in score points.
 PENALTIES = {
@@ -351,12 +351,15 @@ def _rank_key(
     stats: dict,
     type: str,
     usage: tuple[dict[str, int], dict[str, int]] = ({}, {}),
+    costs: dict[str, str] | None = None,
 ) -> tuple:
     """Sort key for a pool.
 
     Score desc; on a tie, the quota family (see :func:`quota_family`) least
     used in the job, then the executor least used, then the one whose tool
-    the job used least; then duration asc (missing last), id asc.
+    the job used least; then duration asc (missing last), id asc. ``costs``
+    maps executor ids to their cost, so subscription families (``included``)
+    are told apart from the plain model family.
     """
     stat = stats.get((executor.id, type))
     score = _UNRATED_SCORE
@@ -367,11 +370,12 @@ def _rank_key(
         duration = stat.mean_duration_s
     by_executor, by_tool = usage
     tool = executor.id.split(":", 1)[0]
-    family = quota_family(executor.id)
+    costs = costs or {}
+    family = quota_family(executor.id, executor.cost)
     family_use = sum(
         count
         for other, count in by_executor.items()
-        if quota_family(other) == family
+        if quota_family(other, costs.get(other, "")) == family
     )
     return (
         -score,
@@ -439,6 +443,7 @@ def pick(
     job: dict | None = None,
     cooling: set[str] | None = None,
     strong: bool = False,
+    piece: int | None = None,
 ) -> tuple[Executor | None, str]:
     """Choose the next executor and return ``(choice, one-line reason)``.
 
@@ -464,6 +469,11 @@ def pick(
     Executors whose :func:`quota_family` matches one in ``cooling`` (see
     :func:`quota_cooldown`) are left out like excluded ones, and the reason
     ends with ``; skipped for quota: <ids>``.
+
+    Among the variants of one model that differ only by effort suffix, the
+    free pool takes the lowest :func:`effort_rank` the :func:`effort_ceiling`
+    of ``piece`` allows, so effort rises after a failure on the piece before
+    anything else escalates.
     """
     unfit = sorted(
         {
@@ -479,11 +489,15 @@ def pick(
         for executor in candidates
         if executor.tool.get("name", executor.id.split(":", 1)[0]) not in unfit
     ]
-    families = {quota_family(executor_id) for executor_id in cooling or ()}
+    costs = {executor.id: executor.cost for executor in candidates}
+    families = {
+        quota_family(executor_id, costs.get(executor_id, ""))
+        for executor_id in cooling or ()
+    }
     skipped = sorted(
         executor.id
         for executor in candidates
-        if quota_family(executor.id) in families
+        if quota_family(executor.id, executor.cost) in families
         and executor.id not in exclude
         and executor.cost != "forbidden"
     )
@@ -497,6 +511,8 @@ def pick(
         rng,
         job_usage(job),
         strong,
+        job,
+        piece,
     )
     if unfit:
         reason += f"; not for {type}: {', '.join(unfit)}"
@@ -515,6 +531,8 @@ def _pick(
     rng: random.Random,
     usage: tuple[dict[str, int], dict[str, int]],
     allow_paid_exec: bool = False,
+    job: dict | None = None,
+    piece: int | None = None,
 ) -> tuple[Executor | None, str]:
     """:func:`pick` once unfit and cooling executors are left out."""
     available = [
@@ -536,8 +554,10 @@ def _pick(
             strong = []
 
     if free:
+        costs = {executor.id: executor.cost for executor in candidates}
         pool = sorted(
-            free, key=lambda executor: _rank_key(executor, stats, type, usage)
+            _lowest_effort(free, job, piece),
+            key=lambda executor: _rank_key(executor, stats, type, usage, costs),
         )
 
         # Second chance. This uses rng.random() once for the explore check and
@@ -578,20 +598,150 @@ def _pick(
 _EFFORT_SUFFIX = re.compile(r"-(minimal|low|medium|high|xhigh|max)$")
 
 
-def quota_family(executor_id: str) -> str:
+#: Prefix of a subscription quota family, see :func:`quota_family`.
+_SUB_PREFIX = "sub:"
+
+#: Effort suffix to rank; a model without suffix counts as ``low``.
+_EFFORT_RANKS = {
+    "minimal": 0, "low": 1, "medium": 2, "high": 3, "xhigh": 4, "max": 5,
+}
+_DEFAULT_EFFORT_RANK = 1
+
+#: Effort flag values by failures so far, see :func:`next_effort`.
+_EFFORT_STEPS = ("low", "medium", "high")
+
+
+def quota_family(executor_id: str, cost: str = "") -> str:
     """The group of executors that share one quota with ``executor_id``.
 
-    The model's trailing effort suffix (``-minimal`` ... ``-max``) is dropped,
-    since every effort of a model draws on the same quota. Antigravity shares
-    its quota across a whole vendor, so there the family is
-    ``antigravity:<model up to the first '-'>`` (``antigravity:claude``,
-    ``antigravity:gemini``); any other tool keeps ``<tool>:<model>``.
+    With ``cost == "included"`` (a model covered by a subscription) the group
+    is ``sub:<tool>``: every model of that CLI draws on the one plan quota.
+    Otherwise the model's trailing effort suffix (``-minimal`` ... ``-max``)
+    is dropped, since every effort of a model draws on the same quota.
+    Antigravity shares its quota across a whole vendor, so there the family
+    is ``antigravity:<model up to the first '-'>`` (``antigravity:claude``,
+    ``antigravity:gemini``); any other tool keeps ``<tool>:<model>``. An id
+    that already is a ``sub:<tool>`` family is returned as it is.
     """
+    if executor_id.startswith(_SUB_PREFIX):
+        return executor_id
     tool, _, model = executor_id.partition(":")
+    if cost == "included":
+        return f"{_SUB_PREFIX}{tool}"
     model = _EFFORT_SUFFIX.sub("", model)
     if tool == "antigravity":
         model = model.split("-", 1)[0]
     return f"{tool}:{model}"
+
+
+def effort_rank(executor_id: str) -> int:
+    """0 for ``-minimal`` ... 5 for ``-max``; no suffix counts as 1 (``low``)."""
+    match = _EFFORT_SUFFIX.search(executor_id)
+    if match is None:
+        return _DEFAULT_EFFORT_RANK
+    return _EFFORT_RANKS[match.group(1)]
+
+
+def _failed_executors(piece: dict) -> list[str]:
+    """Executors behind each failed exec attempt and each correction.
+
+    One entry per failure, so a repeated failure counts repeatedly. An exec
+    attempt that is not ``ok`` is a failure; so is a correction, which is
+    charged to the executor that drew it.
+    """
+    failed = [
+        attempt["executor"]
+        for attempt in piece.get("attempts") or []
+        if isinstance(attempt, dict)
+        and attempt.get("role") == "exec"
+        and attempt.get("status") != "ok"
+        and isinstance(attempt.get("executor"), str)
+        and attempt.get("executor")
+    ]
+    failed += [
+        correction["executor"]
+        for correction in piece.get("corrections") or []
+        if isinstance(correction, dict)
+        and isinstance(correction.get("executor"), str)
+        and correction.get("executor")
+    ]
+    return failed
+
+
+def effort_ceiling(job: dict | None, piece: int | None, family: str) -> int:
+    """The highest :func:`effort_rank` allowed now for ``family`` on ``piece``.
+
+    ``1 +`` the failures of that quota family on the piece (exec attempts
+    that are not ``ok`` and corrections drawn by its executors). Without a
+    job or piece there is no history, so the ceiling is 1.
+    """
+    if not job or piece is None:
+        return _DEFAULT_EFFORT_RANK
+    try:
+        target = _find_piece(job, piece)
+    except ValueError:
+        return _DEFAULT_EFFORT_RANK
+    costs = {
+        attempt["executor"]: str(attempt.get("cost") or "")
+        for attempt in target.get("attempts") or []
+        if isinstance(attempt, dict) and isinstance(attempt.get("executor"), str)
+    }
+    failures = sum(
+        1
+        for executor in _failed_executors(target)
+        if quota_family(executor, costs.get(executor, "")) == family
+    )
+    return _DEFAULT_EFFORT_RANK + failures
+
+
+def next_effort(tool: dict, failures: int) -> str | None:
+    """The effort flag value for the next attempt; ``None`` without effort.
+
+    Tools that take an effort flag (:func:`tools.wants_effort`) start at
+    ``low`` and rise one level per failure up to ``high``.
+    """
+    if not wants_effort(tool):
+        return None
+    return _EFFORT_STEPS[min(max(failures, 0), len(_EFFORT_STEPS) - 1)]
+
+
+def _lowest_effort(
+    executors: list[Executor], job: dict | None, piece: int | None
+) -> list[Executor]:
+    """Keep, per model, only the effort variants that suit the piece now.
+
+    Variants of one model (the same id once the effort suffix is dropped)
+    compete: the lowest :func:`effort_rank` not above the family's
+    :func:`effort_ceiling` wins, passing over variants that already failed on
+    the piece. When every variant is above the ceiling the lowest one stays,
+    so a model that only exists at high effort is not lost.
+    """
+    failed: set[str] = set()
+    if job and piece is not None:
+        try:
+            failed = set(_failed_executors(_find_piece(job, piece)))
+        except ValueError:
+            failed = set()
+    groups: dict[str, list[Executor]] = {}
+    for executor in executors:
+        tool, _, model = executor.id.partition(":")
+        key = f"{tool}:{_EFFORT_SUFFIX.sub('', model)}:{executor.cost}"
+        groups.setdefault(key, []).append(executor)
+
+    kept: list[Executor] = []
+    for variants in groups.values():
+        if len(variants) == 1:
+            kept.extend(variants)
+            continue
+        ceiling = effort_ceiling(
+            job, piece, quota_family(variants[0].id, variants[0].cost)
+        )
+        allowed = [v for v in variants if effort_rank(v.id) <= ceiling]
+        fresh = [v for v in allowed if v.id not in failed]
+        pool = fresh or allowed or variants
+        lowest = min(effort_rank(v.id) for v in pool)
+        kept.extend(v for v in pool if effort_rank(v.id) == lowest)
+    return kept
 
 
 def quota_cooldown(
@@ -602,7 +752,9 @@ def quota_cooldown(
     Every job of the project counts, whatever the role of the attempt. An
     attempt ends at ``started + duration_s``; one without a parseable
     ``started`` cannot be aged and is ignored. ``minutes <= 0`` turns the
-    cooldown off. Corrupt jobs are skipped.
+    cooldown off. Corrupt jobs are skipped. An attempt whose cost was
+    ``included`` also adds its ``sub:<tool>`` family (see :func:`quota_family`),
+    so :func:`pick` pauses every model of that subscription.
     """
     if minutes <= 0:
         return set()
@@ -639,6 +791,9 @@ def quota_cooldown(
                     ended += timedelta(seconds=duration)
                 if now - ended <= window:
                     cooling.add(executor)
+                    if attempt.get("cost") == "included":
+                        # One subscription quota: pause every model of the CLI.
+                        cooling.add(quota_family(executor, "included"))
     return cooling
 
 

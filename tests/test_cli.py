@@ -1378,3 +1378,29 @@ def test_accept_refuses_a_piece_whose_only_attempt_is_proof_failed(
                  "--piece", "1"]) == 1
     assert "nothing to accept" in capsys.readouterr().out
     assert not (repo / "out.py").exists()
+
+
+def test_pick_takes_the_lowest_effort_then_rises_after_a_failure(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    repo = git_repo
+    prefs = _REVIEW_PREFS.replace('["m-high", "n"]', '["m-high", "m-low", "m-medium"]')
+    _write_prefs(repo, prefs)
+    fake_bin("freebie", "print('x')\n")
+    fake_bin("strong", "print('x')\n")
+    _only_bins(monkeypatch, {"freebie", "strong"})
+    job = records.new_job(repo, "Effort", "do it", True, "one part")
+    records.add_piece(job, "Change", "code", "low")
+    records.save_job(repo, job)
+    argv = ["pick", "--project", str(repo), "--job", job["id"], "--piece", "1"]
+
+    assert main(argv) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "freebie:m-low"
+
+    stored = records.load_job(repo, job["id"])
+    records.add_attempt(stored, 1, {"executor": "freebie:m-low", "role": "exec",
+                                    "status": "failed", "cost": "free"})
+    records.save_job(repo, stored)
+
+    assert main(argv) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "freebie:m-medium"
