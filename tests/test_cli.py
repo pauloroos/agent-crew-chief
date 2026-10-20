@@ -1409,6 +1409,8 @@ def test_pick_takes_the_lowest_effort_then_rises_after_a_failure(
 # --- the cost ladder in pick and dispatch -----------------------------------
 
 _LADDER_PREFS = """
+# No second chance: these tests pin the ladder, not the exploration.
+explore_rate = 0
 {extra}
 [[tools]]
 name = "freebie"
