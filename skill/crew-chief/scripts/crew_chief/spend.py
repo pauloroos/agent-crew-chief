@@ -14,7 +14,9 @@ environment (no key, no token) is ever written.
 from __future__ import annotations
 
 import json
+import math
 import os
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -48,6 +50,16 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
+def _valid_cost(cost: object) -> bool:
+    """Whether ``cost`` is a finite, non-negative number (a bool is not one)."""
+    return (
+        isinstance(cost, (int, float))
+        and not isinstance(cost, bool)
+        and math.isfinite(cost)
+        and cost >= 0
+    )
+
+
 def _clean(entry: dict) -> dict:
     """``entry`` reduced to :data:`FIELDS`, with ``at`` and the cost filled in."""
     at = entry.get("at")
@@ -57,10 +69,15 @@ def _clean(entry: dict) -> dict:
         cost = float(entry.get("cost_usd") or 0.0)
     except (TypeError, ValueError):
         cost = 0.0
+    known = bool(entry.get("known", False))
+    if not _valid_cost(cost):
+        # A malformed CLI event (NaN, infinity, negative) must not poison the
+        # daily total; it counts as an unknown zero.
+        cost, known = 0.0, False
     values = dict(entry)
     values["at"] = at
     values["cost_usd"] = round(cost, 6)
-    values["known"] = bool(entry.get("known", False))
+    values["known"] = known
     return {key: values.get(key) for key in FIELDS}
 
 
@@ -101,28 +118,80 @@ def _day_of(at: object) -> date | None:
     return moment.astimezone(timezone.utc).date()
 
 
-def spent(day: date, job: str | None = None) -> float:
-    """US$ spent on ``day`` (UTC) across all projects, optionally on one ``job``.
+def _rows():
+    """Every readable spend line as ``(row, day)``; damaged lines are skipped.
 
-    Damaged lines are skipped. A line is complete once its newline is
-    written under the lock, so reading needs no lock.
+    A line is complete once its newline is written under the lock, so
+    reading needs no lock. A missing or unreadable file gives nothing.
     """
-    path = spend_file()
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = spend_file().read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return 0.0
-    total = 0.0
+        return
     for line in text.splitlines():
         try:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(row, dict) or _day_of(row.get("at")) != day:
+        if not isinstance(row, dict):
+            continue
+        day = _day_of(row.get("at"))
+        if day is not None:
+            yield row, day
+
+
+def spent(day: date, job: str | None = None) -> float:
+    """US$ spent on ``day`` (UTC) across all projects, optionally on one ``job``.
+
+    Damaged lines are skipped, and so is a cost that is not a finite,
+    non-negative number.
+    """
+    total = 0.0
+    for row, row_day in _rows():
+        if row_day != day:
             continue
         if job is not None and row.get("job") != job:
             continue
         cost = row.get("cost_usd")
-        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+        if _valid_cost(cost):
             total += float(cost)
     return total
+
+
+@dataclass
+class Ledger:
+    """One read of the spend log, for the budget checks of ``pick``."""
+
+    #: US$ spent on the day, all projects.
+    day_total: float = 0.0
+    #: US$ per job id, over every day.
+    by_job: dict[str, float] = field(default_factory=dict)
+    #: US$ spent on the day per executor id.
+    executor_day: dict[str, float] = field(default_factory=dict)
+    #: Executors with at least one line whose cost was known and above zero.
+    #: OpenCode prints cost 0 for unpriced models, so a zero is never proof.
+    priced: set[str] = field(default_factory=set)
+
+
+def ledger(day: date) -> Ledger:
+    """Totals of the spend log for ``day`` (UTC), read once."""
+    result = Ledger()
+    for row, row_day in _rows():
+        cost = row.get("cost_usd")
+        if not _valid_cost(cost):
+            continue
+        cost = float(cost)
+        executor = row.get("executor")
+        job = row.get("job")
+        if isinstance(job, str) and job:
+            result.by_job[job] = result.by_job.get(job, 0.0) + cost
+        if isinstance(executor, str) and executor:
+            if row.get("known") is True and cost > 0:
+                result.priced.add(executor)
+            if row_day == day:
+                result.executor_day[executor] = (
+                    result.executor_day.get(executor, 0.0) + cost
+                )
+        if row_day == day:
+            result.day_total += cost
+    return result
