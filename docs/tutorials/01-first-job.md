@@ -14,7 +14,7 @@ git add .
 git commit -m "Start hello-crew practice project"
 ```
 
-You should see a new Git repository and a first commit. If Git asks for your name and email, configure them for this practice repository, then repeat the commit. ACC needs its own Git repository because it uses isolated worktrees.
+You should see a new Git repository and a first commit. If Git asks for your name and email, configure them for this practice repository, then repeat the commit. ACC needs its own Git repository because it uses isolated worktrees. On Windows, use the [PowerShell on Windows](#powershell-on-windows) section instead of the Bash blocks.
 
 ## 2. Install ACC
 
@@ -35,21 +35,21 @@ CC="python -I .agents/skills/crew-chief/scripts/crew-chief.py"
 
 ## 3. Set up the cost tiers
 
-Choose a preferences file in the lab directory. This keeps the tutorial isolated from your normal ACC settings. Before **every** ACC command, export this variable:
+Choose a preferences file inside the practice project. This keeps the tutorial isolated from your normal ACC settings. Before **every** ACC command, export this variable:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC setup --yes --project .
 ```
 
-You should see a tier summary similar to `your tiers: free 23 · included 3 · cheap 0 (budget US$ 0) · paid 65`. The exact counts depend on the CLIs installed on your machine. `--yes` accepts the safe defaults: no subscription assumption, a zero cheap-model budget, and no training permission.
+You should see a tier summary like `your tiers: free 23 · included 3 · cheap 0 (budget US$ 0) · paid 66`, from one test machine. Those numbers are an example, not a promise: the counts change as providers add or remove models, and they differ on every machine because they depend on the CLIs installed there. What matters is that the free count is above zero. `--yes` accepts the safe defaults: no subscription assumption, a zero cheap-model budget, and no training permission.
 
 If your summary has no free OpenCode executor, stop here and configure one before dispatching. Do not use an included, cheap, or paid executor in this tutorial.
 
 ## 4. Discover executors
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC discover --project .
 ```
 
@@ -66,7 +66,7 @@ printf '%s\n' 'Add a function shout(text) to src/hello_crew/__init__.py. Return 
 Register it:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC job new --project . --title "Add shout helper" --request-file .crew-chief-request.md
 ```
 
@@ -77,7 +77,7 @@ You should see a job id such as `20261020-1437-add-shout-helper`. Your id will d
 This request is small enough for one piece:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC piece add --project . --job JOB --title "Implement shout helper" --type code --risk low
 ```
 
@@ -86,19 +86,18 @@ You should see `1`. That is the piece number. If the request grows, add one piec
 ## 7. Pick a free executor
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC pick --project . --job JOB --piece 1
 ```
 
-The output has three useful lines when effort is shown:
+This OpenCode execution pick prints two lines:
 
 ```text
-antigravity:claude-opus-5-5-low
-unrated, no history (antigravity:claude-opus-5-5-low); tier free; reviewer outside the family of: opencode:opencode-go/minimax-m3.1-flash-free
-effort: low
+opencode:opencode-go/beam-free
+unrated, no history (opencode:opencode-go/beam-free); tier free
 ```
 
-The first line is the executor. The second explains why it was chosen and confirms its tier. The third is the effort level. Use the exact executor id printed on the first line. For execution work, `pick` may print only the executor and reason; the effort line is also shown for review picks. If `pick` selects a non-OpenCode free model for execution, pass `--exclude` for it and pick again. Never dispatch an included, cheap, or paid model in this tutorial.
+The first line is the executor. The second explains why it was chosen and confirms its tier. Use the exact executor id printed on the first line. A third line, `effort: low`, is printed only when the pick has an effort value: ACC prints the effort line when the chosen executor has one. OpenCode tools have no effort flag by default, so an OpenCode pick shows the two lines above. A tool configured with an effort flag, such as Codex or Antigravity, can show that third line (step 10 shows one). If `pick` selects a non-OpenCode free model for execution, pass `--exclude` for it and pick again. Never dispatch an included, cheap, or paid model in this tutorial.
 
 ## 8. Write the brief
 
@@ -115,7 +114,7 @@ Mention the allowed files, the expected behavior, and the test command. Do not p
 Replace `EXECUTOR` with the first line from `pick`:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC dispatch --project . --job JOB --piece 1 --executor EXECUTOR --brief-file .crew-chief-brief.md --timeout 300
 ```
 
@@ -126,11 +125,19 @@ You should see `status: ok`, a `branch`, a `worktree`, and duration and token li
 Pick a reviewer first:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC pick --project . --job JOB --piece 1 --review
 ```
 
-The output should name a free executor from a different family and explain `reviewer outside the family of`. Use its exact id as `REVIEWER`. Write the review brief:
+The output should name a free executor from a different family and explain `reviewer outside the family of`. A review pick for a tool that takes an effort flag has three lines:
+
+```text
+antigravity:claude-opus-5-5-low
+unrated, no history (antigravity:claude-opus-5-5-low); tier free; reviewer outside the family of: opencode:opencode-go/minimax-m3.1-flash-free
+effort: low
+```
+
+The third line is the effort level. It shows only for tools that take an effort flag, so a review pick for an OpenCode model has the first two lines alone. Use the exact id from the first line as `REVIEWER`. Write the review brief:
 
 ```bash
 printf '%s\n' 'Review the last successful attempt for the shout(text) request. Check the diff and tests. Report only concrete missing requirements or defects; do not edit files.' > .crew-chief-review.md
@@ -139,7 +146,7 @@ printf '%s\n' 'Review the last successful attempt for the shout(text) request. C
 Dispatch the review using the `worktree` printed by the successful implementation dispatch:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC dispatch --project . --job JOB --piece 1 --executor REVIEWER --brief-file .crew-chief-review.md --review --target WORKTREE --timeout 300
 ```
 
@@ -150,7 +157,7 @@ You should see `status: ok` and an `answer:` line. If review fails with quota, p
 If the review found no corrections, grade the work like this:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC grade --project . --job JOB --piece 1 --executor EXECUTOR --corrections 0 --done 4 --missing 0 --extra 0
 ```
 
@@ -159,14 +166,14 @@ You should see `score: 100`. If the reviewer found a real defect, record it with
 Accept the last successful attempt:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC accept --project . --job JOB --piece 1
 ```
 
 You should see `accepted` and a branch name. Close the job:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC close --project . --job JOB --type feat
 ```
 
@@ -191,11 +198,11 @@ The example includes a `.gitignore` with `__pycache__/` and `.pytest_cache/`. If
 ACC did not find the managed setup block in the preferences file. Use the exact same path for every command:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
 $CC setup --yes --project .
 ```
 
-A file named `preferences.toml` is not the same as your lab's `global-prefs.toml`. Do not use your normal home preferences file for this tutorial.
+A file named `preferences.toml` is not the same as the `global-prefs.toml` of this practice project. Do not use your normal home preferences file for this tutorial.
 
 ### `review requires --target` or `review requires --brief-file`
 
@@ -205,6 +212,64 @@ A review needs both the successful attempt's worktree and a review brief. Run `p
 
 Execution work must stay with free executors. Run `discover` again, then use `pick` with `--exclude` for failed executors. Do not add `--strong` for this tutorial.
 
+### Review returns `status: quota`
+
+The reviewer hit its own rate limit, so the review never ran. Read the recorded attempt to see which reviewer failed and which implementation worktree is the good one. The job record keeps every attempt:
+
+```bash
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
+cat docs/crew-chief/jobs/JOB.json
+```
+
+The `attempts` list of piece 1 has one entry per try. Look for the `exec` attempt with `"status": "ok"` and copy its `worktree` value, and for the `review` attempt with `"status": "quota"` and copy its `executor`. Then pick another free reviewer, leaving the failed one out, and dispatch the review again against the same successful worktree:
+
+```bash
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew/global-prefs.toml
+$CC pick --project . --job JOB --piece 1 --review --exclude FAILED_REVIEWER
+$CC dispatch --project . --job JOB --piece 1 --executor NEW_REVIEWER --brief-file .crew-chief-review.md --review --target WORKTREE --timeout 300
+```
+
+Use the exact id printed by `pick` as `NEW_REVIEWER`, and the worktree of the successful implementation as `WORKTREE`.
+
+Some reviewers share one quota pool: the Antigravity models of a vendor draw from the same pool, and a subscription model shares its quota with every other model of that CLI. When one reviewer of a pool fails, another of the same pool can fail too. In that case, exclude the whole pool and review with a free OpenCode model instead. ACC also pauses a reviewer that returned `quota` for a while, so a fresh `pick` reports it as `skipped for quota` and moves on by itself.
+
 ### Tests do not run
 
 The example has no runtime dependencies, but the test command needs `pytest`. Install it in your own environment, then run `pytest -q`. If your shell does not expose the `pytest` executable, use the Python environment where you installed it.
+
+## PowerShell on Windows
+
+Every command block above is Bash. On PowerShell, copy the example with `Copy-Item -Recurse` instead of `cp -R`:
+
+```powershell
+Copy-Item -Recurse examples/hello-crew (Join-Path $HOME 'projects/hello-crew')
+Set-Location (Join-Path $HOME 'projects/hello-crew')
+git init
+git add .
+git commit -m "Start hello-crew practice project"
+if ($LASTEXITCODE -ne 0) { throw 'Commit failed; configure repository-local identity and retry before install.py.' }
+```
+
+If the commit failed, set the identity for this repository only and repeat the commit:
+
+```powershell
+git config user.name "Your Name"
+git config user.email "you@example.com"
+git commit -m "Start hello-crew practice project"
+```
+
+PowerShell does not expand a `$CC` string into a command, so call the installed CLI directly with `python -I`. Set the preferences path before **every** ACC call, with the same path the rest of this tutorial uses:
+
+```powershell
+$env:AGENT_CREW_CHIEF_GLOBAL_PREFS = Join-Path $HOME 'projects/hello-crew/global-prefs.toml'
+python -I .agents/skills/crew-chief/scripts/crew-chief.py setup --yes --project .
+```
+
+After that, every other ACC command follows the same shape, for example:
+
+```powershell
+$env:AGENT_CREW_CHIEF_GLOBAL_PREFS = Join-Path $HOME 'projects/hello-crew/global-prefs.toml'
+python -I .agents/skills/crew-chief/scripts/crew-chief.py pick --project . --job JOB --piece 1
+```
+
+The variable lives in the current session only. Set it again in every new window, and never point it at your normal ACC preferences file.
