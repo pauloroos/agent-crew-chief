@@ -9,12 +9,18 @@ Definitions (a division by zero gives ``None``, never an exception):
 
 * ``free_tokens`` / ``paid_exec_tokens``: the ``tokens_total`` of every attempt
   whose ``cost`` is ``free`` / ``paid``.
+* ``tier_tokens``: the same ``tokens_total`` split by every cost tier
+  (``free``, ``included``, ``cheap``, ``paid``; ``0`` for a tier with none).
+* ``cheap_usd`` / ``paid_usd``: the sum of the finite, non-negative
+  ``cost_usd`` of the attempts whose ``cost`` is ``cheap`` / ``paid``;
+  ``cost_unknown`` says whether any of those attempts had ``cost_known``
+  false.
 * ``coordinator_tokens``: the job's ``usage`` entries (``coordinator`` and
   ``central`` roles, see ``records.add_usage``).
 * ``free_piece_share``: accepted pieces whose last ``ok`` exec attempt ran on
   a free executor, over accepted pieces.
 * ``free_token_share`` / ``coordinator_share``: ``free`` / ``coordinator``
-  tokens over all three token counts.
+  tokens over all four token counts plus the coordinator.
 * ``attempts_per_piece``: exec attempts over pieces with at least one exec
   attempt; ``brief_refused`` (never ran) and ``quota`` (no work done) attempts
   count on neither side, so review and converge pieces do not dilute it.
@@ -25,6 +31,7 @@ Definitions (a division by zero gives ``None``, never an exception):
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -38,6 +45,13 @@ _DASH = "—"
 
 #: Exec statuses left out of ``attempts_per_piece``: the executor did no work.
 _NOT_ATTEMPTS = ("brief_refused", "quota")
+
+#: The cost tiers of an attempt, in the order of ``Economy.tier_tokens``.
+_TIERS = ("free", "included", "cheap", "paid")
+
+
+def _empty_tiers() -> dict[str, int]:
+    return {tier: 0 for tier in _TIERS}
 
 
 @dataclass
@@ -54,6 +68,10 @@ class Economy:
     attempts_per_piece: float | None
     mean_score: float | None
     minutes: float | None
+    tier_tokens: dict[str, int] = field(default_factory=_empty_tiers)
+    cheap_usd: float = 0.0
+    paid_usd: float = 0.0
+    cost_unknown: bool = False
     alerts: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -62,6 +80,18 @@ class Economy:
 
 def _number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _usd(value: object) -> float | None:
+    """``value`` as a finite, non-negative amount, or ``None``."""
+    if not _number(value) or not math.isfinite(value) or value < 0:
+        return None
+    return float(value)
+
+
+def _total_tokens(e: Economy) -> int:
+    """Every token the job spent: all four tiers plus the coordinator."""
+    return sum(e.tier_tokens.values()) + e.coordinator_tokens
 
 
 def _ratio(part: float, whole: float) -> float | None:
@@ -112,18 +142,25 @@ def _minutes(job: dict, local_tz) -> float | None:
 
 
 def job_economy(
-    job: dict, prefs: Prefs | None, now: datetime | None = None
+    job: dict,
+    prefs: Prefs | None,
+    now: datetime | None = None,
+    spent_today: float | None = None,
 ) -> Economy:
     """Compute the :class:`Economy` of ``job``.
 
-    ``prefs`` supplies the alert limits; ``None`` means no alerts. Naive
-    timestamps (the job's ``created`` is local time) are read in the local
-    zone of ``now`` (default: the current local time).
+    ``prefs`` supplies the alert limits; ``None`` means no alerts.
+    ``spent_today`` is what the day's spend log already holds (see
+    ``spend.spent``): with it the cheap daily budget can raise an alert.
+    Naive timestamps (the job's ``created`` is local time) are read in the
+    local zone of ``now`` (default: the current local time).
     """
     now = now or datetime.now(timezone.utc)
     local_tz = now.astimezone().tzinfo
 
-    free = paid = 0
+    tier_tokens = _empty_tiers()
+    cheap_usd = paid_usd = 0.0
+    cost_unknown = False
     exec_attempts = tried = 0
     accepted = accepted_free = 0
     scores: list[float] = []
@@ -139,12 +176,22 @@ def job_economy(
             tried += 1
             exec_attempts += len(counted)
         for attempt in attempts:
+            tier = attempt.get("cost")
+            if tier not in tier_tokens:
+                continue
             tokens = attempt.get("tokens_total")
             if _number(tokens):
-                if attempt.get("cost") == "free":
-                    free += tokens
-                elif attempt.get("cost") == "paid":
-                    paid += tokens
+                tier_tokens[tier] += tokens
+            if tier not in ("cheap", "paid"):
+                continue
+            if attempt.get("cost_known") is False:
+                cost_unknown = True
+            usd = _usd(attempt.get("cost_usd"))
+            if usd is not None:
+                if tier == "cheap":
+                    cheap_usd += usd
+                else:
+                    paid_usd += usd
         if piece.get("accepted"):
             accepted += 1
             last_ok = next(
@@ -167,7 +214,9 @@ def job_economy(
     coordinator = sum(
         u["tokens_total"] for u in usage if _number(u.get("tokens_total"))
     )
-    total = free + paid + coordinator
+    free = tier_tokens["free"]
+    paid = tier_tokens["paid"]
+    total = sum(tier_tokens.values()) + coordinator
 
     economy = Economy(
         free_tokens=free,
@@ -180,13 +229,19 @@ def job_economy(
         attempts_per_piece=_ratio(exec_attempts, tried),
         mean_score=_ratio(sum(scores), len(scores)),
         minutes=_minutes(job, local_tz),
+        tier_tokens=tier_tokens,
+        cheap_usd=cheap_usd,
+        paid_usd=paid_usd,
+        cost_unknown=cost_unknown,
     )
     if prefs is not None:
-        economy.alerts = _alerts(economy, prefs)
+        economy.alerts = _alerts(economy, prefs, spent_today)
     return economy
 
 
-def _alerts(e: Economy, prefs: Prefs) -> list[str]:
+def _alerts(
+    e: Economy, prefs: Prefs, spent_today: float | None = None
+) -> list[str]:
     alerts = []
     limit = prefs.alert_coordinator_share
     if limit and e.coordinator_share is not None and e.coordinator_share > limit:
@@ -202,6 +257,13 @@ def _alerts(e: Economy, prefs: Prefs) -> list[str]:
     limit = prefs.alert_job_minutes
     if limit and e.minutes is not None and e.minutes > limit:
         alerts.append(f"job took {e.minutes:.0f} min (limit {limit:.0f})")
+    budget = prefs.cheap_budget_usd_day
+    if budget > 0 and spent_today is not None and spent_today >= 0.8 * budget:
+        pct = spent_today / budget
+        alerts.append(
+            f"cheap spend at {pct:.0%} of the daily budget "
+            f"(US$ {spent_today:.2f} of {budget:.2f})"
+        )
     return alerts
 
 
@@ -212,13 +274,22 @@ def _fmt(value: float | None, spec: str) -> str:
 def summary_line(e: Economy) -> str:
     """The one-line summary printed by ``economy`` and ``close``."""
     estimated = " (estimated)" if e.coordinator_estimated else ""
-    return (
+    line = (
         f"free work: {_fmt(e.free_piece_share, '.0%')} of pieces, "
         f"{_fmt(e.free_token_share, '.0%')} of tokens · "
         f"coordinator: {_fmt(e.coordinator_share, '.0%')}{estimated} · "
         f"{_fmt(e.attempts_per_piece, '.1f')} attempts/piece · "
         f"mean score {_fmt(e.mean_score, '.0f')}"
     )
+    included = e.tier_tokens.get("included", 0)
+    total = _total_tokens(e)
+    if included > 0:
+        line += f" · included {included / total:.0%}"
+    if e.cheap_usd > 0:
+        line += f" · cheap US$ {e.cheap_usd:.2f}"
+        if e.cost_unknown:
+            line += " (cost unknown)"
+    return line
 
 
 def detail_lines(e: Economy) -> list[str]:

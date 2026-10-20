@@ -843,7 +843,9 @@ def _cmd_close(args: argparse.Namespace) -> int:
     text = f"{commit}\n\n---\n\n{issue}"
     payload = {"commit": commit, "issue": issue}
     if economy.has_data(job):
-        figures = economy.job_economy(job, load_prefs(project))
+        figures = economy.job_economy(
+            job, load_prefs(project), spent_today=spend.spent(date.today())
+        )
         text = "\n".join([*economy.report_lines(figures), text])
         payload["economy"] = figures.as_dict()
     if written:
@@ -878,7 +880,9 @@ def _cmd_usage_add(args: argparse.Namespace) -> int:
 def _cmd_economy(args: argparse.Namespace) -> int:
     project = _project(args)
     job = records.load_job(project, args.job)
-    figures = economy.job_economy(job, load_prefs(project))
+    figures = economy.job_economy(
+        job, load_prefs(project), spent_today=spend.spent(date.today())
+    )
     _emit(args, "\n".join(economy.report_lines(figures)), figures.as_dict())
     return 0
 

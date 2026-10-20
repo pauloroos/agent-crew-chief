@@ -50,6 +50,25 @@ def _job_with(attempts, accepted_executor=None, usage=(), grades=None,
     return job
 
 
+def _job_with_costs(attempts, usage=()):
+    """One piece with ``attempts`` = dicts of cost / cost_usd / cost_known."""
+    job = {"id": "j", "title": "T", "request": "r", "distributed": True,
+           "reason": "", "created": (NOW - timedelta(minutes=30)).isoformat(),
+           "pieces": []}
+    records.add_piece(job, "One", "code", "low")
+    for index, extra in enumerate(attempts, start=1):
+        attempt = {
+            "n": index, "role": "exec", "status": "ok", "executor": "x:y",
+            "tokens_total": 100, "duration_s": 60.0,
+            "started": (NOW - timedelta(minutes=10)).isoformat(),
+        }
+        attempt.update(extra)
+        records.add_attempt(job, 1, attempt)
+    for role, tokens_in, tokens_out, estimated in usage:
+        records.add_usage(job, role, tokens_in, tokens_out, estimated)
+    return job
+
+
 def test_job_economy_shares_and_alerts():
     job = _job_with(attempts=[("opencode:a-free", "free", "ok", 9000),
                               ("opencode:b-free", "free", "failed", 1000)],
@@ -309,3 +328,90 @@ def test_attempts_per_piece_counts_only_pieces_with_exec_attempts():
         {"n": 4, "attempts": [{"role": "exec", "status": "brief_refused"}]},
     ]}
     assert job_economy(job, None, now=NOW).attempts_per_piece == 2.0
+
+
+def test_tier_tokens_split():
+    job = _job_with(attempts=[("opencode:a", "free", "ok", 1000),
+                              ("opencode:b", "included", "ok", 2000),
+                              ("claude:haiku", "cheap", "ok", 3000),
+                              ("claude:opus", "paid", "ok", 4000)])
+    e = job_economy(job, None, now=NOW)
+    assert e.tier_tokens == {"free": 1000, "included": 2000,
+                             "cheap": 3000, "paid": 4000}
+    assert e.free_tokens == 1000 and e.paid_exec_tokens == 4000
+    # included and cheap tokens are in the denominator now
+    assert e.free_token_share == pytest.approx(1000 / 10000)
+    assert e.coordinator_share == 0.0
+    assert e.as_dict()["tier_tokens"] == e.tier_tokens
+
+    empty = {"id": "j", "created": NOW.isoformat(), "pieces": []}
+    assert job_economy(empty, None, now=NOW).tier_tokens == {
+        "free": 0, "included": 0, "cheap": 0, "paid": 0}
+
+
+def test_cheap_usd_sum_and_unknown_flag():
+    job = _job_with_costs([
+        {"executor": "claude:haiku", "cost": "cheap", "cost_usd": 1.50,
+         "cost_known": True},
+        {"executor": "claude:haiku", "cost": "cheap", "cost_usd": 0.25,
+         "cost_known": True},
+        {"executor": "claude:haiku", "cost": "cheap", "cost_usd": float("nan"),
+         "cost_known": False},
+        {"executor": "claude:haiku", "cost": "cheap", "cost_usd": -1.0,
+         "cost_known": True},
+        {"executor": "claude:opus", "cost": "paid", "cost_usd": 2.0,
+         "cost_known": True},
+        {"executor": "claude:opus", "cost": "paid", "cost_usd": None,
+         "cost_known": True},
+        {"executor": "opencode:a", "cost": "free", "cost_usd": 9.0,
+         "cost_known": False},
+    ])
+    e = job_economy(job, None, now=NOW)
+    assert e.cheap_usd == pytest.approx(1.75)
+    assert e.paid_usd == pytest.approx(2.0)
+    # a free attempt with an unknown cost does not set the flag
+    assert e.cost_unknown is True
+
+    known = _job_with_costs([{"cost": "cheap", "cost_usd": 0.5,
+                              "cost_known": True}])
+    assert job_economy(known, None, now=NOW).cost_unknown is False
+
+
+def test_budget_alert_at_80_percent():
+    job = _job_with(attempts=[("opencode:a", "free", "ok", 1000)])
+    prefs = _prefs(cheap_budget_usd_day=10.0)
+    assert job_economy(job, prefs, now=NOW, spent_today=7.9).alerts == []
+    assert job_economy(job, prefs, now=NOW, spent_today=8.0).alerts == [
+        "cheap spend at 80% of the daily budget (US$ 8.00 of 10.00)"]
+    # 0 turns the budget off, and no spent figure means no alert
+    assert job_economy(job, _prefs(cheap_budget_usd_day=0.0), now=NOW,
+                       spent_today=100.0).alerts == []
+    assert job_economy(job, prefs, now=NOW).alerts == []
+
+
+def test_summary_line_includes_tiers_only_when_used():
+    free_only = summary_line(job_economy(
+        _job_with(attempts=[("opencode:a", "free", "ok", 9000)],
+                  accepted_executor="opencode:a",
+                  usage=[("central", 500, 500, True)],
+                  grades={"opencode:a": 90}), _prefs(), now=NOW))
+    assert free_only == (
+        "free work: 100% of pieces, 90% of tokens · "
+        "coordinator: 10% (estimated) · 1.0 attempts/piece · "
+        "mean score 90")
+
+    included = _job_with(attempts=[("opencode:a", "free", "ok", 1000),
+                                   ("opencode:b", "included", "ok", 500)])
+    assert summary_line(job_economy(
+        included, None, now=NOW)).endswith(" · included 33%")
+
+    cheap = _job_with(attempts=[("claude:haiku", "cheap", "ok", 500)])
+    cheap["pieces"][0]["attempts"][0]["cost_usd"] = 1.75
+    cheap["pieces"][0]["attempts"][0]["cost_known"] = True
+    line = summary_line(job_economy(cheap, None, now=NOW))
+    assert line.endswith(" · cheap US$ 1.75")
+    assert "(cost unknown)" not in line
+
+    cheap["pieces"][0]["attempts"][0]["cost_known"] = False
+    assert summary_line(job_economy(cheap, None, now=NOW)).endswith(
+        " · cheap US$ 1.75 (cost unknown)")
