@@ -130,6 +130,28 @@ def test_discover_executor_carries_tool_dict(fake_bin):
     assert ex.tool["kind"] == "opencode"
 
 
+def test_discover_suggests_setup_while_the_global_file_has_no_block(
+    tmp_path, monkeypatch
+):
+    """``discover`` adds its ``acc setup`` suggestion only without a block."""
+    from crew_chief import setup
+
+    global_file = tmp_path / "preferences.toml"
+    monkeypatch.setenv("AGENT_CREW_CHIEF_GLOBAL_PREFS", str(global_file))
+
+    assert setup.setup_hint() == "run setup to configure cost tiers"
+
+    setup.write_block(
+        global_file,
+        setup.render_block(setup.Detected(executors=[], accounts={}), {}),
+    )
+    assert setup.setup_hint() is None
+
+    # A lone marker is not a block: the suggestion comes back.
+    global_file.write_text(f"{setup.SETUP_BEGIN}\nexplore_rate = 0.2\n", "utf-8")
+    assert setup.setup_hint() == "run setup to configure cost tiers"
+
+
 def test_discover_full_lists_models_only_for_tools_that_listed(fake_bin):
     fake_bin("opencode", "print('oc/free\\noc/banned')\n")
     prefs = _prefs(

@@ -18,6 +18,12 @@ ruling (or a title) to an ADR file in ``docs/decisions``.
 ``economy`` prints the job's economy summary and alerts, and ``close`` prints the
 same block before the commit message.
 
+``setup`` detects the executors and the logins this machine has, asks only what
+it could not deduce and writes one managed block (``cheap_budget_usd_day``,
+``forbid_training`` and the ``[[models]]`` rules that promote a paid-for
+subscription to ``included``) into the global preferences file. Without
+``--yes`` it needs a terminal.
+
 All commands take ``--project PATH`` (default: the current directory) and
 ``--json`` (structured output instead of text). A ``PrefsError``,
 ``RecordError``, ``NotAGitRepo`` or ``ValueError`` prints one line to stderr
@@ -47,10 +53,16 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import economy, records, spend
+from . import economy, records, setup, spend
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
-from .config import Prefs, PrefsError, load_prefs, tool_work_types
+from .config import (
+    Prefs,
+    PrefsError,
+    default_global_path,
+    load_prefs,
+    tool_work_types,
+)
 from .decisions import DECISIONS_DIR, next_number, write_adr
 from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
@@ -114,6 +126,14 @@ def _project(args: argparse.Namespace) -> Path:
     if args.project:
         return Path(args.project).expanduser().resolve()
     return Path.cwd()
+
+
+def _has_tty() -> bool:
+    """Whether stdin is an interactive terminal (``setup`` needs one)."""
+    try:
+        return bool(sys.stdin.isatty())
+    except (AttributeError, ValueError):
+        return False
 
 
 def _emit(args: argparse.Namespace, text: str, payload: dict) -> None:
@@ -227,6 +247,7 @@ def _cmd_discover(args: argparse.Namespace) -> int:
     ]
     lines.extend(f"skipped: {note}" for note in notes)
     work_types = _work_types_summary(prefs, executors)
+    setup_hint = setup.setup_hint()
 
     payload = {
         "executors": [
@@ -243,9 +264,12 @@ def _cmd_discover(args: argparse.Namespace) -> int:
         "changes": changes_payload(changes),
         "work_types": work_types,
         "exec_first": list(prefs.exec_first),
+        "setup_hint": setup_hint,
     }
     text = "\n".join(lines) if lines else "no executors"
     text += "\n\n" + "\n".join(render_changes(changes))
+    if setup_hint:
+        text += "\n\n" + setup_hint
     if work_types:
         text += "\n\n" + "\n".join(
             _work_types_line(name, types, prefs)
@@ -929,6 +953,51 @@ def _cmd_scoreboard(args: argparse.Namespace) -> int:
     text = render_scoreboard(project)
     _write_scoreboard(project, text)
     _emit(args, text.rstrip("\n"), {"scoreboard": text})
+    return 0
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    """Detect the machine, ask the rest, write the managed preferences block.
+
+    Without ``--yes`` the command needs a terminal: a script or an agent has
+    nobody to answer, so it exits 2 and writes nothing. The questions and the
+    summary are in ``--lang`` (default: the system language); the summary
+    counts the executors per tier with the block's rules already applied.
+    """
+    if not args.yes and not _has_tty():
+        raise ValueError("no terminal: run acc setup --yes or answer in a terminal")
+
+    project = _project(args)
+    prefs = load_prefs(project)
+    lang = args.lang or setup.detect_lang(os.environ)
+    detected = setup.detect(prefs, os.environ, setup.home_dir())
+    questions = setup.questions(detected, lang)
+    if args.yes:
+        answers = {question.key: question.default for question in questions}
+    else:
+        answers = setup.ask(questions, sys.stdin, sys.stderr)
+
+    block = setup.render_block(detected, answers)
+    path = default_global_path()
+    setup.write_block(path, block)
+
+    values = setup.block_values(block)
+    counts = setup.tier_counts(prefs, detected, block)
+    budget = setup.budget_value(values.get("cheap_budget_usd_day"))
+    _emit(
+        args,
+        setup.summary_text(counts, f"{budget:g}", lang),
+        {
+            "lang": lang,
+            "tiers": counts,
+            "cheap_budget_usd_day": budget,
+            "forbid_training": bool(values.get("forbid_training", True)),
+            "models": list(values.get("models", [])),
+            "accounts": dict(detected.accounts),
+            "executors": [executor.id for executor in detected.executors],
+            "preferences": str(path),
+        },
+    )
     return 0
 
 
@@ -1684,6 +1753,24 @@ def build_parser() -> argparse.ArgumentParser:
         "scoreboard", parents=[common], help="regenerate and print the scoreboard"
     )
     scoreboard_parser.set_defaults(handler=_cmd_scoreboard)
+
+    setup_parser = subcommands.add_parser(
+        "setup", parents=[common], help="detect the CLIs and the subscriptions, "
+        "ask the rest and write the global cost tiers"
+    )
+    setup_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="ask nothing: accept every default (subscriptions no, budget 0, "
+        "no training)",
+    )
+    setup_parser.add_argument(
+        "--lang",
+        choices=("pt", "en"),
+        default=None,
+        help="language of the questions (default: the system language)",
+    )
+    setup_parser.set_defaults(handler=_cmd_setup)
 
     return parser
 

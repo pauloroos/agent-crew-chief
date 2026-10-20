@@ -391,6 +391,32 @@ more than it delegates, split less and do the work directly; if there are too
 many attempts per piece, the briefs are too big or the pieces too vague: split
 the piece or write the proof first. Tell the user when an alert fired.
 
+### Cost tiers and `CC setup`
+
+Every executor sits on a four-step ladder: `free`, `included`, `cheap`, `paid`
+(plus `forbidden`, which wins at any level). `pick` climbs it on its own only
+when a tier runs out: execution work never reaches `paid` without `--strong`,
+and `cheap` is used only while the day's spend is under the global budget.
+
+When `discover` prints `run setup to configure cost tiers`, the global
+preferences file has no `acc setup` block yet: run it once with the user
+present, or accept the defaults:
+
+```bash
+CC setup --project .          # asks one question at a time
+CC setup --yes --project .    # asks nothing: subscriptions no, budget 0, no training
+```
+
+It detects the CLIs on PATH, their models and the kind of each login (account
+or API key — never the key itself), asks only what it cannot deduce (whether
+the Claude subscription is paid for, the daily budget for cheap models, and
+whether free models that train on what the user sends may be used), prints the
+count per tier and writes one managed block between `# >>> acc setup >>>` and
+`# <<< acc setup <<<` in `~/.config/agent-crew-chief/preferences.toml`,
+leaving everything outside it alone. It needs a terminal: without one and
+without `--yes` it exits `2` and writes nothing. `--lang pt|en` picks the
+language of the questions (default: the system language).
+
 ## What stays with the coordinator
 
 - The plan: the split into pieces, their order and their risk.
