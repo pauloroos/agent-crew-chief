@@ -212,3 +212,11 @@ def test_commit_message_is_unchanged_without_a_changelog_entry():
     message, _ = records.summaries(job)
     assert "CHANGELOG" not in message
     assert records.commit_type(job) == "feat"
+
+
+def test_insert_before_changesets_style_release_headings():
+    text = "# my-pkg\n\n## 1.2.0\n\n### Minor Changes\n\n- abc: thing\n\n## v1.1.0\n\n- old\n"
+    out = insert_entry(text, "Added", "- New. <!-- crew:J1 -->")
+    assert out.index("## [Unreleased]") < out.index("## 1.2.0")
+    assert out.endswith("## 1.2.0\n\n### Minor Changes\n\n- abc: thing\n\n## v1.1.0\n\n- old\n")
+    assert "### Added\n- New. <!-- crew:J1 -->" in out

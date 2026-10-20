@@ -33,7 +33,9 @@ _HEADER = (
 
 _MARKER = re.compile(r"<!-- crew:\S+ -->")
 _UNRELEASED = re.compile(r"^##\s+\[?unreleased\]?(\s|$)", re.IGNORECASE)
-_RELEASE = re.compile(r"^##\s+\[")
+#: A released section: ``## [1.2.0]`` (Keep a Changelog) or ``## 1.2.0`` /
+#: ``## v1.2.0`` (changesets and similar tools).
+_RELEASE = re.compile(r"^##\s+(\[|v?\d+\.\d+)")
 _SECTION = re.compile(r"^##\s")
 _CATEGORY = re.compile(r"^###\s+(.*?)\s*$")
 _HEADING = re.compile(r"^#{1,3}\s")
