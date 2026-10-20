@@ -607,6 +607,9 @@ _EFFORT_RANKS = {
 }
 _DEFAULT_EFFORT_RANK = 1
 
+#: Attempt statuses that are not a quality failure, see :func:`_failed_executors`.
+_NOT_A_FAILURE = ("ok", "quota", "brief_refused")
+
 #: Effort flag values by failures so far, see :func:`next_effort`.
 _EFFORT_STEPS = ("low", "medium", "high")
 
@@ -646,15 +649,16 @@ def _failed_executors(piece: dict) -> list[str]:
     """Executors behind each failed exec attempt and each correction.
 
     One entry per failure, so a repeated failure counts repeatedly. An exec
-    attempt that is not ``ok`` is a failure; so is a correction, which is
-    charged to the executor that drew it.
+    attempt that is not ``ok`` is a failure, except ``quota`` and
+    ``brief_refused`` (the work never ran, so more effort would not help); so
+    is a correction, which is charged to the executor that drew it.
     """
     failed = [
         attempt["executor"]
         for attempt in piece.get("attempts") or []
         if isinstance(attempt, dict)
         and attempt.get("role") == "exec"
-        and attempt.get("status") != "ok"
+        and attempt.get("status") not in _NOT_A_FAILURE
         and isinstance(attempt.get("executor"), str)
         and attempt.get("executor")
     ]
@@ -672,8 +676,10 @@ def effort_ceiling(job: dict | None, piece: int | None, family: str) -> int:
     """The highest :func:`effort_rank` allowed now for ``family`` on ``piece``.
 
     ``1 +`` the failures of that quota family on the piece (exec attempts
-    that are not ``ok`` and corrections drawn by its executors). Without a
-    job or piece there is no history, so the ceiling is 1.
+    that are not ``ok``, ``quota`` or ``brief_refused``, and corrections drawn
+    by its executors). Without a job or piece there is no history, so the
+    ceiling is 1. The ceiling caps a preference, not a rule: it is bypassed
+    when only one variant remains or none is under the ceiling.
     """
     if not job or piece is None:
         return _DEFAULT_EFFORT_RANK

@@ -1477,3 +1477,39 @@ def test_next_effort_for_flag_tools():
     assert next_effort(forced, 1) == "medium"
     assert next_effort(generic, 1) is None
     assert next_effort(off, 0) is None
+
+
+def _ceiling_for(attempts=(), corrections=()):
+    job = _job_with_picks([])
+    job["pieces"][0]["attempts"] = list(attempts)
+    job["pieces"][0]["corrections"] = list(corrections)
+    return effort_ceiling(job, 1, "antigravity:gemini")
+
+
+def test_effort_ceiling_ignores_quota_and_refused_brief_attempts():
+    low = "antigravity:gemini-3-pro-low"
+    for status in ("quota", "brief_refused"):
+        attempt = _failed_attempt(low)
+        attempt["status"] = status
+        assert _ceiling_for([attempt]) == 1
+
+
+def test_effort_ceiling_rises_after_a_failed_attempt_or_a_correction():
+    low = "antigravity:gemini-3-pro-low"
+
+    assert _ceiling_for([_failed_attempt(low)]) == 2
+    assert _ceiling_for(corrections=[{"executor": low}]) == 2
+
+
+def test_pick_keeps_the_low_variant_after_a_quota_attempt():
+    low = _ex("antigravity:gemini-3-pro-low")
+    medium = _ex("antigravity:gemini-3-pro-medium")
+    job = _job_with_picks([])
+    attempt = _failed_attempt("antigravity:gemini-3-pro-low")
+    attempt["status"] = "quota"
+    job["pieces"][0]["attempts"] = [attempt]
+
+    chosen, _ = pick([medium, low], {}, "code", "medium", _prefs(), set(),
+                     _Rng(0.9), job=job, piece=1)
+
+    assert chosen is low
