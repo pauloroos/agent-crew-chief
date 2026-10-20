@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [0.3.2] - 2026-10-20
+
+### Added
+- Three tutorials in `docs/tutorials/` (English and Brazilian Portuguese): your first job in 10 minutes, spec-driven work, and cost and safety. Every command and output in them comes from a real run.
+- `examples/hello-crew`: a tiny Python project to practise the tutorials on.
+
+### Fixed
+- Windows: `Recent` and `AppData` in the home folder, which the system and other programs update on their own, no longer make an attempt an outside write.
+
 ## [0.3.1] - 2026-10-20
 
 ### Added

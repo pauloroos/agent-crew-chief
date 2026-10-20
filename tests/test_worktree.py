@@ -293,6 +293,20 @@ def test_write_in_home_dir_is_outside_write(git_repo: Path, home_dir: Path):
     assert "home: escaped.txt" in outside_writes(before, after)
 
 
+def test_windows_shell_folders_in_home_are_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    for name in ("Recent", "AppData"):
+        (home_dir / name).mkdir()
+        (home_dir / name / "x.lnk").write_text("x", encoding="utf-8")
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == []
+
+
 def test_snapshot_ignores_the_worktree_itself(git_repo: Path, home_dir: Path):
     worktree, _ = create_worktree(git_repo, "job1", 1, 1)
 

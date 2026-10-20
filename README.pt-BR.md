@@ -228,11 +228,11 @@ plano. O trecho instalado diz isso numa linha.
 ## Instalação
 
 ```bash
-git clone --branch v0.3.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.3.2 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe o `agent-crew-chief-v0.3.1.zip` da
+Sem git? Baixe o `agent-crew-chief-v0.3.2.zip` da
 [última release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 descompacte e rode `python install.py /caminho/do/projeto` de dentro da pasta.
 Fixe uma tag (`--branch vX.Y.Z`) para nunca instalar código no meio de uma mudança;

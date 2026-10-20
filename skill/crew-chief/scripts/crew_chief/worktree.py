@@ -84,6 +84,10 @@ AGENT_HOME_ENTRIES: tuple[str, ...] = (
     "NTUSER.DAT*",
     "ntuser.dat*",
     "ntuser.ini",
+    # Windows shell folders the system updates on its own (recent files,
+    # app data of every program).
+    "Recent",
+    "AppData",
 )
 
 #: Directory names :func:`create_worktree` gives attempts:

@@ -92,23 +92,20 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
-def test_version_is_0_3_1_and_changelog_has_its_section():
-    assert __version__ == "0.3.1"
+def test_version_is_0_3_2_and_changelog_has_its_section():
+    assert __version__ == "0.3.2"
     text = _read(CHANGELOG)
-    heading = next(
-        line for line in text.splitlines()
-        if line.startswith(("## [Unreleased]", "## [0.3.1]"))
-    )
-    unreleased = text.split(heading + "\n", 1)[1].split("\n## [", 1)[0]
-    for needle in (
-        "included",
-        "cheap",
-        "setup",
-        "spend.jsonl",
-        "sensitive",
-        "0.3.1",
-    ):
-        assert needle in unreleased, needle
+    section = text.split("## [0.3.2]", 1)[1].split("\n## [", 1)[0]
+    for needle in ("Recent", "AppData", "tutorials", "hello-crew"):
+        assert needle in section, needle
+
+
+def test_changelog_keeps_the_0_3_1_section():
+    """Bumping the version must not rewrite the released section."""
+    text = _read(CHANGELOG)
+    section = text.split("## [0.3.1]", 1)[1].split("\n## [", 1)[0]
+    for needle in ("included", "cheap", "setup", "spend.jsonl", "sensitive", "0.3.1"):
+        assert needle in section, needle
 
 
 def test_changelog_keeps_the_0_3_0_section():
