@@ -5,6 +5,8 @@ spec-kit has no place for the executor-facing facts the coordinator needs
 they live in ``<spec dir>/crew.toml``. The file is read with ``tomllib`` and
 written by a small formatter of our own (stdlib only): top-level scalars and
 a list, then one ``[tasks.<id>]`` table per task, sorted by task id.
+:func:`update_sidecar` edits an existing file in place instead, so the user's
+comments survive. Unknown keys are refused on load.
 """
 
 from __future__ import annotations
