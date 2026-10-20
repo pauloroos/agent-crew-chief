@@ -67,7 +67,8 @@ def test_exec_brief_omits_interfaces_and_says_not_restricted_without_files():
 def test_review_brief_asks_two_verdicts():
     b = render_review_brief(TASK_T012, META, ["FR-001: ..."])
     assert "## Spec verdict" in b and "## Quality verdict" in b
-    assert "Do not trust the executor's report; read the diff (git show HEAD)." in b
+    assert "Do not trust the executor's report; read the diff." in b
+    assert "## Where to review" not in b        # only with an attempt
     assert "done | missing | misunderstood" in b
     assert "extra" in b
     assert "Critical | Important | Minor" in b
@@ -130,6 +131,7 @@ def test_brief_render_cli_prints_exec_brief(git_repo, capsys):
 def test_brief_render_cli_review_and_converge(git_repo, capsys):
     job, _ = _setup(git_repo)
     n = _piece_n(git_repo, job, "T012")
+    _attempt(git_repo, job, n, 1)
     capsys.readouterr()
     assert _render(git_repo, job, "--piece", str(n), "--review") == 0
     assert "## Spec verdict" in capsys.readouterr().out
@@ -188,3 +190,83 @@ def test_brief_render_cli_requires_piece_unless_converge(git_repo, capsys):
     capsys.readouterr()
     assert _render(git_repo, job) == 2
     assert "--piece" in capsys.readouterr().err
+
+
+# -- the review brief is pinned to one attempt --------------------------------
+
+import subprocess  # noqa: E402
+
+from crew_chief.worktree import commit_worktree, create_worktree  # noqa: E402
+
+
+def _git_out(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True,
+        encoding="utf-8",
+    ).stdout.strip()
+
+
+def _attempt(repo: Path, job: str, piece: int, n: int, shas: bool = True) -> dict:
+    start = _git_out(repo, "rev-parse", "HEAD")
+    worktree, branch = create_worktree(repo, job, piece, n)
+    (worktree / f"out{n}.py").write_text("x = 1\n", encoding="utf-8")
+    commit_worktree(worktree, f"attempt {n}")
+    attempt = {"n": n, "executor": "stub:m", "role": "exec", "status": "ok",
+               "branch": branch, "worktree": str(worktree)}
+    if shas:
+        attempt["start_sha"] = start
+        attempt["end_sha"] = _git_out(worktree, "rev-parse", "HEAD")
+    records.update_job(repo, job, lambda j: records.add_attempt(j, piece, attempt))
+    return attempt | {"start_sha": start, "end_sha": _git_out(worktree, "rev-parse", "HEAD")}
+
+
+def test_review_brief_names_worktree_commits_and_constraints():
+    b = render_review_brief(
+        TASK_T012, META, ["FR-001: ..."], ["No new deps"],
+        worktree="/w/crew-1", start="abc1234", end="def5678",
+    )
+    assert "Work in /w/crew-1." in b
+    assert "Confirm `git rev-parse --short HEAD` is def5678." in b
+    assert "Review `git diff abc1234..HEAD`." in b
+    assert "## Global constraints" in _heads(b) and "No new deps" in b
+
+
+def test_brief_render_review_pins_the_last_ok_attempt(git_repo, capsys):
+    job, _ = _setup(git_repo)
+    n = _piece_n(git_repo, job, "T012")
+    _attempt(git_repo, job, n, 1)
+    second = _attempt(git_repo, job, n, 2)
+    capsys.readouterr()
+    assert _render(git_repo, job, "--piece", str(n), "--review") == 0
+    out = capsys.readouterr().out
+    short_end = _git_out(git_repo, "rev-parse", "--short", second["end_sha"])
+    short_start = _git_out(git_repo, "rev-parse", "--short", second["start_sha"])
+    assert f"Work in {second['worktree']}." in out
+    assert f"Confirm `git rev-parse --short HEAD` is {short_end}." in out
+    assert f"Review `git diff {short_start}..HEAD`." in out
+    assert "No new deps" in out
+
+
+def test_brief_render_review_attempt_flag_and_old_records(git_repo, capsys):
+    job, _ = _setup(git_repo)
+    n = _piece_n(git_repo, job, "T012")
+    first = _attempt(git_repo, job, n, 1, shas=False)   # recorded before the SHAs
+    _attempt(git_repo, job, n, 2)
+    capsys.readouterr()
+    assert _render(git_repo, job, "--piece", str(n), "--review", "--attempt", "1") == 0
+    out = capsys.readouterr().out
+    assert f"Work in {first['worktree']}." in out
+    short_end = _git_out(git_repo, "rev-parse", "--short", first["end_sha"])
+    assert f"is {short_end}." in out
+    assert _render(git_repo, job, "--piece", str(n), "--review", "--attempt", "7") == 2
+    assert "attempt 7" in capsys.readouterr().err
+
+
+def test_brief_render_review_without_an_ok_attempt_exits_2(git_repo, capsys):
+    job, _ = _setup(git_repo)
+    n = _piece_n(git_repo, job, "T012")
+    capsys.readouterr()
+    assert _render(git_repo, job, "--piece", str(n), "--review") == 2
+    err = capsys.readouterr().err.strip().splitlines()
+    assert err == [f"piece {n} has no ok exec attempt to review"]
+    assert _render(git_repo, job, "--piece", str(n), "--attempt", "1") == 2

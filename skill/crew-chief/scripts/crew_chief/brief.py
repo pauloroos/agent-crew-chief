@@ -14,7 +14,7 @@ from .speckit import SpecTask
 
 STATUS_LINE = "End with one status line: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT"
 NOT_RESTRICTED = "Not restricted — keep the change minimal"
-TRUST_LINE = "Do not trust the executor's report; read the diff (git show HEAD)."
+TRUST_LINE = "Do not trust the executor's report; read the diff."
 
 
 def _bullets(items: list[str], empty: str) -> list[str]:
@@ -69,15 +69,41 @@ def render_exec_brief(
     return "\n".join(lines) + "\n"
 
 
-def render_review_brief(task: SpecTask, meta: TaskMeta, refs: list[str]) -> str:
-    """The brief a reviewer receives: two separate verdicts, no trust in the report."""
+def render_review_brief(
+    task: SpecTask,
+    meta: TaskMeta,
+    refs: list[str],
+    constraints: list[str] | None = None,
+    worktree: str = "",
+    start: str = "",
+    end: str = "",
+) -> str:
+    """The brief a reviewer receives: two separate verdicts, no trust in the report.
+
+    ``worktree``, ``start`` and ``end`` pin the review to one attempt: the
+    reviewer works in that worktree, checks that ``HEAD`` is ``end`` and reads
+    ``git diff start..HEAD`` (an attempt can hold several commits).
+    """
     lines = [
         f"# Review {_title(task)}",
         "",
         TRUST_LINE,
         "",
+    ]
+    if worktree:
+        lines += [
+            "## Where to review",
+            f"Work in {worktree}. Confirm `git rev-parse --short HEAD` is {end}. "
+            f"Review `git diff {start}..HEAD`.",
+            f"If HEAD is not {end}, stop and answer only: WRONG HEAD <what you found>.",
+            "",
+        ]
+    lines += [
         "## Acceptance criteria",
         *_bullets(refs, "none listed"),
+        "",
+        "## Global constraints",
+        *_bullets(list(constraints or []), "none"),
         "",
         "## Files allowed",
         *_files(meta),

@@ -1027,3 +1027,18 @@ def test_scope_is_absent_when_everything_is_allowed(git_repo, fake_bin):
 
     assert attempt["status"] == "ok"
     assert "scope" not in attempt
+
+
+def test_exec_attempt_records_start_and_end_commits(git_repo, fake_bin):
+    fake_bin("stub", _WRITES + "print('done')\n")
+    job = _seed_job(git_repo)
+    start = _head(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "Go\n", _prefs())
+
+    assert attempt["status"] == "ok"
+    assert attempt["start_sha"] == start
+    assert attempt["end_sha"] == _head(Path(attempt["worktree"]))
+    assert attempt["end_sha"] != start
+    stored = _stored_attempt(git_repo, job["id"])
+    assert (stored["start_sha"], stored["end_sha"]) == (start, attempt["end_sha"])

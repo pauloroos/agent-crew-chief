@@ -372,6 +372,16 @@ def commit_worktree(worktree: Path, message: str) -> str | None:
     return _git(["rev-parse", "HEAD"], worktree).strip()
 
 
+def short_sha(repo: Path, rev: str) -> str:
+    """``git rev-parse --short <rev>`` in ``repo``; raises :class:`RuntimeError`."""
+    return _git(["rev-parse", "--short", rev], Path(repo)).strip()
+
+
+def merge_base(repo: Path, first: str, second: str) -> str:
+    """The best common ancestor of two revisions; raises :class:`RuntimeError`."""
+    return _git(["merge-base", first, second], Path(repo)).strip()
+
+
 def path_is_clean(project: Path, path: str) -> bool:
     """Whether ``path`` is tracked and identical to ``HEAD`` (index and disk).
 

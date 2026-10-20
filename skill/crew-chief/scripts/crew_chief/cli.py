@@ -77,7 +77,7 @@ from .speckit import (
     readiness,
     resolve_refs,
 )
-from .worktree import NotAGitRepo, commit_paths, path_is_clean
+from .worktree import NotAGitRepo, commit_paths, merge_base, path_is_clean, short_sha
 from .worktree import accept as accept_branch
 from .worktree import discard as discard_branch
 
@@ -1198,11 +1198,50 @@ def _cmd_spec_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _review_target(
+    project: Path, piece: dict, number: int, attempt_n: int | None
+) -> tuple[str, str, str]:
+    """``(worktree, short start sha, short end sha)`` of the attempt to review.
+
+    ``attempt_n`` names an exec attempt of the piece; ``None`` takes the last
+    ``ok`` one. Attempts recorded before ``start_sha``/``end_sha`` existed get
+    them from git: the tip of their branch and its merge base with ``HEAD``.
+    """
+    if attempt_n is None:
+        attempt = _last_ok_exec_attempt(piece)
+        if attempt is None:
+            raise ValueError(f"piece {number} has no ok exec attempt to review")
+    else:
+        attempt = next(
+            (
+                a
+                for a in piece.get("attempts") or []
+                if a.get("role") == "exec" and a.get("n") == attempt_n
+            ),
+            None,
+        )
+        if attempt is None:
+            raise ValueError(f"piece {number} has no exec attempt {attempt_n}")
+    if not attempt.get("worktree"):
+        raise ValueError(f"attempt {attempt.get('n')} of piece {number} has no worktree")
+    try:
+        end = attempt.get("end_sha") or attempt.get("branch") or ""
+        start = attempt.get("start_sha") or merge_base(project, "HEAD", end)
+        return attempt["worktree"], short_sha(project, start), short_sha(project, end)
+    except RuntimeError as exc:
+        raise ValueError(
+            f"cannot find the commits of attempt {attempt.get('n')} of piece "
+            f"{number} (accepted or discarded already?)"
+        ) from exc
+
+
 def _cmd_brief_render(args: argparse.Namespace) -> int:
     project = _project(args)
     job = records.load_job(project, args.job)
     if args.review and args.converge:
         raise ValueError("--review and --converge cannot be combined")
+    if args.attempt is not None and not args.review:
+        raise ValueError("--attempt is for --review")
     number = args.piece
     if args.converge:
         folder = find_spec_dir(project, job.get("spec_dir") or None)
@@ -1244,7 +1283,11 @@ def _cmd_brief_render(args: argparse.Namespace) -> int:
         found, missing = resolve_refs(list(dict.fromkeys(meta.accept)), index)
         refs = found + [f"UNRESOLVED: {item}" for item in missing]
         if args.review:
-            kind, brief = "review", render_review_brief(task, meta, refs)
+            worktree, start, end = _review_target(project, piece, number, args.attempt)
+            kind = "review"
+            brief = render_review_brief(
+                task, meta, refs, sidecar.global_constraints, worktree, start, end
+            )
         else:
             kind = "exec"
             brief = render_exec_brief(
@@ -1499,6 +1542,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     brief_render.add_argument(
         "--review", action="store_true", help="the reviewer brief (two verdicts)"
+    )
+    brief_render.add_argument(
+        "--attempt",
+        type=int,
+        default=None,
+        metavar="N",
+        help="with --review: the exec attempt to review (default: the last ok one)",
     )
     brief_render.add_argument(
         "--converge", action="store_true", help="the final spec-vs-code comparison brief"

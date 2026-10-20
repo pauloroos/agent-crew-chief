@@ -146,6 +146,10 @@ def dispatch(
     ``ignored_deps`` (what the caller dispatched in spite of: a dependency or
     an earlier phase) is stored on the attempt as given.
 
+    An exec attempt whose worktree survived the run records ``start_sha`` (the
+    commit the worktree started from) and ``end_sha`` (its ``HEAD`` after the
+    commit), so a review can be pinned to exactly that work.
+
     Precondition: ``piece`` must exist in the job and ``base`` must name an
     existing branch; otherwise ValueError is raised and nothing is recorded.
     """
@@ -320,6 +324,9 @@ def dispatch(
             commit_worktree(
                 worktree, f"crew: {job_id} piece {piece} attempt {number}"
             )
+            # What a reviewer must find in the worktree (see brief render).
+            attempt["start_sha"] = start_head
+            attempt["end_sha"] = head_commit(worktree)
         except RuntimeError as exc:
             note = f"broken worktree after the run: {exc}"
             return finish("failed", f"{note}\n\n{attempt['note']}".rstrip())
