@@ -19,6 +19,11 @@ Every attempt also records how much work it took: ``duration_s``, the agent
 ``steps`` and the tokens (``tokens_in``, ``tokens_out``, ``tokens_total``)
 the CLI reported, or a characters / 4 estimate flagged ``tokens_estimated``.
 
+The note keeps the cause of a failure, not only the answer: the provider
+error of an ``opencode`` run (its type, its message and its HTTP status,
+never the raw response body) or a quota line on stderr or in the output
+comes first, so a long output cannot tail-truncate it.
+
 A review is the same run without a worktree of its own: it uses the
 ``review_target`` it was given, commits nothing and removes its brief file
 afterwards.
@@ -52,6 +57,7 @@ from .tools import (
     output_text,
     parse_metrics,
     parse_reported_model,
+    provider_error,
     tool_env,
     wants_effort,
 )
@@ -307,10 +313,13 @@ def dispatch(
     if text == "" and output_file.exists():
         text = output_file.read_text(encoding="utf-8", errors="replace")
     answer = output_text(tool, text)
-    attempt["note"] = answer[-MAX_NOTE:]
+    cause = _cause(tool, text, answer, stderr)
     if not answer.strip() and (stderr or "").strip():
         # A run that printed nothing would leave no clue; keep its stderr.
-        attempt["note"] = f"stderr:\n{stderr}"[-MAX_NOTE:]
+        body = f"stderr:\n{stderr}"
+    else:
+        body = answer
+    attempt["note"] = _note(body, cause)
     sensitive, check_error = _clean_sensitive(worktree, prefs.sensitive_paths)
     if check_error:
         failed = f"sensitive path check failed: {check_error}"
@@ -665,6 +674,62 @@ def _quota_hit(stderr: str | None, text: str) -> bool:
     """Whether stderr or the output text matches any :data:`QUOTA_PATTERNS`."""
     haystack = f"{stderr or ''}\n{text or ''}"
     return any(pattern.search(haystack) for pattern in QUOTA_PATTERNS)
+
+
+def _quota_lines(text: str | None) -> list[str]:
+    """The quota/rate-limit lines of ``text``, in order.
+
+    A line that is a JSON object is left out: a structured response is
+    never shown as a cause.
+    """
+    lines = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("{") or line.startswith("["):
+            continue
+        if any(pattern.search(line) for pattern in QUOTA_PATTERNS):
+            lines.append(line)
+    return lines
+
+
+def _cause(tool: dict, text: str, answer: str, stderr: str) -> str:
+    """Why the attempt failed, as readable text.
+
+    The provider error of the run's own events comes first (its type, its
+    message and its HTTP status, never the raw response body); without
+    one, the quota lines on stderr and in the answer.
+    """
+    error = provider_error(tool, text)
+    if error:
+        return error
+    lines = []
+    for line in [*_quota_lines(stderr), *_quota_lines(answer)]:
+        if line not in lines:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _note(body: str, cause: str) -> str:
+    """The note of an attempt: the cause first, then the readable output.
+
+    The cause (the provider error, a quota line) comes first and is never
+    truncated: a long output cannot tail-truncate the diagnosis. The
+    output keeps its own tail, trimmed to what is left of
+    :data:`MAX_NOTE`; a cause longer than the note budget is kept whole
+    and the note grows past it.
+    """
+    cause = cause.strip()
+    if not cause:
+        return body[-MAX_NOTE:]
+    said = [line.strip() for line in cause.splitlines() if line.strip()]
+    body = "\n".join(
+        line for line in body.splitlines() if line.strip() not in said
+    )
+    if not body.strip():
+        return cause
+    room = MAX_NOTE - len(cause) - 2
+    tail = body[-room:].strip("\n") if room > 0 else ""
+    return f"{cause}\n\n{tail}" if tail else cause
 
 
 def _remove_brief(role: str, brief_file: Path) -> None:

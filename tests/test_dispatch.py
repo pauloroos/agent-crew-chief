@@ -24,7 +24,7 @@ import pytest
 
 from crew_chief import records
 from crew_chief.config import Prefs
-from crew_chief.dispatch import dispatch
+from crew_chief.dispatch import MAX_NOTE, dispatch
 from crew_chief.tools import Executor
 from crew_chief.worktree import create_worktree
 
@@ -1344,3 +1344,187 @@ def test_failing_sensitive_check_is_noted_not_silent(
     )
 
     assert "sensitive path check failed: git exploded" in attempt["note"]
+
+
+# --- quota notes keep the provider error ------------------------------------
+
+
+def _opencode_stub(fake_bin, events, name: str = "ocstub", exit_code: int = 1):
+    """A stub that prints ``events`` as opencode JSON lines and then fails."""
+    payload = "".join(json.dumps(event) + "\n" for event in events)
+    fake_bin(
+        name,
+        "import sys\n"
+        f"sys.stdout.write({payload!r})\n"
+        f"sys.exit({exit_code})\n",
+    )
+
+
+#: The provider failure ``opencode run --format json`` prints when the
+#: provider refuses the request: the type, the message and the HTTP status.
+#: The raw response body travels with it and must never reach the note.
+_QUOTA_EVENT = {
+    "type": "error",
+    "error": {
+        "type": "provider.quota",
+        "message": "Rate limit exceeded. Please try again later.",
+        "status": 429,
+        "response": {
+            "body": '{"type":"error","error":{"type":"FreeUsageLimitError"}}'
+        },
+    },
+}
+
+
+def _text_event(text: str) -> dict:
+    return {"type": "text", "part": {"type": "text", "text": text}}
+
+
+def _plain_stub(
+    fake_bin, stdout: str = "", stderr: str = "", name: str = "stub",
+    exit_code: int = 1,
+):
+    """A stub that prints plain text on stdout and/or stderr, then fails."""
+    script = "import sys\n"
+    if stdout:
+        script += f"sys.stdout.write({stdout!r})\n"
+    if stderr:
+        script += f"sys.stderr.write({stderr!r})\n"
+    script += f"sys.exit({exit_code})\n"
+    fake_bin(name, script)
+
+
+def test_opencode_quota_error_stays_in_the_note(git_repo, fake_bin):
+    _opencode_stub(fake_bin, [_QUOTA_EVENT])
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _oc_executor("free"), "go\n", _prefs()
+    )
+
+    assert attempt["status"] == "quota"
+    assert "provider.quota" in attempt["note"]
+    assert "Rate limit exceeded. Please try again later." in attempt["note"]
+    assert "429" in attempt["note"]
+    # The raw response body is never shown.
+    assert "FreeUsageLimitError" not in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]
+
+
+def test_opencode_text_before_the_quota_error_keeps_both(git_repo, fake_bin):
+    _opencode_stub(fake_bin, [_text_event("Feito."), _QUOTA_EVENT])
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _oc_executor("free"), "go\n", _prefs()
+    )
+
+    assert attempt["status"] == "quota"
+    assert "Feito." in attempt["note"]
+    assert "Rate limit exceeded. Please try again later." in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]
+
+
+def test_opencode_text_after_the_quota_error_keeps_both(git_repo, fake_bin):
+    _opencode_stub(fake_bin, [_QUOTA_EVENT, _text_event("Feito.")])
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _oc_executor("free"), "go\n", _prefs()
+    )
+
+    assert attempt["status"] == "quota"
+    assert "Feito." in attempt["note"]
+    assert "Rate limit exceeded. Please try again later." in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]
+
+
+def test_long_output_after_the_quota_error_does_not_truncate_it(
+    git_repo, fake_bin
+):
+    _opencode_stub(
+        fake_bin, [_QUOTA_EVENT, _text_event("linha " * 1000)]
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _oc_executor("free"), "go\n", _prefs()
+    )
+
+    assert attempt["status"] == "quota"
+    assert "Rate limit exceeded. Please try again later." in attempt["note"]
+    assert "429" in attempt["note"]
+    assert len(attempt["note"]) <= MAX_NOTE
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]
+
+
+def test_stderr_quota_line_with_normal_stdout_stays_in_the_note(
+    git_repo, fake_bin
+):
+    fake_bin(
+        "stub",
+        "import sys\n"
+        "sys.stderr.write('Error: 429 Too Many Requests\\n')\n"
+        "print('partial answer')\n"
+        "sys.exit(1)\n",
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "quota"
+    assert "429" in attempt["note"]
+    assert "partial answer" in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]
+
+
+def test_opencode_provider_message_is_kept_whole(git_repo, fake_bin):
+    # The whole message is the diagnosis: cutting it would lose the end of
+    # what the provider said.
+    message = "Rate limit exceeded. " + "the window is closed. " * 30 + "END-OF-MESSAGE"
+    assert len(message) > 500
+    event = {
+        "type": "error",
+        "error": {"type": "provider.quota", "message": message, "status": 429},
+    }
+    _opencode_stub(fake_bin, [event])
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _oc_executor("free"), "go\n", _prefs()
+    )
+
+    assert attempt["status"] == "quota"
+    assert message in attempt["note"]
+    assert "END-OF-MESSAGE" in attempt["note"]
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]
+
+
+def test_plain_stdout_quota_line_survives_a_long_output(git_repo, fake_bin):
+    line = "Error: provider.quota: Rate limit exceeded. Please try again later."
+    _plain_stub(
+        fake_bin, stdout=line + "\n" + "ordinary message " * 2000
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "quota"
+    assert line in attempt["note"]
+    assert len(attempt["note"]) <= MAX_NOTE
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]
+
+
+def test_stderr_quota_line_survives_a_long_stderr(git_repo, fake_bin):
+    _plain_stub(
+        fake_bin,
+        stderr="Error: 429 Too Many Requests\n" + "ordinary message " * 2000,
+    )
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(git_repo, job["id"], 1, _executor(), "go\n", _prefs())
+
+    assert attempt["status"] == "quota"
+    assert "429" in attempt["note"]
+    assert len(attempt["note"]) <= MAX_NOTE
+    assert _stored_attempt(git_repo, job["id"])["note"] == attempt["note"]

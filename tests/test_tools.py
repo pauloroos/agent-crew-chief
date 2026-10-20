@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from crew_chief.tools import (
@@ -13,6 +15,7 @@ from crew_chief.tools import (
     output_text,
     parse_metrics,
     parse_reported_model,
+    provider_error,
     tool_env,
     wants_effort,
 )
@@ -403,4 +406,61 @@ def test_output_text_takes_the_claude_code_result_event():
     )
     assert output_text({"kind": "claude-code"}, out) == "Revisão: tudo certo"
     assert output_text({"kind": "claude-code"}, "plain answer") == "plain answer"
+
+
+# --- the provider error ------------------------------------------------------
+
+#: The provider failure ``opencode run --format json`` prints when the
+#: provider refuses the request. The raw response body travels with it.
+_QUOTA_ERROR_EVENT = {
+    "type": "error",
+    "error": {
+        "type": "provider.quota",
+        "message": "Rate limit exceeded. Please try again later.",
+        "status": 429,
+        "response": {
+            "body": '{"type":"error","error":{"type":"FreeUsageLimitError"}}'
+        },
+    },
+}
+
+
+def test_provider_error_reads_type_message_and_status():
+    stdout = json.dumps(_QUOTA_ERROR_EVENT) + "\n"
+
+    line = provider_error({"kind": "opencode"}, stdout)
+
+    assert "provider.quota" in line
+    assert "Rate limit exceeded. Please try again later." in line
+    assert "429" in line
+    # The raw response body is never shown.
+    assert "FreeUsageLimitError" not in line
+    assert "{" not in line
+
+
+def test_provider_error_is_empty_without_an_error_event():
+    assert provider_error({"kind": "opencode"}, "plain answer") == ""
+    assert provider_error({"kind": "generic"}, json.dumps(_QUOTA_ERROR_EVENT)) == ""
+
+
+def test_output_text_opencode_error_without_text_is_the_readable_line():
+    stdout = json.dumps(_QUOTA_ERROR_EVENT) + "\n"
+
+    note = output_text({"kind": "opencode"}, stdout)
+
+    assert "provider.quota" in note
+    assert "Rate limit exceeded. Please try again later." in note
+    assert "429" in note
+    assert "FreeUsageLimitError" not in note
+
+
+def test_output_text_opencode_keeps_the_answer_next_to_an_error():
+    stdout = (
+        json.dumps({"type": "text", "part": {"type": "text", "text": "Feito."}})
+        + "\n"
+        + json.dumps(_QUOTA_ERROR_EVENT)
+        + "\n"
+    )
+
+    assert output_text({"kind": "opencode"}, stdout) == "Feito."
 

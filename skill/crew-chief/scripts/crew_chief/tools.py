@@ -372,14 +372,70 @@ def parse_metrics(tool: dict, stdout: str, stderr: str = "") -> dict:
     return _metrics(None, None, None)
 
 
+def _error_line(error: dict) -> str:
+    """One readable line for a provider error object.
+
+    Only the type, the message and the HTTP status are read: the raw
+    response body the object may carry is never shown, so a note never
+    holds a response body or a secret. The message is kept whole: it is
+    the diagnosis, and cutting it would lose what the provider said.
+    """
+    kind = error.get("type")
+    message = error.get("message")
+    kind = kind.strip() if isinstance(kind, str) else ""
+    message = message.strip() if isinstance(message, str) else ""
+    if not (kind or message):
+        return ""
+    line = f"{kind}: {message}" if kind and message else (kind or message)
+    status = error.get("status")
+    if isinstance(status, bool):
+        status = None
+    elif isinstance(status, str):
+        status = status.strip()
+        status = int(status) if status.isdigit() else None
+    elif isinstance(status, (int, float)):
+        status = int(status)
+    else:
+        status = None
+    if status is not None:
+        line = f"{line} (HTTP {status})"
+    return line
+
+
+def provider_error(tool: dict, stdout: str) -> str:
+    """The provider error inside ``stdout``, as one readable line.
+
+    ``opencode --format json`` reports the provider's failure as an
+    ``error`` event whose ``error`` object carries the type, the message
+    and the HTTP status. Only those are read (see :func:`_error_line`):
+    the raw response body the event carries is never shown. Empty when the
+    output holds no such event.
+    """
+    if tool.get("kind") != "opencode":
+        return ""
+    lines = []
+    for event in _json_lines(stdout):
+        if event.get("type") != "error":
+            continue
+        error = event.get("error")
+        if not isinstance(error, dict):
+            continue
+        line = _error_line(error)
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def output_text(tool: dict, stdout: str) -> str:
     """The readable answer inside ``stdout``.
 
     ``opencode --format json`` prints events; their ``text`` parts are joined
-    with blank lines. ``antigravity --output-format json`` prints one object
-    whose ``response`` (or, when empty, ``error``) is the answer; claude-code
-    stream/json output ends with a ``result`` event. Any other kind, or
-    output with no answer field, is returned unchanged.
+    with blank lines. A run that printed no text but failed has a provider
+    error instead, and that error is the answer (see :func:`provider_error`).
+    ``antigravity --output-format json`` prints one object whose ``response``
+    (or, when empty, ``error``) is the answer; claude-code stream/json output
+    ends with a ``result`` event. Any other kind, or output with no answer
+    field, is returned unchanged.
     """
     kind = tool.get("kind")
     if kind == "antigravity":
@@ -404,7 +460,10 @@ def output_text(tool: dict, stdout: str) -> str:
             text = part.get("text")
             if isinstance(text, str) and text:
                 texts.append(text)
-    return "\n\n".join(texts) if texts else stdout
+    if texts:
+        return "\n\n".join(texts)
+    error = provider_error(tool, stdout)
+    return error if error else stdout
 
 
 def _fill_from_registry(names: list[str], env: dict[str, str]) -> list[str]:
