@@ -1,32 +1,30 @@
-# Feature Specification: [FEATURE NAME]
+# [FEATURE NAME]
 
 **Created**: [DATE]
 **Status**: Draft
 
-## User Scenarios & Testing
+## What the user wants
+
+[The request in two or three plain sentences: who needs this and why.]
+
+## Stories
 
 ### User Story 1 - [Short title] (Priority: P1)
 
-[Describe this user journey in plain language.]
-
-**Why this priority**: [Value it delivers.]
-
-**Independent Test**: [How this story can be verified on its own.]
+[One user journey, in plain language. P1 is the story to ship first.]
 
 **Acceptance Scenarios**:
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **Given** [starting state], **When** [what the user does], **Then** [what they see]
 
-### Edge Cases
+### Open questions and edge cases
 
-- [What happens when ...?]
+- [What should happen when ...?]
 
 ## Requirements
 
-### Functional Requirements
+- **FR-001**: [What the system must do, testable on its own.]
 
-- **FR-001**: System MUST [capability].
+## Done when
 
-## Success Criteria
-
-- **SC-001**: [Measurable outcome.]
+- **SC-001**: [A measurable sign that the feature works.]

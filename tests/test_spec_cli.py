@@ -770,3 +770,11 @@ def test_dispatch_review_prints_the_reviewers_answer(git_repo, fake_bin, monkeyp
     capsys.readouterr()
     assert _dispatch(git_repo, job, 2, brief, "--no-proof", "--ignore-deps", "--json") == 0
     assert "answer" not in json.loads(capsys.readouterr().out)   # exec: no answer
+
+
+def test_spec_template_is_in_our_own_words():
+    template = (Path(__file__).resolve().parents[1] / "skill" / "crew-chief"
+                / "templates" / "spec" / "spec.md").read_text(encoding="utf-8")
+    for heading in ("Feature Specification", "User Scenarios & Testing",
+                    "Why this priority", "Independent Test"):
+        assert heading not in template, heading
