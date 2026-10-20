@@ -1542,21 +1542,112 @@ def test_cli_pick_exec_work_does_not_reach_cheap_with_a_zero_budget(
     assert "run setup to allow cheap models (current budget US$ 0)" in out
 
 
-def test_cli_pick_cheap_unknown_cost_without_cap_is_never_picked(
+_EXHAUSTED = lambda: [  # noqa: E731 - free and included gone on the piece
+    _failed("freebie:m"), _failed("mine:m", "included"),
+    _failed("other:m", "included"),
+]
+
+
+def test_cli_pick_cheap_unknown_cost_gets_one_probe_per_day(
     git_repo, fake_bin, monkeypatch, capsys
 ):
-    # Review Focus 1, end to end: the budget is open, the cost is unknown.
+    # Ruling 4: unknown cost and no cap -> one probe attempt per UTC day.
     _ladder_repo(git_repo, fake_bin, monkeypatch,
                  extra="cheap_budget_usd_day = 5.0")
-    job = _ladder_job(git_repo, attempts=[
-        _failed("freebie:m"), _failed("mine:m", "included"),
-        _failed("other:m", "included"),
-    ])
+    job = _ladder_job(git_repo, attempts=_EXHAUSTED())
 
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "cheapo:m"
+    assert "cheap probe: unknown cost, one attempt today" in lines[1]
+
+    # The probe ran today and the model is still unpriced: closed.
+    _spend_line(cost_usd=0.0, known=False)
     assert main(_pick_argv(git_repo, job)) == 1
     out = capsys.readouterr().out
     assert "unknown cost and no cap_usd_day" in out
     assert "run setup" not in out
+
+    # A probe of yesterday does not count today.
+    from crew_chief import spend
+
+    spend.spend_file().unlink()
+    _spend_line(cost_usd=0.0, known=False, days_ago=1)
+    assert main(_pick_argv(git_repo, job)) == 0
+    assert "cheap probe" in capsys.readouterr().out.splitlines()[1]
+
+
+def test_cli_pick_no_probe_with_a_zero_budget(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch)
+    job = _ladder_job(git_repo, attempts=_EXHAUSTED())
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    out = capsys.readouterr().out
+    assert "cheap probe" not in out
+    assert out.rstrip().endswith(
+        "; run setup to allow cheap models (current budget US$ 0)"
+    )
+
+
+def test_cli_pick_hint_without_any_cheap_executor(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch, bins={"freebie", "mine"})
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    out = capsys.readouterr().out
+    assert "split the piece" in out
+    assert out.rstrip().endswith(
+        "; run setup to allow cheap models (current budget US$ 0)"
+    )
+
+
+def test_cli_dispatch_rechecks_the_budget_for_a_cheap_executor(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch)
+    brief = _write(git_repo.parent / "brief.md", "Create out.py.\n")
+    job = _ladder_job(git_repo)
+
+    argv = ["dispatch", "--project", str(git_repo), "--job", job["id"],
+            "--piece", "1", "--executor", "cheapo:m", "--brief-file", str(brief)]
+    assert main(argv) == 2
+    err = capsys.readouterr().err
+    assert "budget US$ 0 reached (cheap_budget_usd_day)" in err
+    assert _stored_job(git_repo, job["id"])["pieces"][0]["attempts"] == []
+    from crew_chief import spend
+
+    assert not spend.spend_file().exists()
+
+    # A free executor is never budget-checked.
+    argv[argv.index("cheapo:m")] = "freebie:m"
+    assert main(argv) != 2
+
+
+def test_cli_dispatch_cheap_probe_is_allowed_once_then_refused(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 5.0")
+    brief = _write(git_repo.parent / "brief.md", "Create out.py.\n")
+    job = _ladder_job(git_repo)
+    argv = ["dispatch", "--project", str(git_repo), "--job", job["id"],
+            "--piece", "1", "--executor", "cheapo:m", "--brief-file", str(brief)]
+
+    assert main(argv) != 2
+    capsys.readouterr()
+    from crew_chief import spend
+
+    lines = spend.spend_file().read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1 and '"cheapo:m"' in lines[0]
+
+    assert main(argv) == 2
+    assert "unknown cost and no cap_usd_day" in capsys.readouterr().err
 
 
 def test_cli_pick_cheap_unknown_cost_with_a_cap_is_allowed(

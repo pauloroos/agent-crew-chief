@@ -36,6 +36,7 @@ from pathlib import Path
 
 from .config import Prefs, tool_work_types
 from .records import EXEC_TYPES, WORK_TYPES, iter_jobs, piece_grades
+from .spend import PROBE_NOTE
 from .tiers import TIER_ORDER
 from .tools import Executor, wants_effort
 
@@ -437,7 +438,11 @@ def _strong_index(executor: Executor, prefs: Prefs) -> int:
 
 #: Budget callback of :func:`pick`: ``None`` when the executor may spend money,
 #: else the reason it may not (``"budget US$ 0 reached (cheap_budget_usd_day)"``).
-Budget = Callable[[Executor], "str | None"]
+#: Called with ``None`` it answers only for the tier as a whole (the day and
+#: job ceilings). An object with ``is_probe(executor)`` (see
+#: :class:`spend.BudgetCheck`) marks the one probe attempt of an executor
+#: whose cost is unknown.
+Budget = Callable[["Executor | None"], "str | None"]
 
 
 def pick(
@@ -558,7 +563,7 @@ def pick(
 def _default_budget(prefs: Prefs) -> Budget:
     """The budget check when the caller gives none: only the daily ceiling."""
 
-    def check(_executor: Executor) -> str | None:
+    def check(_executor: Executor | None) -> str | None:
         if prefs.cheap_budget_usd_day <= 0:
             return (
                 f"budget US$ {prefs.cheap_budget_usd_day:g} reached "
@@ -671,6 +676,10 @@ def _pick(
             chosen, base = _choose_in_pool(
                 pool, stats, type, risk, prefs, rng, tier
             )
+        if tier == "cheap":
+            probe = getattr(check, "is_probe", None)
+            if probe is not None and probe(chosen):
+                suffix += f"; {PROBE_NOTE}"
         note = _effort_note(chosen, job, piece)
         if note:
             suffix += f"; {note}"
@@ -679,7 +688,9 @@ def _pick(
             reason += f"; climbed: {_tier_below(tier, seen)} exhausted"
         return chosen, reason
 
-    return None, _no_executor(type, execution, allow_paid_exec, prefs, blocked)
+    return None, _no_executor(
+        type, execution, allow_paid_exec, prefs, blocked, check(None)
+    )
 
 
 def _tier_below(tier: str, seen: set[str]) -> str:
@@ -726,8 +737,15 @@ def _no_executor(
     allow_paid_exec: bool,
     prefs: Prefs,
     blocked: dict[str, list[str]],
+    tier_reason: str | None = None,
 ) -> str:
-    """The reason when no tier has anyone."""
+    """The reason when no tier has anyone.
+
+    ``tier_reason`` is what the budget says about the cheap tier as a whole.
+    A day ceiling that is 0 or reached adds ``run setup to allow cheap models``
+    (whether or not a cheap executor existed); a reached job ceiling is said
+    as it is, since ``setup`` does not change it.
+    """
     if execution and not allow_paid_exec:
         text = (
             f"no executor available: no free executor left for {type}; split "
@@ -738,11 +756,17 @@ def _no_executor(
         text = "no executor available"
     if blocked:
         text += f"; {_blocked_note(blocked)}"
-        if any(why.startswith("budget US$") for why in blocked):
-            text += (
-                "; run setup to allow cheap models (current budget US$ "
-                f"{prefs.cheap_budget_usd_day:g})"
-            )
+    if tier_reason is not None and "(cheap_budget_usd_job)" in tier_reason:
+        if tier_reason not in blocked:
+            text += f"; {tier_reason}"
+    elif (
+        prefs.cheap_budget_usd_day <= 0
+        or (tier_reason or "").endswith("(cheap_budget_usd_day)")
+    ):
+        text += (
+            "; run setup to allow cheap models (current budget US$ "
+            f"{prefs.cheap_budget_usd_day:g})"
+        )
     return text
 
 
@@ -768,9 +792,10 @@ def _effort_note(
     else:
         match = _EFFORT_SUFFIX.search(executor.id)
         level = match.group(1) if match else None
-    if level is None:
-        return ""
     before = _EFFORT_STEPS[min(failures - 1, len(_EFFORT_STEPS) - 1)]
+    if level is None or level == before:
+        # Same level as the failed attempt: the effort did not rise.
+        return ""
     return f"effort {level} ({before} failed {failures}×)"
 
 

@@ -667,11 +667,16 @@ def test_pick_drops_excluded_and_never_picks_forbidden():
 def test_pick_returns_none_without_a_candidate():
     forbidden = _ex("opencode:f", cost="forbidden")
 
+    # The default budget is 0, so the setup hint follows (fix round 1).
+    message = (
+        "no executor available; run setup to allow cheap models "
+        "(current budget US$ 0)"
+    )
     assert pick([forbidden], {}, "review", "medium", _prefs(), set(),
-                _Rng(0.0)) == (None, "no executor available")
+                _Rng(0.0)) == (None, message)
     assert pick([], {}, "review", "medium", _prefs(), set(), _Rng(0.0)) == (
         None,
-        "no executor available",
+        message,
     )
     chosen, reason = pick([], {}, "code", "medium", _prefs(), set(), _Rng(0.0))
     assert chosen is None
@@ -1754,14 +1759,102 @@ def test_no_executor_message_suggests_setup_when_budget_zero():
     assert "; run setup to allow cheap models (current budget US$ 0)" in reason
 
 
-def test_no_executor_message_has_no_setup_hint_when_nothing_was_blocked():
+def test_setup_hint_appears_with_budget_zero_and_no_cheap_executor():
     free = _ex("opencode:x-free")
 
     chosen, reason = pick([free], {}, "code", "medium", _prefs(), {free.id},
                           _Rng(0.9), budget=_closed_budget)
 
     assert chosen is None
-    assert "run setup" not in reason
+    assert "cheap skipped" not in reason
+    assert reason.endswith(HINT_ZERO)
+
+    # Same without any callback: the default budget is 0.
+    chosen, reason = pick([free], {}, "code", "medium", _prefs(), {free.id},
+                          _Rng(0.9))
+    assert chosen is None
+    assert reason.endswith(HINT_ZERO)
+
+
+HINT_ZERO = "; run setup to allow cheap models (current budget US$ 0)"
+
+
+def test_setup_hint_appears_when_the_day_budget_is_reached_without_cheap():
+    free = _ex("opencode:x-free")
+    prefs = _prefs()
+    prefs.cheap_budget_usd_day = 1.5
+
+    chosen, reason = pick(
+        [free], {}, "code", "medium", prefs, {free.id}, _Rng(0.9),
+        budget=lambda _e: "budget US$ 1.5 reached (cheap_budget_usd_day)",
+    )
+
+    assert chosen is None
+    assert reason.endswith(
+        "; run setup to allow cheap models (current budget US$ 1.5)"
+    )
+
+
+def test_job_budget_reached_is_said_as_it_is_without_a_setup_hint():
+    free = _ex("opencode:x-free")
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+    prefs = _prefs()
+    prefs.cheap_budget_usd_day = 10.0
+    job_reason = "job budget US$ 0.5 reached (cheap_budget_usd_job)"
+
+    for pool in ([free], [free, cheap]):
+        chosen, reason = pick(
+            pool, {}, "code", "medium", prefs, {free.id}, _Rng(0.9),
+            budget=lambda _e: job_reason,
+        )
+        assert chosen is None
+        assert job_reason in reason
+        assert reason.count(job_reason) == 1
+        assert "run setup" not in reason
+
+
+def test_effort_note_only_when_the_effort_rose():
+    from crew_chief.scoring import _effort_note
+
+    codex = {"name": "codex", "kind": "codex", "bin": "codex", "effort": True}
+    executor = Executor(id="codex:gpt-5.5", tool=codex, model="gpt-5.5",
+                        cost="included", trains=False)
+    job = _job_with_picks([])
+
+    def failures(count):
+        job["pieces"][0]["attempts"] = [
+            _failed_attempt("codex:gpt-5.5", "included") for _ in range(count)
+        ]
+        return _effort_note(executor, job, 1)
+
+    assert failures(0) == ""
+    assert failures(1) == "effort medium (low failed 1\u00d7)"
+    assert failures(2) == "effort high (medium failed 2\u00d7)"
+    assert failures(3) == ""
+    assert failures(5) == ""
+
+    # A model that only exists at its low variant reuses the failed level.
+    low = _ex("opencode:m-low", cost="cheap")
+    job["pieces"][0]["attempts"] = [_failed_attempt("opencode:m-low", "cheap")]
+    assert _effort_note(low, job, 1) == ""
+
+
+def test_cheap_probe_note_comes_from_the_budget_object():
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    class Probe:
+        def __call__(self, _executor):
+            return None
+
+        def is_probe(self, executor):
+            return executor.id == "opencode:cheap-m"
+
+    chosen, reason = pick([cheap], {}, "code", "medium", _prefs(), set(),
+                          _Rng(0.9), budget=Probe())
+
+    assert chosen is cheap
+    assert "; cheap probe: unknown cost, one attempt today" in reason
+    assert reason.endswith("; tier cheap; climbed: free exhausted")
 
 
 def test_setup_hint_shows_the_configured_budget():
@@ -1781,9 +1874,11 @@ def test_setup_hint_shows_the_configured_budget():
 
 def test_unknown_cost_block_gives_no_setup_hint():
     cheap = _ex("opencode:cheap-m", cost="cheap")
+    prefs = _prefs()
+    prefs.cheap_budget_usd_day = 5.0  # the budget is open: setup would not help
 
     chosen, reason = pick(
-        [cheap], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+        [cheap], {}, "code", "medium", prefs, set(), _Rng(0.9),
         budget=lambda _e: "unknown cost and no cap_usd_day",
     )
 

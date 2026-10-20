@@ -50,7 +50,7 @@ from pathlib import Path
 from . import economy, records, spend
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
-from .config import Prefs, PrefsError, load_prefs, model_cap, tool_work_types
+from .config import Prefs, PrefsError, load_prefs, tool_work_types
 from .decisions import DECISIONS_DIR, next_number, write_adr
 from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
@@ -312,39 +312,6 @@ def _cmd_piece_add(args: argparse.Namespace) -> int:
     return 0
 
 
-def _budget_check(prefs: Prefs, job_id: str):
-    """The ``budget`` callback of ``pick`` for ``job_id``.
-
-    Reads the global spend log once. A ``cheap`` executor may be used only
-    while today's spend (all projects) is under ``cheap_budget_usd_day``
-    (``0`` closes the tier), the job's spend is under
-    ``cheap_budget_usd_job`` when that is set, and either the executor's cost
-    is known (a past line with a known cost above zero: a ``0`` is what
-    OpenCode prints for an unpriced model, so it proves nothing) or its model
-    rule sets ``cap_usd_day``. A cap also limits the executor's own spend of
-    the day.
-    """
-    ledger = spend.ledger(datetime.now(timezone.utc).date())
-    day_cap = prefs.cheap_budget_usd_day
-    job_cap = prefs.cheap_budget_usd_job
-
-    def check(executor) -> str | None:
-        if day_cap <= 0 or ledger.day_total >= day_cap:
-            return f"budget US$ {day_cap:g} reached (cheap_budget_usd_day)"
-        if job_cap > 0 and ledger.by_job.get(job_id, 0.0) >= job_cap:
-            return f"budget US$ {job_cap:g} reached (cheap_budget_usd_job)"
-        cap = model_cap(executor.id, prefs)
-        if cap is not None:
-            if ledger.executor_day.get(executor.id, 0.0) >= cap:
-                return f"cap US$ {cap:g} reached (cap_usd_day)"
-            return None
-        if executor.id not in ledger.priced:
-            return "unknown cost and no cap_usd_day"
-        return None
-
-    return check
-
-
 def _cmd_pick(args: argparse.Namespace) -> int:
     project = _project(args)
     prefs = load_prefs(project)
@@ -427,7 +394,7 @@ def _cmd_pick(args: argparse.Namespace) -> int:
             cooling=cooling,
             strong=args.strong,
             piece=args.piece,
-            budget=_budget_check(prefs, job["id"]),
+            budget=spend.BudgetCheck(prefs, job["id"]),
             coordinator_tool=coordinator,
             allow_own_cli=args.allow_own_cli,
         )
@@ -486,6 +453,12 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
     )
     if executor is None:
         raise ValueError(f"unknown executor {args.executor!r}")
+
+    if executor.cost == "cheap":
+        # The same budget check as ``pick``: a pick made earlier may be stale.
+        blocked = spend.BudgetCheck(prefs, args.job)(executor)
+        if blocked is not None:
+            raise ValueError(f"{executor.id}: {blocked}")
 
     brief = _read_text(Path(args.brief_file), "--brief-file")
     _check_models_to_stderr(project, prefs, found, due_only=True)
