@@ -82,9 +82,9 @@ def test_insert_without_any_release_heading_appends_unreleased():
 
 
 def test_insert_keeps_crlf_and_bom():
-    text = "﻿# Changelog\r\n\r\n## [0.1.0] - 2026-01-01\r\n### Added\r\n- Old.\r\n"
+    text = "\ufeff# Changelog\r\n\r\n## [0.1.0] - 2026-01-01\r\n### Added\r\n- Old.\r\n"
     out = insert_entry(text, "Added", "- Novo é bom. <!-- crew:J8 -->")
-    assert out.startswith("﻿# Changelog\r\n")
+    assert out.startswith("\ufeff# Changelog\r\n")
     assert out.endswith("## [0.1.0] - 2026-01-01\r\n### Added\r\n- Old.\r\n")
     assert "\n" not in out.replace("\r\n", "")  # no bare LF anywhere
     assert "- Novo é bom. <!-- crew:J8 -->\r\n" in out

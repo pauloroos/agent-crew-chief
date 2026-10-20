@@ -107,3 +107,14 @@ def test_version_is_0_3_0_and_changelog_has_unreleased():
         "crew.toml",
     ):
         assert needle in unreleased, needle
+
+
+def test_no_invisible_bom_characters_in_sources():
+    """A literal U+FEFF in code is invisible in review; spell it as an escape."""
+    offenders = []
+    for folder in (ROOT / "skill", ROOT / "tests"):
+        for path in folder.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            if chr(0xFEFF) in text:
+                offenders.append(path.relative_to(ROOT).as_posix())
+    assert offenders == []

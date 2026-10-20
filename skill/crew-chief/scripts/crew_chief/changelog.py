@@ -135,7 +135,7 @@ def insert_entry(text: str | None, category: str, line: str) -> str:
     if marker and marker.group(0) in text:
         return text
 
-    bom = "﻿" if text.startswith("﻿") else ""
+    bom = "\ufeff" if text.startswith("\ufeff") else ""
     lines = _split(text[len(bom):])
     eol = _eol(text)
 

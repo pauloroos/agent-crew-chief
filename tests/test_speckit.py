@@ -121,7 +121,7 @@ def test_parse_spec_refs_numbers_scenarios_per_story_and_ignores_other_lists():
 
 
 def test_parse_spec_refs_handles_crlf_bom_accents_and_bold_variants():
-    text = "﻿" + (
+    text = "\ufeff" + (
         "### User Story 1 - Exportação (Priority: P1)\n"
         "**Acceptance Scenarios**:\n"
         "1. **Given** linhas, **When** exporto, **Then** salvo\n"

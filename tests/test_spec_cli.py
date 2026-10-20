@@ -376,7 +376,7 @@ def test_spec_status_ignores_stale_pieces_and_lists_them(git_repo, capsys):
 
 # --- accept marks [X]; dispatch waits for dependencies and phases ----------
 
-_BOM = "﻿"
+_BOM = "\ufeff"
 _STUB_PREFS = """
 [[tools]]
 name = "stub"
