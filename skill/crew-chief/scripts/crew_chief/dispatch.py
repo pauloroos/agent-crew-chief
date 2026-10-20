@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .briefcheck import check_brief
+from . import spend
 from .records import add_attempt, update_job
 from .tools import (
     QUOTA_PATTERNS,
@@ -193,6 +194,8 @@ def dispatch(
         "tokens_out": None,
         "tokens_total": None,
         "tokens_estimated": False,
+        "cost_usd": None,
+        "cost_known": False,
     }
     if ignored_deps:
         attempt["ignored_deps"] = list(ignored_deps)
@@ -295,6 +298,8 @@ def dispatch(
         # A run that printed nothing would leave no clue; keep its stderr.
         attempt["note"] = f"stderr:\n{stderr}"[-MAX_NOTE:]
     attempt.update(_metrics(tool, brief, text, answer, stderr))
+    attempt["cost_known"] = attempt["cost_usd"] is not None
+    _record_spend(attempt, project, job_id, piece)
 
     reported = parse_reported_model(tool, text)
     attempt["reported_model"] = reported
@@ -536,6 +541,31 @@ def _reserve_attempt(
             entry["next_attempt"] = number + 1
             return number
     raise ValueError(f"job {job.get('id')!r} has no piece {piece}")
+
+
+def _record_spend(attempt: dict, project: Path, job_id: str, piece: int) -> None:
+    """Append the attempt to the global spend log when it cost money.
+
+    Only the ``cheap`` and ``paid`` tiers are recorded; a cost the CLI did
+    not report is written as 0.0 with ``known`` false. A log that cannot be
+    written is noted on the attempt instead of failing it.
+    """
+    if attempt["cost"] not in ("cheap", "paid"):
+        return
+    try:
+        spend.record({
+            "at": datetime.now(timezone.utc).isoformat(),
+            "project": str(project),
+            "job": job_id,
+            "piece": piece,
+            "executor": attempt["executor"],
+            "tier": attempt["cost"],
+            "cost_usd": attempt["cost_usd"] or 0.0,
+            "known": attempt["cost_known"],
+        })
+    except (OSError, spend.SpendLockTimeout) as exc:
+        note = f"{attempt['note']}\n[spend not recorded: {exc}]"
+        attempt["note"] = note.strip()
 
 
 def _metrics(

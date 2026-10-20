@@ -233,8 +233,13 @@ def _int(value: object) -> int:
 def _metrics(
     steps: int | None, tokens_in: int | None, tokens_out: int | None,
     tokens_total: int | None = None,
+    cost_usd: float | None = None,
 ) -> dict:
-    """The metrics dict; the total defaults to ``in + out`` when both are known."""
+    """The metrics dict; the total defaults to ``in + out`` when both are known.
+
+    ``cost_usd`` is the money the CLI reported for the run, ``None`` when it
+    reported none.
+    """
     if tokens_total is None and tokens_in is not None and tokens_out is not None:
         tokens_total = tokens_in + tokens_out
     return {
@@ -242,7 +247,15 @@ def _metrics(
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "tokens_total": tokens_total,
+        "cost_usd": cost_usd,
     }
+
+
+def _cost(value: object) -> float | None:
+    """``value`` as a US$ amount; ``None`` when it is not a plain number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
 
 
 def _opencode_metrics(stdout: str) -> dict:
@@ -252,16 +265,22 @@ def _opencode_metrics(stdout: str) -> dict:
     are summed over the ``step_finish`` events: in = input + cache read +
     cache write, out = output + reasoning. opencode never closes the last
     step with a ``step_finish``, so the final answer's tokens are missing;
-    with no ``step_finish`` at all the tokens are unknown.
+    with no ``step_finish`` at all the tokens are unknown. The cost is the sum
+    of ``part.cost`` over the ``step_finish`` events that carry one; ``None``
+    when none does.
     """
     events = _json_lines(stdout)
     steps = sum(1 for event in events if event.get("type") == "step_start")
     tokens_in = tokens_out = 0
     finished = 0
+    cost_usd: float | None = None
     for event in events:
         if event.get("type") != "step_finish":
             continue
         part = event.get("part")
+        step_cost = _cost(part.get("cost")) if isinstance(part, dict) else None
+        if step_cost is not None:
+            cost_usd = (cost_usd or 0.0) + step_cost
         tokens = part.get("tokens") if isinstance(part, dict) else None
         if not isinstance(tokens, dict):
             continue
@@ -273,8 +292,8 @@ def _opencode_metrics(stdout: str) -> dict:
         )
         tokens_out += _int(tokens.get("output")) + _int(tokens.get("reasoning"))
     if not finished:
-        return _metrics(steps or None, None, None)
-    return _metrics(steps or None, tokens_in, tokens_out)
+        return _metrics(steps or None, None, None, cost_usd=cost_usd)
+    return _metrics(steps or None, tokens_in, tokens_out, cost_usd=cost_usd)
 
 
 def _result_event(stdout: str) -> dict | None:
@@ -293,9 +312,11 @@ def _result_event(stdout: str) -> dict | None:
 def parse_metrics(tool: dict, stdout: str, stderr: str = "") -> dict:
     """Agent steps and tokens the CLI reported, as far as its output tells.
 
-    Returns ``{"steps", "tokens_in", "tokens_out", "tokens_total"}``; a value
-    the output does not carry is ``None`` (the caller then estimates the
-    tokens). Per kind:
+    Returns ``{"steps", "tokens_in", "tokens_out", "tokens_total",
+    "cost_usd"}``; a value the output does not carry is ``None`` (the caller
+    then estimates the tokens). ``cost_usd`` is only what the CLI printed:
+    summed ``part.cost`` for opencode, ``total_cost_usd`` (claude-code) or
+    ``cost_usd`` (antigravity) of the result; ``None`` otherwise. Per kind:
 
     * ``opencode`` (``--format json``): see :func:`_opencode_metrics`.
     * ``claude-code`` (json or stream-json): ``num_turns`` and ``usage`` of
@@ -314,16 +335,22 @@ def parse_metrics(tool: dict, stdout: str, stderr: str = "") -> dict:
             return _metrics(None, None, None)
         turns = data.get("num_turns")
         steps = _int(turns) if isinstance(turns, (int, float)) else None
+        cost_usd = _cost(
+            data.get("total_cost_usd" if kind == "claude-code" else "cost_usd")
+        )
         usage = data.get("usage")
         if not isinstance(usage, dict):
-            return _metrics(steps, None, None)
+            return _metrics(steps, None, None, cost_usd=cost_usd)
         if kind == "claude-code":
             tokens_in = (
                 _int(usage.get("input_tokens"))
                 + _int(usage.get("cache_creation_input_tokens"))
                 + _int(usage.get("cache_read_input_tokens"))
             )
-            return _metrics(steps, tokens_in, _int(usage.get("output_tokens")))
+            return _metrics(
+                steps, tokens_in, _int(usage.get("output_tokens")),
+                cost_usd=cost_usd,
+            )
         tokens_in = _int(usage.get("input_tokens")) + _int(
             usage.get("cache_read_tokens")
         )
@@ -334,6 +361,7 @@ def parse_metrics(tool: dict, stdout: str, stderr: str = "") -> dict:
         return _metrics(
             steps, tokens_in, tokens_out,
             _int(total) if isinstance(total, (int, float)) else None,
+            cost_usd,
         )
     if kind == "codex":
         matches = _CODEX_TOKENS.findall(f"{stderr or ''}\n{stdout or ''}")

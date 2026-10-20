@@ -266,21 +266,21 @@ def _lock_age_s(lock: Path) -> float | None:
 
 
 @contextmanager
-def job_lock(
-    project: Path,
-    job_id: str,
-    timeout_s: float = LOCK_TIMEOUT_S,
-    stale_s: float = LOCK_STALE_S,
+def file_lock(
+    lock: Path,
+    timeout_s: float,
+    stale_s: float,
+    timeout_error: Callable[[float], Exception],
 ) -> Iterator[Path]:
-    """Hold ``docs/crew-chief/jobs/<job_id>.lock`` for the ``with`` block.
+    """Hold the lock file ``lock`` for the ``with`` block.
 
     The lock is a file created with ``O_CREAT | O_EXCL`` (atomic on Windows
     and POSIX) holding the owner's pid. A taken lock is retried with a
     jittered exponential backoff; one whose mtime is older than ``stale_s``
-    was left by a dead process and is removed. After ``timeout_s`` a
-    :class:`JobLockTimeout` names the lock file.
+    was left by a dead process and is removed. After ``timeout_s`` the
+    exception ``timeout_error(timeout_s)`` is raised. Shared by
+    :func:`job_lock` and the global spend log (``spend.py``).
     """
-    lock = jobs_dir(project) / f"{job_id}.lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + timeout_s
     delay = 0.01
@@ -297,11 +297,7 @@ def job_lock(
                 except PermissionError:
                     pass  # held open for a moment: wait and try again
             if time.monotonic() >= deadline:
-                raise JobLockTimeout(
-                    f"{lock}: job {job_id!r} is locked by another crew-chief "
-                    f"process (waited {timeout_s:g}s); if none is running, "
-                    "delete the lock file"
-                ) from None
+                raise timeout_error(timeout_s) from None
             time.sleep(delay * (0.5 + random.random()))
             delay = min(delay * 2, 0.5)
             continue
@@ -313,6 +309,30 @@ def job_lock(
     finally:
         # An antivirus or indexer may hold the fresh file open for a moment.
         _sharing_retry(lambda: lock.unlink(missing_ok=True))
+
+
+@contextmanager
+def job_lock(
+    project: Path,
+    job_id: str,
+    timeout_s: float = LOCK_TIMEOUT_S,
+    stale_s: float = LOCK_STALE_S,
+) -> Iterator[Path]:
+    """Hold ``docs/crew-chief/jobs/<job_id>.lock`` for the ``with`` block.
+
+    See :func:`file_lock`; the :class:`JobLockTimeout` names the lock file.
+    """
+    lock = jobs_dir(project) / f"{job_id}.lock"
+
+    def timeout_error(waited: float) -> Exception:
+        return JobLockTimeout(
+            f"{lock}: job {job_id!r} is locked by another crew-chief "
+            f"process (waited {waited:g}s); if none is running, "
+            "delete the lock file"
+        )
+
+    with file_lock(lock, timeout_s, stale_s, timeout_error):
+        yield lock
 
 
 def update_job(

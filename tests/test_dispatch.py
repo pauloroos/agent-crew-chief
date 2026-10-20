@@ -1042,3 +1042,116 @@ def test_exec_attempt_records_start_and_end_commits(git_repo, fake_bin):
     assert attempt["end_sha"] != start
     stored = _stored_attempt(git_repo, job["id"])
     assert (stored["start_sha"], stored["end_sha"]) == (start, attempt["end_sha"])
+
+
+# --- cost per attempt and the global spend log ------------------------------
+
+
+def _priced_opencode_stub(fake_bin, name: str = "ocstub") -> None:
+    events = [
+        {"type": "step_start", "part": {"type": "step-start"}},
+        {"type": "step_finish", "part": {"type": "step-finish", "cost": 0.01,
+            "tokens": {"input": 10, "output": 5, "cache": {"read": 0, "write": 0}}}},
+        {"type": "step_finish", "part": {"type": "step-finish", "cost": 0.02,
+            "tokens": {"input": 10, "output": 5, "cache": {"read": 0, "write": 0}}}},
+        {"type": "text", "part": {"type": "text", "text": "Feito."}},
+    ]
+    lines = "".join(json.dumps(event) + "\n" for event in events)
+    fake_bin(name, _WRITES + f"import sys\nsys.stdout.write({lines!r})\n")
+
+
+def _oc_executor(cost: str, name: str = "ocstub") -> Executor:
+    tool = {"name": name, "kind": "opencode", "bin": name}
+    return Executor(id=f"{name}:m", tool=tool, model="m", cost=cost, trains=False)
+
+
+def _spend_rows() -> list[dict]:
+    from crew_chief import spend
+
+    path = spend.spend_file()
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def test_dispatch_records_cheap_attempt_spend(git_repo, fake_bin):
+    _priced_opencode_stub(fake_bin)
+    job = _seed_job(git_repo)
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, _oc_executor("cheap"), "go\n", _prefs()
+    )
+
+    assert attempt["status"] == "ok", attempt["note"]
+    assert attempt["cost_usd"] == pytest.approx(0.03)
+    assert attempt["cost_known"] is True
+    stored = _stored_attempt(git_repo, job["id"])
+    assert stored["cost_usd"] == pytest.approx(0.03) and stored["cost_known"] is True
+    (row,) = _spend_rows()
+    assert row["cost_usd"] == pytest.approx(0.03)
+    assert row["known"] is True
+    assert row["tier"] == "cheap"
+    assert row["job"] == job["id"] and row["piece"] == 1
+    assert row["executor"] == "ocstub:m"
+    assert row["project"] == str(git_repo)
+    assert row["at"].endswith("+00:00")
+
+
+def test_dispatch_records_unknown_cost_as_zero_and_not_known(git_repo, fake_bin):
+    fake_bin("stub", _WRITES + "print('done')\n")
+    job = _seed_job(git_repo)
+    executor = Executor(
+        id="stub:m", tool=_tool(), model="m", cost="paid", trains=False
+    )
+
+    attempt = dispatch(git_repo, job["id"], 1, executor, "go\n", _prefs())
+
+    assert attempt["cost_usd"] is None and attempt["cost_known"] is False
+    (row,) = _spend_rows()
+    assert row["cost_usd"] == 0.0 and row["known"] is False and row["tier"] == "paid"
+
+
+def test_free_attempt_is_not_recorded(git_repo, fake_bin):
+    _priced_opencode_stub(fake_bin)
+    job = _seed_job(git_repo)
+
+    for cost in ("free", "included"):
+        dispatch(git_repo, job["id"], 1, _oc_executor(cost), "go\n", _prefs())
+
+    assert _spend_rows() == []
+
+
+def test_spend_file_never_contains_env_values(git_repo, fake_bin, monkeypatch):
+    secret = "sk-or-SECRETVALUE-1234567890abcdef"
+    monkeypatch.setenv("ACC_TEST_KEY", secret)
+    _priced_opencode_stub(fake_bin)
+    job = _seed_job(git_repo)
+    executor = _oc_executor("cheap")
+    executor.tool["env"] = ["ACC_TEST_KEY"]
+
+    attempt = dispatch(git_repo, job["id"], 1, executor, "go\n", _prefs())
+
+    assert attempt["status"] == "ok", attempt["note"]
+    from crew_chief import spend
+
+    assert spend.spend_file().exists()
+    assert secret not in spend.spend_file().read_text(encoding="utf-8")
+    assert "ACC_TEST_KEY" not in spend.spend_file().read_text(encoding="utf-8")
+
+
+def test_a_run_that_never_started_records_no_spend(git_repo, fake_bin):
+    fake_bin("stub", "print('must not run')\n")
+    job = _seed_job(git_repo)
+    executor = Executor(
+        id="stub:m", tool=_tool(), model="m", cost="paid", trains=False
+    )
+
+    attempt = dispatch(
+        git_repo, job["id"], 1, executor, "sk-" + "a" * 24, _prefs()
+    )
+
+    assert attempt["status"] == "brief_refused"
+    assert _spend_rows() == []

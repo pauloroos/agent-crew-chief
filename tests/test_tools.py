@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from crew_chief.tools import (
     QUOTA_PATTERNS,
     Executor,
@@ -248,7 +250,36 @@ def test_parse_metrics_opencode_counts_steps_and_sums_tokens():
         "tokens_in": 3532 + 12672 + 258 + 23040 + 10,
         "tokens_out": 49 + 13 + 119,
         "tokens_total": 3532 + 12672 + 258 + 23040 + 10 + 49 + 13 + 119,
+        "cost_usd": 0.0,
     }
+
+
+def test_parse_metrics_sums_opencode_cost():
+    text = "\n".join([
+        '{"type":"step_finish","part":{"cost":0.0125,"tokens":{"input":1,"output":1}}}',
+        '{"type":"step_finish","part":{"cost":0.0075,"tokens":{"input":1,"output":1}}}',
+        '{"type":"step_finish","part":{"tokens":{"input":1,"output":1}}}',
+        '{"type":"text","part":{"text":"ok"}}',
+    ])
+
+    assert parse_metrics({"kind": "opencode"}, text)["cost_usd"] == pytest.approx(0.02)
+
+
+def test_parse_metrics_opencode_without_cost_field_is_unknown():
+    text = '{"type":"step_finish","part":{"tokens":{"input":1,"output":1}}}\n'
+
+    assert parse_metrics({"kind": "opencode"}, text)["cost_usd"] is None
+    assert parse_metrics({"kind": "opencode"}, "no events")["cost_usd"] is None
+
+
+def test_parse_metrics_reads_an_explicit_cost_field_of_other_kinds():
+    claude = '{"type":"result","num_turns":1,"total_cost_usd":0.5,"usage":{}}'
+    agy = '{"num_turns":1,"cost_usd":0.25,"usage":{"input_tokens":1}}'
+
+    assert parse_metrics({"kind": "claude-code"}, claude)["cost_usd"] == 0.5
+    assert parse_metrics({"kind": "antigravity"}, agy)["cost_usd"] == 0.25
+    assert parse_metrics({"kind": "codex"}, "", "tokens used: 5")["cost_usd"] is None
+    assert parse_metrics({"kind": "generic"}, "cost_usd: 3")["cost_usd"] is None
 
 
 def test_parse_metrics_opencode_without_step_finish_has_steps_only():
@@ -262,6 +293,7 @@ def test_parse_metrics_opencode_without_step_finish_has_steps_only():
         "tokens_in": None,
         "tokens_out": None,
         "tokens_total": None,
+        "cost_usd": None,
     }
 
 
@@ -277,6 +309,7 @@ def test_parse_metrics_claude_code_result():
         "tokens_in": 3210,
         "tokens_out": 50,
         "tokens_total": 3260,
+        "cost_usd": None,
     }
 
 
@@ -307,6 +340,7 @@ def test_parse_metrics_antigravity_json():
         "tokens_in": 15330,
         "tokens_out": 17,
         "tokens_total": 15347,
+        "cost_usd": None,
     }
 
 
@@ -318,6 +352,7 @@ def test_parse_metrics_codex_reads_tokens_used_from_stderr():
         "tokens_in": None,
         "tokens_out": None,
         "tokens_total": 12345,
+        "cost_usd": None,
     }
     newline_form = "tokens used\n8,001\n"
     assert parse_metrics({"kind": "codex"}, "", newline_form)["tokens_total"] == 8001
@@ -329,6 +364,7 @@ def test_parse_metrics_unknown_output_is_all_none():
         "tokens_in": None,
         "tokens_out": None,
         "tokens_total": None,
+        "cost_usd": None,
     }
     assert parse_metrics({"kind": "generic"}, "whatever") == empty
     assert parse_metrics({"kind": "claude-code"}, "not json") == empty
