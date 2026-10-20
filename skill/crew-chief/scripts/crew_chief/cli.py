@@ -64,7 +64,7 @@ from .scoring import (
     quota_family,
     render_scoreboard,
 )
-from .sidecar import Sidecar, SidecarError, TaskMeta, load_sidecar, save_sidecar
+from .sidecar import Sidecar, SidecarError, TaskMeta, load_sidecar, update_sidecar
 from .speckit import (
     SpecError,
     SpecTask,
@@ -1045,8 +1045,8 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
             meta.depends = list(task.depends)
     sidecar.spec_dir = relative
     sidecar.job = args.job
-    if sidecar != original:
-        save_sidecar(folder, sidecar)
+    if sidecar != original and update_sidecar(folder, sidecar) == "rewritten":
+        print("crew.toml rewritten; comments are not kept", file=sys.stderr)
 
     ids = {task.id for task in tasks}
     missing_proof = [

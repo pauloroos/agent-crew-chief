@@ -633,3 +633,45 @@ def test_spec_import_refuses_to_rebind_a_job_to_another_folder(git_repo, capsys)
     assert not (git_repo / "specs" / "002-b" / SIDECAR_NAME).exists()
     # the same folder again is fine
     assert _import(git_repo, job, "--spec-dir", "specs/001-a") == 0
+
+
+def test_spec_import_keeps_crew_toml_comments(git_repo, capsys):
+    spec = _write_spec(git_repo, "specs/003-x")
+    original = (
+        "# my notes about proofs\n"
+        '[tasks.T012]\ntype = "data"\nrisk = "high"\nproof = "python check.py"\n'
+        "# keep this\n"
+    )
+    (spec / SIDECAR_NAME).write_text(original, encoding="utf-8")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    text = (spec / SIDECAR_NAME).read_text(encoding="utf-8")
+    assert text.startswith("# my notes about proofs\n")
+    assert "# keep this\n" in text
+    assert "crew.toml rewritten" not in capsys.readouterr().err
+    sidecar = load_sidecar(spec)
+    assert sidecar.job == job and sidecar.spec_dir == "specs/003-x"
+    assert set(sidecar.tasks) == {"T001", "T012", "T013"}
+    assert sidecar.tasks["T012"].proof == "python check.py"
+
+
+def test_spec_import_warns_when_crew_toml_must_be_rewritten(git_repo, capsys):
+    spec = _write_spec(git_repo, "specs/003-x")
+    (spec / SIDECAR_NAME).write_text(
+        '# dotted\n[tasks]\nT013.type = "code"\nT013.risk = "low"\n', encoding="utf-8"
+    )
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    assert "crew.toml rewritten; comments are not kept" in capsys.readouterr().err
+
+
+def test_spec_import_rejects_unknown_crew_toml_key(git_repo, capsys):
+    spec = _write_spec(git_repo, "specs/003-x")
+    (spec / SIDECAR_NAME).write_text(
+        '[tasks.T012]\ntype = "code"\nrisk = "low"\nexpectt = "passed"\n', encoding="utf-8"
+    )
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 2
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1 and "T012" in err[0] and "unknown key 'expectt'" in err[0]
+    assert _stored_job(git_repo, job)["pieces"] == []
