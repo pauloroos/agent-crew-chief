@@ -583,3 +583,35 @@ def test_accept_writes_tasks_md_atomically(git_repo, capsys, monkeypatch):
     assert main(["accept", "--project", str(git_repo), "--job", job, "--piece", "2"]) == 0
     assert (folder / "tasks.md").resolve() in [Path(p).resolve() for p in calls]
     assert (folder / "tasks.md").read_bytes() == crlf.replace(b"- [ ] T012", b"- [X] T012")
+
+
+def test_accept_does_not_commit_tasks_md_with_other_changes(git_repo, capsys):
+    job, folder = _imported(git_repo, SAMPLE.encode("utf-8"))
+    _with_ok_attempt(git_repo, job, 2)
+    edited = SAMPLE + "- [ ] T014 Added by hand, not committed\n"
+    (folder / "tasks.md").write_text(edited, encoding="utf-8")
+    capsys.readouterr()
+
+    assert main(["accept", "--project", str(git_repo), "--job", job, "--piece", "2"]) == 0
+
+    err = capsys.readouterr().err
+    assert "tasks.md has other changes; marked T012 but did not commit" in err
+    assert "docs(tasks)" not in _git(git_repo, "log", "--format=%s")
+    assert (folder / "tasks.md").read_text(encoding="utf-8") == edited.replace(
+        "- [ ] T012", "- [X] T012"
+    )
+
+
+def test_accept_does_not_commit_an_untracked_tasks_md(git_repo, capsys):
+    folder = _write_spec(git_repo, "specs/003-x")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/003-x") == 0
+    _with_ok_attempt(git_repo, job, 2)
+    capsys.readouterr()
+
+    assert main(["accept", "--project", str(git_repo), "--job", job, "--piece", "2"]) == 0
+
+    assert "tasks.md has other changes; marked T012 but did not commit" in capsys.readouterr().err
+    assert "docs(tasks)" not in _git(git_repo, "log", "--format=%s")
+    assert "- [X] T012" in (folder / "tasks.md").read_text(encoding="utf-8")
+    assert "specs/003-x/tasks.md" not in _git(git_repo, "ls-files")

@@ -372,6 +372,26 @@ def commit_worktree(worktree: Path, message: str) -> str | None:
     return _git(["rev-parse", "HEAD"], worktree).strip()
 
 
+def path_is_clean(project: Path, path: str) -> bool:
+    """Whether ``path`` is tracked and identical to ``HEAD`` (index and disk).
+
+    Anything git cannot answer (no repository, no ``HEAD``) counts as not
+    clean.
+    """
+    project = Path(project)
+
+    def ok(args: list[str]) -> bool:
+        result = subprocess.run(
+            ["git", *args], cwd=project, capture_output=True, text=True,
+            encoding="utf-8",
+        )
+        return result.returncode == 0
+
+    return ok(["ls-files", "--error-unmatch", "--", path]) and ok(
+        ["diff", "--quiet", "HEAD", "--", path]
+    )
+
+
 def commit_paths(project: Path, paths: list[str], message: str) -> None:
     """Commit ``paths`` of ``project`` (and nothing else) on its current branch.
 

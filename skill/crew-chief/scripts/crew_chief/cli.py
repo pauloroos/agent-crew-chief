@@ -77,7 +77,7 @@ from .speckit import (
     readiness,
     resolve_refs,
 )
-from .worktree import NotAGitRepo, commit_paths
+from .worktree import NotAGitRepo, commit_paths, path_is_clean
 from .worktree import accept as accept_branch
 from .worktree import discard as discard_branch
 
@@ -706,11 +706,13 @@ def _cmd_accept(args: argparse.Namespace) -> int:
 
 
 def _mark_task_done(project: Path, spec_dir: str, ref: str) -> None:
-    """Tick ``ref`` in the project's ``tasks.md`` and commit just that file.
+    """Tick ``ref`` in the project's ``tasks.md`` and commit just that line.
 
     The file is read and written without newline translation, so CRLF and BOM
-    stay as the user had them. Problems only warn: the branch is already
-    merged and the piece accepted.
+    stay as the user had them. The tick is committed only when ``tasks.md`` was
+    tracked and unchanged before it; otherwise it stays in the working tree
+    with a warning, so none of the user's other edits land in the commit.
+    Problems only warn: the branch is already merged and the piece accepted.
     """
     path = project / spec_dir / "tasks.md"
     try:
@@ -726,17 +728,21 @@ def _mark_task_done(project: Path, spec_dir: str, ref: str) -> None:
         return
     if marked == text:
         return
+    relative = (Path(spec_dir) / "tasks.md").as_posix()
+    clean = path_is_clean(project, relative)
     try:
         records.write_atomic(path, marked)
     except OSError as exc:
         print(f"cannot write {path}: {exc}; {ref} not marked", file=sys.stderr)
         return
-    try:
-        commit_paths(
-            project,
-            [(Path(spec_dir) / "tasks.md").as_posix()],
-            f"docs(tasks): mark {ref} done",
+    if not clean:
+        print(
+            f"tasks.md has other changes; marked {ref} but did not commit",
+            file=sys.stderr,
         )
+        return
+    try:
+        commit_paths(project, [relative], f"docs(tasks): mark {ref} done")
     except RuntimeError as exc:
         print(f"{ref} ticked in tasks.md but not committed: {exc}", file=sys.stderr)
 
