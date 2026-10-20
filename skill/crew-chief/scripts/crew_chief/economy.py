@@ -15,7 +15,9 @@ Definitions (a division by zero gives ``None``, never an exception):
   a free executor, over accepted pieces.
 * ``free_token_share`` / ``coordinator_share``: ``free`` / ``coordinator``
   tokens over all three token counts.
-* ``attempts_per_piece``: exec attempts over pieces with at least one attempt.
+* ``attempts_per_piece``: exec attempts over pieces with at least one exec
+  attempt; ``brief_refused`` (never ran) and ``quota`` (no work done) attempts
+  count on neither side, so review and converge pieces do not dilute it.
 * ``mean_score``: mean of every grade's score.
 * ``minutes``: from the job's ``created`` to the end of its last attempt
   (``started`` + ``duration_s``).
@@ -33,6 +35,9 @@ if TYPE_CHECKING:  # config imports records; keep this module cheap to import
     from .config import Prefs
 
 _DASH = "—"
+
+#: Exec statuses left out of ``attempts_per_piece``: the executor did no work.
+_NOT_ATTEMPTS = ("brief_refused", "quota")
 
 
 @dataclass
@@ -124,8 +129,15 @@ def job_economy(
     scores: list[float] = []
     for piece in _pieces(job):
         attempts = _attempts(piece)
-        if attempts:
+        counted = [
+            a
+            for a in attempts
+            if a.get("role") == "exec"
+            and a.get("status") not in _NOT_ATTEMPTS
+        ]
+        if counted:
             tried += 1
+            exec_attempts += len(counted)
         for attempt in attempts:
             tokens = attempt.get("tokens_total")
             if _number(tokens):
@@ -133,8 +145,6 @@ def job_economy(
                     free += tokens
                 elif attempt.get("cost") == "paid":
                     paid += tokens
-            if attempt.get("role") == "exec":
-                exec_attempts += 1
         if piece.get("accepted"):
             accepted += 1
             last_ok = next(

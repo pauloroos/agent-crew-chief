@@ -293,3 +293,19 @@ def test_close_without_attempts_prints_no_economy(git_repo, capsys):
     assert main(["close", "--project", str(repo), "--job", job["id"],
                  "--no-changelog"]) == 0
     assert "free work:" not in capsys.readouterr().out
+
+
+def test_attempts_per_piece_counts_only_pieces_with_exec_attempts():
+    job = {"id": "j", "created": NOW.isoformat(), "pieces": [
+        {"n": 1, "accepted": {"attempt": 2}, "attempts": [
+            {"role": "exec", "status": "ok", "cost": "free", "tokens_total": 10},
+            {"role": "exec", "status": "ok", "cost": "free", "tokens_total": 10},
+            {"role": "exec", "status": "quota", "cost": "free", "tokens_total": 1},
+            {"role": "exec", "status": "brief_refused", "cost": "free"},
+            {"role": "review", "status": "ok", "cost": "free", "tokens_total": 10},
+        ]},
+        {"n": 2, "attempts": [{"role": "review", "status": "ok", "cost": "free"}]},
+        {"n": 3, "attempts": [{"role": "exec", "status": "quota", "cost": "free"}]},
+        {"n": 4, "attempts": [{"role": "exec", "status": "brief_refused"}]},
+    ]}
+    assert job_economy(job, None, now=NOW).attempts_per_piece == 2.0
