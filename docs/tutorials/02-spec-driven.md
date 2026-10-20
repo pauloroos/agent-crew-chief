@@ -4,28 +4,41 @@ This tutorial builds a small feature from a spec-kit-style folder. You will add 
 
 All execution work in this tutorial uses free OpenCode models. Do not dispatch an included, cheap, or paid executor.
 
+> **How to read the outputs in this tutorial.** The command outputs quoted here come from an earlier lab run of this tutorial, made with the old proof of step 3. The updated steps — the per-task proofs, the first dispatch, the review, the grade and the economy line — are shown as illustrative expected output: no run of the updated tutorial has been recorded yet, and every job id, branch, SHA, duration, token count and score changes from machine to machine and from run to run. Blocks labelled *historical* are the authentic output of that earlier run; blocks labelled *illustrative* are what the updated steps are expected to print.
+
 ## 1. Prepare the lab
 
 Follow steps 1–4 of [the first tutorial](01-first-job.md), but use a separate copy such as `~/projects/hello-crew-spec`. Before every ACC command, export the lab preferences path:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 ```
 
-The setup command produced this real tier summary in the lab:
+That path points at the preferences file created inside the copied project, so this tutorial never touches your normal ACC settings.
+
+On Windows PowerShell, assign the same path before every ACC call. PowerShell has no `$CC` string to expand, so call the script directly:
+
+```powershell
+$env:AGENT_CREW_CHIEF_GLOBAL_PREFS = Join-Path $HOME 'projects/hello-crew-spec/global-prefs.toml'
+python -I .agents/skills/crew-chief/scripts/crew-chief.py setup --yes --project .
+```
+
+The same mapping applies before every ACC call of this tutorial; a different path is ignored.
+
+The setup command prints a tier summary like this one from the lab:
 
 ```text
 your tiers: free 23 · included 3 · cheap 0 (budget US$ 0) · paid 65
 ```
 
-The exact counts depend on your machine. If there is no free OpenCode executor, stop and configure one. Do not use a paid fallback for this tutorial.
+Treat those counts as illustrative: they change over time and from machine to machine, with the CLIs you have installed. What matters is that at least one free OpenCode executor shows up. If there is no free OpenCode executor, stop and configure one. Do not use a paid fallback for this tutorial.
 
 ## 2. Create the spec folder
 
 From the copied Git project, create the numbered spec folder:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC spec new --project . --title "Text tools"
 ```
 
@@ -131,7 +144,7 @@ type = "code"
 risk = "low"
 accept = ["FR-001", "US1/AC1"]
 files = ["src/hello_crew/text_tools.py"]
-proof = "python -m pytest tests/test_text_tools.py -q"
+proof = '''python -c "import sys; sys.path.insert(0, 'src'); from hello_crew.text_tools import normalize; assert normalize('hello crew') == 'hello crew'; assert normalize('  hello   crew  ') == 'hello crew'; assert normalize('') == ''; assert normalize('   ') == ''; print('passed')"'''
 expect = "passed"
 depends = []
 interfaces = { normalize = "def normalize(text) -> str" }
@@ -141,7 +154,7 @@ type = "code"
 risk = "low"
 accept = ["FR-002", "US1/AC2"]
 files = ["src/hello_crew/text_tools.py"]
-proof = "python -m pytest tests/test_text_tools.py -q"
+proof = '''python -c "import sys; sys.path.insert(0, 'src'); from hello_crew.text_tools import word_count; assert word_count('hello crew') == 2; assert word_count('  hello   crew  ') == 2; assert word_count('') == 0; assert word_count('   ') == 0; print('passed')"'''
 expect = "passed"
 depends = []
 interfaces = { word_count = "def word_count(text) -> int" }
@@ -157,6 +170,10 @@ depends = ["T001", "T002"]
 interfaces = {}
 ```
 
+Each proof checks its own task. T001 and T002 read the module in `src` and assert the behavior of the helper they own, so neither task needs a file that belongs to another task. T003 is the verification task: it runs pytest over the finished module, which is legitimate because its dependencies are accepted by then. Keep `expect = "passed"` in all three entries.
+
+A task that proves itself must not need a file outside its own `files` list. If a proof can only pass after another task has written a file, that proof belongs to the wrong task: fix the proof, not the scope.
+
 Keep the task text that `spec import` writes into each sidecar entry when you use a newer or older ACC version. That text lets ACC detect stale pieces later.
 
 ## 4. Create and import the job
@@ -166,7 +183,7 @@ Write the request, then create the job. The first line is ordinary shell work; t
 ```bash
 printf '%s\n' 'Implement the text-tools spec in specs/001-text-tools. For T001, add only src/hello_crew/text_tools.py with normalize(text): use split-and-join whitespace normalization. Run the proof from the generated brief.' > .crew-chief-request.md
 
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC job new --project . --title "Text tools" --request-file .crew-chief-request.md
 ```
 
@@ -181,7 +198,7 @@ Your id will differ. Use it below as `JOB`.
 Import the spec:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC spec import --project . --job JOB --spec-dir specs/001-text-tools
 ```
 
@@ -199,7 +216,7 @@ The conflict is a warning, not a reason to stop. Do not dispatch those two piece
 Check readiness:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC spec status --project . --job JOB
 ```
 
@@ -218,37 +235,73 @@ blocked:
 Render T001 instead of writing a large hand-made brief:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC brief render --project . --job JOB --piece 1 --out .crew-chief-brief.md
 ```
 
-The lab printed `wrote .crew-chief-brief.md`. The brief contained the acceptance criteria, constraints, interface, allowed file, and this proof:
+You should see `wrote .crew-chief-brief.md`. With the sidecar of step 3, the brief carries the acceptance criteria, constraints, interface, allowed file, and this proof:
 
 ```text
 ## Proof
-Command: `python -m pytest tests/test_text_tools.py -q`
+Command: `python -c "import sys; sys.path.insert(0, 'src'); from hello_crew.text_tools import normalize; assert normalize('hello crew') == 'hello crew'; assert normalize('  hello   crew  ') == 'hello crew'; assert normalize('') == ''; assert normalize('   ') == ''; print('passed')"`
 Expect: passed
 ```
+
+The proof reads the module in `src` and checks the helper in place. T001 never needs the test file that T003 writes, so the task stays inside its own allowed files.
 
 Pick a free OpenCode executor:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC pick --project . --job JOB --piece 1
 ```
 
-The lab picked:
+The earlier lab run picked:
 
 ```text
 opencode:opencode-go/beam-free
 unrated, no history (opencode:opencode-go/beam-free); tier free
 ```
 
-Use the exact free OpenCode id printed by your run.
+Use the exact free OpenCode id printed by your run. Dispatch it with the rendered brief:
 
-### A real proof failure
+```bash
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
+$CC dispatch --project . --job JOB --piece 1 --executor EXECUTOR --brief-file .crew-chief-brief.md --timeout 300
+```
 
-The first lab dispatch returned `proof_failed`. The executor changed a file outside T001's allowed list, so the generated tests were not where the proof expected them:
+A successful dispatch prints this shape (illustrative — your job id, branch, duration and token counts differ):
+
+```text
+status: ok
+branch: crew/<job-id>-1-1
+worktree: ../hello-crew-spec.crew/<job-id>-1-1
+base: HEAD
+destructive_suspect: -
+outside_writes: -
+duration: 129.0s
+steps: 21
+tokens: 942551 (in 932015 / out 10536)
+proof: passed
+```
+
+Expect no `scope:` line: the executor changed only `src/hello_crew/text_tools.py`, the file T001 allows. Nothing had to be added to make the proof pass, so the piece has no extra to count.
+
+Read the recorded attempt before you accept it. Do not accept `proof_failed`; it counts as a failed attempt. Read it, fix the cause, pick another free OpenCode model, and dispatch again. Replace `opencode:opencode-go/beam-free` in the next command with the id that just failed:
+
+```bash
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
+$CC pick --project . --job JOB --piece 1 --exclude opencode:opencode-go/beam-free
+
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
+$CC dispatch --project . --job JOB --piece 1 --executor EXECUTOR --brief-file .crew-chief-brief.md --timeout 300
+```
+
+Never add a file outside the task's `files` list just to make a proof pass. A proof that needs a file from another task is a broken proof: fix the proof, not the scope.
+
+### Historical: the earlier run under the old proof
+
+An earlier run of this tutorial gave T001 and T002 a pytest proof that needed the test file T003 writes. In a new project that proof could not pass without touching a file outside the task, so the first attempt failed:
 
 ```text
 status: proof_failed
@@ -263,19 +316,7 @@ proof: failed (exit 4)
 scope: src/hello_crew/__init__.py
 ```
 
-Read the recorded attempt before retrying. Do not accept `proof_failed`; it counts as a failed attempt.
-
-Pick another free OpenCode model and dispatch again:
-
-```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
-$CC pick --project . --job JOB --piece 1 --exclude opencode:opencode-go/beam-free
-
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
-$CC dispatch --project . --job JOB --piece 1 --executor EXECUTOR --brief-file .crew-chief-brief.md --timeout 300
-```
-
-The successful lab attempt used `opencode:opencode-go/minimax-m3.1-flash-free` and printed:
+That run picked another free OpenCode model and dispatched again; the retry used `opencode:opencode-go/minimax-m3.1-flash-free` and printed:
 
 ```text
 status: ok
@@ -290,87 +331,105 @@ proof: passed
 scope: tests/test_text_tools.py
 ```
 
-The `scope:` line matters. The proof passed, but the executor also added the test file. That is outside T001's `files` list, so the reviewer called it an extra and the grade was 90. Decide whether that extra belongs in a later task before accepting similar work.
+There the `scope:` line matters: the proof passed, but the executor had also added the test file, which is outside T001's `files` list, so the reviewer called it an extra and that run graded T001 with 90. Keep the lesson, not the numbers: read the recorded attempt before retrying, and never add an out-of-scope file just to satisfy a proof. The per-task proofs of step 3 remove that trap — T001 proves `normalize` and T002 proves `word_count` from `src`, and only T003, whose dependencies are accepted by then, runs pytest.
 
 ## 6. Review with a rendered brief
 
-Choose a reviewer from a different family, then render the review brief:
+Choose a free OpenCode reviewer from a different underlying model family, then render the review brief. If `pick` proposes any other tool, or any included, cheap, or paid model, exclude its exact id with `--exclude` and pick again. Apply this rule to reviews as well as to implementation: never dispatch Antigravity, Codex, Claude, an included, a cheap, or a paid executor in this tutorial.
+
+Exclude the model that wrote the code, in both routes. Treat `opencode:opencode/MODEL` and `opencode:opencode-go/MODEL` as the same underlying model for an independent review: when the task was implemented by one of them, exclude both. ACC may treat the two ids as different quota families, so the exclusion has to name both, even though the model behind them is the same one. Replace `MODEL` in the command below with the model your implementation attempt actually used — the id your `pick` printed — and do it for every task you review. If more than one executor produced a successful attempt on that piece (a retry after a failure, for example), exclude the aliases of every one of them.
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
-$CC pick --project . --job JOB --piece 1 --review --exclude EXECUTOR
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
+$CC pick --project . --job JOB --piece 1 --review --exclude opencode:opencode/MODEL opencode:opencode-go/MODEL
 
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC brief render --project . --job JOB --piece 1 --review --out .crew-chief-review.md
 ```
 
-The lab first picked an Antigravity Claude reviewer, but dispatch returned this honest quota result:
+`--exclude` takes a list of ids, so add every id you want out to the same flag and run `pick` again. A reviewer proposed by another tool is excluded without dispatch; nothing of it runs.
 
-```text
-status: quota
-branch: -
-worktree: -
-base: -
-destructive_suspect: -
-outside_writes: -
-duration: 9.5s
-steps: 1
-tokens: 0 (in 0 / out 0)
-answer:
-Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 140h1m53s.
-```
-
-Pick again, excluding that reviewer. The lab then used free `opencode:opencode/beam-free` and reviewed the successful worktree:
+The rendered review brief carries the criteria, the allowed files, and the two verdicts. Append the rules the product cannot infer, so the reviewer states the HEAD it checked and does not hide a file it did not need:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+cat >> .crew-chief-review.md <<'EOF'
+
+Start your final answer with `HEAD confirmed: <actual short SHA>`. Report every changed file outside the allowed-files list as extra, even if that file is needed by the proof command. Do not infer that a passing proof permits additional files.
+
+Global edge case from the spec: Empty or whitespace-only text should normalize to an empty string and count as zero words.
+EOF
+```
+
+In PowerShell, the same append:
+
+```powershell
+@'
+
+Start your final answer with `HEAD confirmed: <actual short SHA>`. Report every changed file outside the allowed-files list as extra, even if that file is needed by the proof command. Do not infer that a passing proof permits additional files.
+
+Global edge case from the spec: Empty or whitespace-only text should normalize to an empty string and count as zero words.
+'@ | Add-Content .crew-chief-review.md
+```
+
+Run the append after every `brief render`: rendering the brief again overwrites the file.
+
+Dispatch the review against the worktree of the successful implementation attempt:
+
+```bash
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC dispatch --project . --job JOB --piece 1 --executor REVIEWER --brief-file .crew-chief-review.md --review --target WORKTREE --timeout 300
 ```
 
-The review returned `status: ok`, `HEAD confirmed`, and these verdicts:
+In the earlier lab run the review came from the free `opencode:opencode/beam-free`, a different model family from the executor that wrote the code in that run. Use the exact free OpenCode id your own `pick` prints. If a free OpenCode reviewer returns `status: quota`, read the recorded attempt, exclude that id, and pick another free OpenCode reviewer; never fall back to another tool.
+
+A successful review answers `status: ok` and these verdicts (illustrative — the SHA and the findings depend on the worktree):
 
 ```text
+HEAD confirmed: <short SHA of the reviewed worktree>
+
 ## Spec verdict
 - FR-001: done
 - US1/AC1: done
 
-`extra`: Added `tests/test_text_tools.py` (not in the allowed-files list, though required by the proof command); added `__all__` and a detailed docstring beyond the requested helper.
+`extra`: none
 
 ## Quality verdict
 No Critical or Important findings.
 ```
 
-Use the `worktree` from the successful implementation dispatch, not a new path. If the reviewer reports the wrong `HEAD`, discard that review and dispatch it again against the correct worktree.
+Use the `worktree` from the successful implementation dispatch, not a new path. If the reviewer reports the wrong `HEAD` or omits the required HEAD confirmation, discard that review and dispatch it again against the correct worktree.
 
 ## 7. Accept tasks and run their proofs
 
-Grade and accept T001 after reading the review:
+Grade and accept T001 after reading the review. When the review reports no file outside the allowed list, there is no extra to count:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
-$CC grade --project . --job JOB --piece 1 --executor EXECUTOR --corrections 0 --done 2 --missing 0 --extra 2
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
+$CC grade --project . --job JOB --piece 1 --executor EXECUTOR --corrections 0 --done 2 --missing 0 --extra 0
 
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC accept --project . --job JOB --piece 1
 ```
 
-The lab printed:
+Expect this output (illustrative — the score follows your review; with no extras it is 100):
 
 ```text
-score: 90
-adherence 2/2 → 100; 0 corrections; 2 extra −10; penalties none → 90
+score: 100
+adherence 2/2 → 100; 0 corrections; 0 extra; penalties none → 100
 tasks.md has other changes; marked T001 but did not commit
-accepted crew/20261020-1452-text-tools-1-2
+accepted crew/<job-id>-1-1
 ```
+
+Count an extra only when the review really reports one. Each extra costs 5 points, and a file outside the task's `files` list is an extra even when the proof needed it. The earlier lab run, whose executor added the test file, graded T001 with 90.
 
 The accept command ticks T001 from `[ ]` to `[X]`. Because the spec files had other changes, it did not make a separate task-marking commit.
 
-Repeat the same render, pick, dispatch, grade, and accept cycle for T002. In the lab, the free OpenCode executor was `opencode:opencode/glm-5.3-flash-free`; its proof passed and its grade was 100. Then dispatch T003, which is now unblocked. The lab used `opencode:opencode/deepseek-v4.1-flash-free`; its proof passed and its grade was 100.
+Repeat the same render, pick, dispatch, grade, and accept cycle for T002. In the earlier lab run, the free OpenCode executor was `opencode:opencode/glm-5.3-flash-free`; its proof passed and its grade was 100. Then dispatch T003, which is now unblocked. That run used `opencode:opencode/deepseek-v4.1-flash-free`; its proof passed and its grade was 100.
 
 Check the completed spec:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC spec status --project . --job JOB
 ```
 
@@ -388,10 +447,10 @@ blocked: -
 For a durable design choice, record a one-line ruling and promote it to an ADR:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC ruling add --project . --job JOB --text "Keep text helpers pure and stdlib-only — predictable whitespace behavior is enough for this small feature — adding validation now would expand the API."
 
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC decision add --project . --job JOB --from-ruling 1 --context "The feature needs two small helpers with no runtime dependency." --alternatives "Add a third-party text library; validate every input type." --consequences "Callers get a small predictable API; non-string validation remains outside this feature."
 ```
 
@@ -404,15 +463,22 @@ docs/decisions/0001-keep-text-helpers-pure-and-stdlib-only.md
 Close the feature:
 
 ```bash
-export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec-lab/global-prefs.toml
+export AGENT_CREW_CHIEF_GLOBAL_PREFS=~/projects/hello-crew-spec/global-prefs.toml
 $CC close --project . --job JOB --type feat
 ```
 
-The lab printed `changelog: CHANGELOG.md (Added)`, a feature commit message, the task/executor scores, and this economy line:
+The command prints `changelog: CHANGELOG.md (Added)`, a feature commit message, the task/executor scores, and this economy line (illustrative — your numbers depend on your run):
 
 ```text
-free work: 100% of pieces, 100% of tokens · coordinator: 0% · 1.7 attempts/piece · mean score 97
+free work: 100% of pieces, 100% of tokens · coordinator: 0% · 1.0 attempts/piece · mean score 100
 ```
+
+Read the line before you celebrate it:
+
+- `attempts/piece` counts execution attempts only. Attempts that did no work — `quota` and `brief_refused` — are left out of the count, and review dispatches are not counted either. When each of the three pieces needed one execution attempt, the number is 1.0.
+- Report the total dispatches separately when you describe retries. For the three pieces above that would be six dispatches: three executions and three reviews.
+- `coordinator: 0%` means no coordinator usage was recorded in the job record. It does not establish that coordination was free: you still spent your own tokens deciding what to ask for and checking the reviews.
+- `mean score 100` is the mean of the three grades of step 7 when all three are 100. It says nothing about what the run cost.
 
 `close` adds the job to `CHANGELOG.md` and prints the commit message. Commit the accepted work, the ADR, and the changelog entry as your project workflow requires.
 
@@ -422,8 +488,8 @@ A piece remembers the task text it was imported from. If you regenerate or edit 
 
 If you add a new task, add its sidecar table and proof before dispatching. If you change allowed files, acceptance references, or the proof, render a fresh brief and read the new `scope:` line before accepting.
 
-## What happened in this run
+## What happened in the earlier lab run
 
 - Files written: `spec.md`, `plan.md`, `tasks.md`, `crew.toml`, the three task outputs, an ADR, and `CHANGELOG.md` in the lab.
 - Commands run: `spec new`, `setup`, `discover`, `job new`, `spec import`, `spec status`, `brief render`, `pick`, `dispatch`, `grade`, `accept`, `ruling add`, `decision add`, and `close`.
-- Product notes: a proof can pass while `scope:` reports an extra file; `accept` warns and does not make its own commit when `tasks.md` already has other changes; a quota response is recorded as a failed attempt and needs another free reviewer.
+- Product notes: a per-task proof checks the task's own file, so no out-of-scope file is needed to make it pass; `scope:` lists the files that are outside the task's allowed list; `accept` warns and does not make its own commit when `tasks.md` already has other changes; a quota response is recorded as a failed attempt and needs another free reviewer.
