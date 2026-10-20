@@ -993,6 +993,9 @@ def _cmd_spec_import(args: argparse.Namespace) -> int:
     project = _project(args)
     job = records.load_job(project, args.job)
     folder, relative, tasks, sidecar = _load_spec(project, job, args.spec_dir)
+    bound = job.get("spec_dir")
+    if bound and bound != relative:
+        raise ValueError(f"job is bound to {bound}; use a new job")
     original = copy.deepcopy(sidecar)
 
     def apply(stored: dict) -> tuple[list[dict], list[dict], list[dict]]:

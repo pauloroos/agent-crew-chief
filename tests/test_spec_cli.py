@@ -615,3 +615,21 @@ def test_accept_does_not_commit_an_untracked_tasks_md(git_repo, capsys):
     assert "docs(tasks)" not in _git(git_repo, "log", "--format=%s")
     assert "- [X] T012" in (folder / "tasks.md").read_text(encoding="utf-8")
     assert "specs/003-x/tasks.md" not in _git(git_repo, "ls-files")
+
+
+def test_spec_import_refuses_to_rebind_a_job_to_another_folder(git_repo, capsys):
+    _write_spec(git_repo, "specs/001-a")
+    _write_spec(git_repo, "specs/002-b")
+    job = _new_job(git_repo)
+    assert _import(git_repo, job, "--spec-dir", "specs/001-a") == 0
+    before = (records.jobs_dir(git_repo) / f"{job}.json").read_text(encoding="utf-8")
+    capsys.readouterr()
+
+    assert _import(git_repo, job, "--spec-dir", "specs/002-b") == 2
+
+    err = capsys.readouterr().err.strip()
+    assert err.splitlines() == ["job is bound to specs/001-a; use a new job"]
+    assert (records.jobs_dir(git_repo) / f"{job}.json").read_text(encoding="utf-8") == before
+    assert not (git_repo / "specs" / "002-b" / SIDECAR_NAME).exists()
+    # the same folder again is fine
+    assert _import(git_repo, job, "--spec-dir", "specs/001-a") == 0
