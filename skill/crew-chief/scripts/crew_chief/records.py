@@ -158,15 +158,23 @@ def _sharing_retry(action: Callable[[], object]) -> object:
 
 
 def write_atomic(path: Path, text: str) -> None:
-    """Write ``text`` to ``path`` through a temp file plus ``os.replace``."""
+    """Write ``text`` to ``path`` through a temp file plus ``os.replace``.
+
+    The text is written byte for byte (no newline translation, so CRLF and a
+    BOM already in ``text`` survive), and an existing file keeps its mode.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(
         dir=path.parent, prefix=f"{path.name}.", suffix=".tmp"
     )
     temp = Path(temp_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             handle.write(text)
+        try:
+            os.chmod(temp, os.stat(path).st_mode & 0o7777)
+        except OSError:  # a new file keeps the temp file's mode
+            pass
         _sharing_retry(lambda: os.replace(temp, path))
     except BaseException:
         temp.unlink(missing_ok=True)

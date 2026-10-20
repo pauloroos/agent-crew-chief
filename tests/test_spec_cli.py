@@ -569,3 +569,17 @@ def test_dispatch_review_is_not_blocked_by_dependencies(
 
     assert code == 0
     assert "waits for" not in capsys.readouterr().err
+
+
+def test_accept_writes_tasks_md_atomically(git_repo, capsys, monkeypatch):
+    crlf = (_BOM + SAMPLE).replace("\n", "\r\n").encode("utf-8")
+    job, folder = _imported(git_repo, crlf)
+    _with_ok_attempt(git_repo, job, 2)
+    calls = []
+    real = records.write_atomic
+    monkeypatch.setattr(
+        records, "write_atomic", lambda path, text: (calls.append(path), real(path, text))
+    )
+    assert main(["accept", "--project", str(git_repo), "--job", job, "--piece", "2"]) == 0
+    assert (folder / "tasks.md").resolve() in [Path(p).resolve() for p in calls]
+    assert (folder / "tasks.md").read_bytes() == crlf.replace(b"- [ ] T012", b"- [X] T012")

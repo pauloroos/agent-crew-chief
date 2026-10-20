@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from crew_chief import records
 from crew_chief.changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
@@ -220,3 +221,19 @@ def test_insert_before_changesets_style_release_headings():
     assert out.index("## [Unreleased]") < out.index("## 1.2.0")
     assert out.endswith("## 1.2.0\n\n### Minor Changes\n\n- abc: thing\n\n## v1.1.0\n\n- old\n")
     assert "### Added\n- New. <!-- crew:J1 -->" in out
+
+
+def test_close_writes_the_changelog_atomically(git_repo, capsys, monkeypatch):
+    calls = []
+    real = records.write_atomic
+    monkeypatch.setattr(
+        records, "write_atomic", lambda path, text: (calls.append(path), real(path, text))
+    )
+    target = git_repo / "CHANGELOG.md"
+    target.write_bytes(b"\xef\xbb\xbf# Changelog\r\n\r\n## [1.0.0]\r\n- Old.\r\n")
+    job_id = _accepted_job(git_repo)
+    assert _close(git_repo, job_id) == 0
+    assert target.resolve() in [Path(p).resolve() for p in calls]
+    raw = target.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf# Changelog\r\n")
+    assert b"\n" not in raw.replace(b"\r\n", b"")

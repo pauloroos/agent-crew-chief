@@ -726,8 +726,11 @@ def _mark_task_done(project: Path, spec_dir: str, ref: str) -> None:
         return
     if marked == text:
         return
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(marked)
+    try:
+        records.write_atomic(path, marked)
+    except OSError as exc:
+        print(f"cannot write {path}: {exc}; {ref} not marked", file=sys.stderr)
+        return
     try:
         commit_paths(
             project,
@@ -841,9 +844,7 @@ def _write_changelog(project: Path, job: dict) -> tuple[str, str] | None:
         new = insert_entry(old, category, entry_line(job))
         if new == old:
             return None
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8", newline="") as handle:
-            handle.write(new)
+        records.write_atomic(path, new)
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError(f"changelog: cannot update {path}: {exc}") from exc
     return path.relative_to(project.resolve()).as_posix(), category

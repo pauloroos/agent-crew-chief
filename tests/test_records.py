@@ -656,3 +656,19 @@ def test_piece_for_ref_ignores_stale_pieces(tmp_path):
     assert piece_for_ref(job, "T012") is None
     new = add_piece(job, "T012 new", "code", "low", ref="T012")
     assert piece_for_ref(job, "T012")["n"] == new
+
+
+def test_write_atomic_keeps_text_byte_for_byte(tmp_path):
+    target = tmp_path / "f.md"
+    text = chr(0xFEFF) + "a\r\nb\nc\r\n"
+    write_atomic(target, text)
+    assert target.read_bytes() == text.encode("utf-8")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_write_atomic_keeps_the_mode_of_an_existing_file(tmp_path):
+    target = tmp_path / "tasks.md"
+    target.write_text("old\n", encoding="utf-8")
+    target.chmod(0o644)
+    write_atomic(target, "new\n")
+    assert (target.stat().st_mode & 0o777) == 0o644
