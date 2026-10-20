@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [0.3.3] - 2026-10-20
+
+### Added
+- **PowerShell in the tutorials:** the first-job and spec-driven tutorials now show the same steps in Windows PowerShell — copying the example with `Copy-Item -Recurse`, setting the practice preferences path with `$env:AGENT_CREW_CHIEF_GLOBAL_PREFS`, calling the script without the `$CC` shortcut, and appending to the review brief with `Add-Content`.
+- **Quota troubleshooting:** a `quota` attempt keeps the provider's cause in the note — the error survives ordinary output printed before or after it, and the note keeps the full type, the message and the HTTP status. The raw response body never reaches the note, and the tutorials now say what to do next: read the recorded attempt, exclude that id, pick another free executor.
+
+### Changed
+- **Each task proves itself:** in the spec-driven tutorial, T001 and T002 check their own helper in `src`, so no task needs a file that belongs to another task; only the verification task runs pytest over the finished module. A proof that can only pass after another task writes a file belongs to the wrong task.
+- **An honest review:** `opencode:opencode/MODEL` and `opencode:opencode-go/MODEL` are one model behind two ids, so the exclusion names both; the reviewer is asked to start its answer with the HEAD it checked, and every file outside the allowed list is an extra, even when the proof needed it.
+- **The economy summary says what it knows:** without a recorded usage entry the coordinator's share is `not recorded`, not a measured `0%`, and the free share is now stated over `of recorded tokens` — the exact wording of the line. A recorded entry keeps its percentage and the `(estimated)` mark.
+- `__version__` is `0.3.3`.
+
+### Fixed
+- **Tutorial examples:** in the first-job and spec-driven tutorials, the practice path in every command points at the copied project instead of a lab folder outside it (the cost-and-safety tutorial keeps its own lab path); a `pick` always prints the executor and the reason, and the optional `effort` line comes only when the chosen tool has an applicable effort value — the same rule for an execution pick and for a review pick; and the tier counts are marked as an example from one machine, not a promise.
+- The spec-driven tutorial shows the successful run first — as illustrative expected output, not as a newly recorded lab result — and keeps the old proof failure as a historical note instead of the normal path.
+
 ## [0.3.2] - 2026-10-20
 
 ### Added

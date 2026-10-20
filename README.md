@@ -222,11 +222,11 @@ installed snippet says so in one line.
 ## Install
 
 ```bash
-git clone --branch v0.3.2 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.3.3 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.3.2.zip` from the
+No git? Download `agent-crew-chief-v0.3.3.zip` from the
 [latest release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 Pin a tag (`--branch vX.Y.Z`) so you never install code in the middle of a change;
