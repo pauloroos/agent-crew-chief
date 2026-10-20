@@ -37,6 +37,8 @@ O **agent-crew-chief** transforma o agente em que você já trabalha (Claude Cod
 
 Sem servidor, sem processo de fundo, sem dependências: uma skill e um CLI Python puro que qualquer agente consegue usar.
 
+Começando agora? Siga os [tutoriais](docs/tutorials/README.pt-BR.md): seu primeiro job em 10 minutos, trabalho guiado por spec, e custo e segurança, com um projeto de treino em [`examples/hello-crew`](examples/hello-crew).
+
 ## Como funciona
 
 ```mermaid

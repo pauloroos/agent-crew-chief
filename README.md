@@ -37,6 +37,8 @@ You probably have more AI firepower than you use. There are free models in OpenC
 
 No server, no daemon, no dependencies: one skill plus a stdlib Python CLI that any agent can drive.
 
+New here? Follow the [tutorials](docs/tutorials/README.md): your first job in 10 minutes, spec-driven work, and cost and safety, with a practice project in [`examples/hello-crew`](examples/hello-crew).
+
 ## How it works
 
 ```mermaid
