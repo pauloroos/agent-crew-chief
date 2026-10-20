@@ -99,12 +99,21 @@ crew-chief economy --job <id>
   task id is gone, `[P]` tasks of one phase that share files, and **stale
   pieces**: when `tasks.md` is regenerated and a task's text changed, its piece
   is refused by `dispatch` and `brief render` until you fix the spec and import
-  again, so a piece never points at the wrong task.
+  again. Each `crew.toml` entry also keeps the `task` text it was written for;
+  when spec-kit renumbers and that id now names another task, `import` prints
+  `crew.toml entry T012 was written for another task; review it`, and
+  `dispatch` and `brief render` refuse the task until you fix the entry and set
+  its `task` to the current text. (Entries written before `task` existed cannot
+  be checked.) `import` edits `crew.toml` in place, so your comments survive; an
+  unknown key is an error. A job stays bound to its first spec folder.
 - **Briefs.** `brief render` writes the minimum an executor needs: the task, the
   acceptance criteria it points at (their text, not the whole spec), the
   constraints, interfaces, allowed files and proof. With `--review` it writes
   the reviewer's brief, which asks for two verdicts: spec (`done`, `missing`,
-  `misunderstood`, `extra`) and quality (`Critical`, `Important`, `Minor`).
+  `misunderstood`, `extra`) and quality (`Critical`, `Important`, `Minor`). The
+  review brief is pinned to one attempt (`--attempt N`, default the last `ok`
+  one): its worktree, start and end commits, so the reviewer checks the right
+  `HEAD`. `dispatch --review` prints the reviewer's answer.
   `--converge` writes the last pass, which compares the code with the whole
   spec and lists the gaps that are not tasks yet, or answers `Converged`.
 - **Proof.** After an `ok` attempt, `dispatch` runs the task's `proof` in the
@@ -115,14 +124,17 @@ crew-chief economy --job <id>
   overrides and records that). Files changed outside the task's `files` show up
   as a `scope:` line. Pieces without a spec task work as before and need no
   proof.
-- **Accept.** `accept` marks the task `[X]` in `tasks.md` and commits that one
-  line (`docs(tasks): mark T012 done`); CRLF, BOM and the rest of the file are
-  left alone.
+- **Accept.** `accept` marks the task `[X]` in `tasks.md`; CRLF, BOM and the
+  rest of the file are left alone. When `tasks.md` is tracked and has no other
+  changes, the tick is its own commit (`docs(tasks): mark T012 done`);
+  otherwise it stays uncommitted and `accept` says so.
 - **Rulings and decisions.** `ruling add` records a one-line ruling in the job.
   `decision add` writes it, or a title you give, to `docs/decisions/NNNN-slug.md`
   as an ADR with context, alternatives and consequences.
 - **Close.** `close` also adds the job to the project CHANGELOG (see the
-  `changelog` preference) and prints the economy block.
+  `changelog` preference) and prints the economy block. `close --type fix`
+  (or a `fix: ...` job title) makes it a fix in the commit message and in the
+  CHANGELOG.
 
 ### Economy
 

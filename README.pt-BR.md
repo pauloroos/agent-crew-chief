@@ -100,14 +100,24 @@ crew-chief economy --job <id>
   entradas do `crew.toml` e peças cujo id de tarefa sumiu, tarefas `[P]` da mesma
   fase que dividem arquivos e **peças desatualizadas**: quando o `tasks.md` é
   regenerado e o texto de uma tarefa muda, a peça dela é recusada pelo `dispatch`
-  e pelo `brief render` até você corrigir a spec e importar de novo, então uma
-  peça nunca aponta para a tarefa errada.
+  e pelo `brief render` até você corrigir a spec e importar de novo. Cada
+  entrada do `crew.toml` também guarda o texto da tarefa para a qual foi escrita
+  (`task`); quando o spec-kit renumera e aquele id passa a ser outra tarefa, o
+  `import` avisa `crew.toml entry T012 was written for another task; review it`,
+  e o `dispatch` e o `brief render` recusam a tarefa até você corrigir a entrada
+  e pôr no `task` o texto atual. (Entradas escritas antes do `task` existir não
+  têm como ser conferidas.) O `import` edita o `crew.toml` no lugar, então seus
+  comentários ficam; uma chave desconhecida é erro. Um job fica preso à primeira
+  pasta de spec.
 - **Briefs.** O `brief render` escreve o mínimo que o executor precisa: a tarefa,
   os critérios de aceite a que ela se refere (o texto deles, não a spec inteira),
   as restrições, as interfaces, os arquivos permitidos e a prova. Com `--review`
   escreve o brief do revisor, que pede dois veredictos: spec (`done`, `missing`,
   `misunderstood`, `extra`) e qualidade (`Critical`, `Important`, `Minor`). O
-  `--converge` escreve a última passada, que compara o código com a spec inteira e
+  brief de revisão fica preso a uma tentativa (`--attempt N`, por padrão a
+  última `ok`): a worktree, o commit de início e o de fim, para o revisor
+  conferir o `HEAD` certo. O `dispatch --review` imprime a resposta do revisor.
+  O `--converge` escreve a última passada, que compara o código com a spec inteira e
   lista as lacunas que ainda não são tarefas, ou responde `Converged`.
 - **Prova.** Depois de uma tentativa `ok`, o `dispatch` roda a `proof` da tarefa na
   worktree. Uma prova que falha ou estoura o tempo deixa a tentativa como
@@ -116,14 +126,18 @@ crew-chief economy --job <id>
   fase anterior ainda não foi aceita é recusada (`--ignore-deps` libera e
   registra). Arquivos mudados fora dos `files` da tarefa aparecem numa linha
   `scope:`. Peças sem tarefa de spec funcionam como antes e não exigem prova.
-- **Aceite.** O `accept` marca a tarefa `[X]` no `tasks.md` e commita só essa linha
-  (`docs(tasks): mark T012 done`); CRLF, BOM e o resto do arquivo ficam como estão.
+- **Aceite.** O `accept` marca a tarefa `[X]` no `tasks.md`; CRLF, BOM e o resto
+  do arquivo ficam como estão. Quando o `tasks.md` é versionado e não tem outras
+  mudanças, a marcação vira um commit só dela (`docs(tasks): mark T012 done`);
+  senão fica sem commit e o `accept` avisa.
 - **Decisões.** O `ruling add` registra uma decisão de uma linha no job. O
   `decision add` grava essa decisão, ou um título que você der, em
   `docs/decisions/NNNN-slug.md` como um ADR com contexto, alternativas e
   consequências.
 - **Fechamento.** O `close` também põe o job no CHANGELOG do projeto (veja a
-  preferência `changelog`) e imprime o bloco de economia.
+  preferência `changelog`) e imprime o bloco de economia. O `close --type fix`
+  (ou um título de job `fix: ...`) faz dele uma correção na mensagem de commit e
+  no CHANGELOG.
 
 ### Economia
 

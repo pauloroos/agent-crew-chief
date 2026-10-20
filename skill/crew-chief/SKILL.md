@@ -152,7 +152,8 @@ Seven steps, in order. For a project-size request that has a spec, follow
    piece; the reason ends with `reviewer outside the family of: <ids>`.
 
    `--target` is the worktree printed by step 4. The reviewer runs read-only
-   there, commits nothing and leaves no brief file behind. Ask the reviewer to
+   there, commits nothing and leaves no brief file behind; `dispatch` prints its
+   answer after an `answer:` line. Ask the reviewer to
    check the request item by item, not to rewrite the code. See **Review**.
 
 6. **Grade.** Record every correction, then score the piece:
@@ -205,7 +206,10 @@ Seven steps, in order. For a project-size request that has a spec, follow
    a feat, fix, refactor or perf, `close` also adds the job to the project's
    `CHANGELOG.md` under `## [Unreleased]` (once per job; `--no-changelog` or
    `changelog = "none"` skips it) and prints `changelog: <path> (<category>)`
-   first, so stage that file with the commit. Commit with the printed message and show the user the
+   first, so stage that file with the commit. The type comes from `close --type
+   feat|fix|refactor|perf|docs|chore`, else from a conventional prefix of the
+   job title (`fix: ...`), else from the first piece's work type: pass `--type
+   fix` when the job fixed a bug. Commit with the printed message and show the user the
    result plus the `close` output.
 
 `CC scoreboard --project .` regenerates and prints the scoreboard when the user
@@ -259,13 +263,20 @@ The cycle:
    (two `[P]` tasks of one phase that share `files`) and `stale pieces` (the text
    of a task changed since it was imported, for example after `tasks.md` was
    regenerated; a stale piece is refused by `dispatch` and `brief render`, so
-   fix the spec and run `import` again). Then fill in `crew.toml`, one table per
-   task:
+   fix the spec and run `import` again) and `crew.toml entry T012 was written
+   for another task; review it` (spec-kit renumbered the tasks and that id now
+   names another task: the entry is not reused, and `dispatch` and `brief
+   render` refuse the task until you fix the entry's fields and set its `task` to
+   the current text). A job stays bound to its first spec folder; another
+   `--spec-dir` is an error, so use a new job. Then fill in `crew.toml`, one
+   table per task (`import` adds the tables and keeps your comments; an unknown
+   key is an error):
 
    ```toml
    global_constraints = ["Python 3.11, stdlib only"]
 
    [tasks.T001]
+   task = "Create the exporter in src/exporter.py"   # written by import; keep it
    type = "code"
    risk = "low"
    accept = ["FR-001", "US1/AC1"]        # references into spec.md
@@ -308,16 +319,25 @@ The cycle:
    CC dispatch --project . --job <id> --piece 3 --executor <other-tool>:<model> --brief-file .crew-chief-review.md --review --target <worktree>
    ```
 
-   The reviewer gives two separate verdicts: **spec** (each acceptance criterion
-   `done`, `missing` or `misunderstood`, plus anything `extra`) and **quality**
-   (findings as `Critical`, `Important` or `Minor`). Read the diff yourself.
+   The review brief is pinned to the piece's last `ok` exec attempt (or
+   `--attempt N`): it names the worktree, the start and end commits, asks the
+   reviewer to confirm `git rev-parse --short HEAD` and to review `git diff
+   <start>..HEAD`, and repeats the global constraints. Pass that same worktree
+   as `--target`. **Discard a review whose HEAD does not match** (or that
+   answers `WRONG HEAD`) and dispatch it again. The reviewer gives two separate
+   verdicts: **spec** (each acceptance criterion `done`, `missing` or
+   `misunderstood`, plus anything `extra`) and **quality** (findings as
+   `Critical`, `Important` or `Minor`). `dispatch --review` prints the answer
+   after an `answer:` line (`answer` in `--json`). Read the diff yourself.
 
 5. **Correct and grade.** `CC correction` and `CC grade` as in step 6; a
    correction brief describes only the adjustment.
 
 6. **Accept.** `CC accept` merges the piece and marks its task `[X]` in
-   `tasks.md`, as its own commit (`docs(tasks): mark T003 done`); only that one
-   line of the file changes, and its line endings stay. A stale piece is merged
+   `tasks.md`; only that one line of the file changes, and its line endings
+   stay. When `tasks.md` is tracked and has no other changes the tick is its own
+   commit (`docs(tasks): mark T003 done`); otherwise it is left uncommitted with
+   a warning, so commit it with your other spec edits. A stale piece is merged
    but its task is not ticked.
 
 7. **Converge.** When the tasks are done, one last review compares the code
