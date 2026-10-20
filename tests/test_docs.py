@@ -92,11 +92,14 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
-def test_version_is_0_3_0_and_changelog_has_unreleased():
+def test_version_is_0_3_0_and_changelog_has_its_section():
     assert __version__ == "0.3.0"
     text = _read(CHANGELOG)
-    assert "## [Unreleased]" in text
-    unreleased = text.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+    heading = next(
+        line for line in text.splitlines()
+        if line.startswith(("## [Unreleased]", "## [0.3.0]"))
+    )
+    unreleased = text.split(heading + "\n", 1)[1].split("\n## [", 1)[0]
     for needle in (
         "spec import",
         "brief render",

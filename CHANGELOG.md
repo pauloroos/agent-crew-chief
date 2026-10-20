@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-20
 
 ### Added
 - **Spec-driven work (spec-kit layout):** a job can keep its request in a spec folder (`specs/NNN-slug/` with `spec.md`, `plan.md`, `tasks.md`), read in the spec-kit format (tested with spec-kit 1.2.x; the grammar is reimplemented, no template is copied, and `.specify/` is never created). `spec new --title` creates the next numbered folder from short templates and prints it. `spec import --job [--spec-dir]` turns every open task of `tasks.md` into a piece (`ref` = task id; `[X]` tasks are skipped), keeps the job's `spec_dir`, and prints `missing proof`, `orphan sidecar entries`, `orphan pieces`, `stale pieces`, `crew.toml entry T012 was written for another task; review it` and `parallel conflict` warnings. A job stays bound to its first spec folder: `--spec-dir` naming another one exits 2 with `job is bound to <dir>; use a new job`. The folder defaults to the job's, then to `.specify/feature.json`; a missing folder or `tasks.md` is a one-line error with exit 2 and nothing written. `spec status --job [--spec-dir]` shows progress per phase and which tasks are ready or blocked.
