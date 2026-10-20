@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
-## [Unreleased]
+## [0.3.1] - 2026-10-20
 
 ### Added
 - **Cost tiers:** every executor now sits on a four-step ladder, cheapest first: `free`, `included`, `cheap`, `paid` (`forbidden` stays outside it). A `[[models]]` rule may set `cost = "included"` for a model a subscription already pays for. Built-in patterns (`scripts/crew_chief/tiers.py`) classify the common free models and the subscription CLIs, and a tool's `cost_default` covers the rest; the user's own rules win, then the `acc setup` block, then the built-ins. `discover` prints each executor's cost.
@@ -18,6 +18,11 @@ All notable changes to this project are documented here. Versions follow
 - Attempts start at the lowest effort that suits the piece, and a `quota` or `brief_refused` attempt no longer raises the effort ceiling.
 - `SKILL.md`, `README.md` and `README.pt-BR.md` document the ladder, `setup`, the budget, the spend log and the sensitive paths; `preferences.example.toml` gains the new keys.
 - `__version__` is `0.3.1`.
+
+### Fixed
+- Untracked Python cache (`__pycache__/`, `*.pyc`) left in the project by a proof run is no longer an outside write; tracked changes to such files still are.
+- Clearer errors for `brief render` on a piece with no spec task and for `dispatch --review` without `--target`/`--brief-file`.
+- A fix round on sensitive paths: wildcard `sensitive_paths` entries also refuse briefs naming a matching path, and a failed post-run check is noted on the attempt.
 
 ## [0.3.0] - 2026-10-20
 
