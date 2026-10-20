@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import tempfile
 import time
 import unicodedata
@@ -591,19 +592,54 @@ def _piece_credit(piece: dict) -> str:
     return text
 
 
-def commit_type(job: dict) -> str:
-    """Conventional commit type from the first piece; ``chore`` with no pieces."""
+#: The types ``close --type`` accepts (commit message type and changelog
+#: category).
+CLOSE_TYPES = ("feat", "fix", "refactor", "perf", "docs", "chore")
+
+#: A conventional commit prefix at the start of a job title: type, the
+#: optional ``(scope)`` and ``!``, then the rest of the title.
+_TITLE_PREFIX = re.compile(
+    r"^(feat|fix|refactor|perf|docs|chore|test)(\([^)]*\))?(!)?:\s*(.*)$", re.DOTALL
+)
+
+
+def split_title(title: str) -> tuple[str | None, str, str]:
+    """``(type, "(scope)!", rest)`` of a conventional title; ``(None, "", title)``."""
+    match = _TITLE_PREFIX.match(title or "")
+    if not match:
+        return None, "", title or ""
+    return match.group(1), (match.group(2) or "") + (match.group(3) or ""), match.group(4)
+
+
+def commit_type(job: dict, override: str | None = None) -> str:
+    """Conventional commit type of the job.
+
+    In order: ``override`` (``close --type``), the type ``close --type``
+    stored in the job (``commit_type``), a conventional prefix of the title
+    (``fix: ...``), then the first piece's work type; ``chore`` with no pieces.
+    """
+    if override:
+        return override
+    stored = job.get("commit_type")
+    if isinstance(stored, str) and stored in CLOSE_TYPES:
+        return stored
+    prefix, _, _ = split_title(str(job.get("title", "")))
+    if prefix:
+        return prefix
     pieces = job.get("pieces") or []
     if not pieces:
         return "chore"
     return _COMMIT_TYPES.get(pieces[0].get("type"), "chore")
 
 
-def _commit_message(job: dict, changelog_file: str | None = None) -> str:
+def _commit_message(
+    job: dict, changelog_file: str | None = None, kind: str | None = None
+) -> str:
     body = []
     for piece in job.get("pieces") or []:
         body.append(f"- {piece.get('title', '')} — {_piece_credit(piece)}")
-    subject = f"{commit_type(job)}: {job.get('title', '')}"
+    _, scope, rest = split_title(str(job.get("title", "")))
+    subject = f"{commit_type(job, kind)}{scope}: {rest}"
     if body:
         body.insert(0, "")
     if changelog_file:
@@ -629,13 +665,16 @@ def _issue_comment(job: dict) -> str:
     return "\n".join([*lines, "", f"Record: {record}"])
 
 
-def summaries(job: dict, changelog_file: str | None = None) -> tuple[str, str]:
+def summaries(
+    job: dict, changelog_file: str | None = None, kind: str | None = None
+) -> tuple[str, str]:
     """Return ``(commit_message, issue_comment)`` for the job.
 
     ``changelog_file`` is the project CHANGELOG ``close`` just wrote an entry
     into; the commit message then names it among the files of the commit.
+    ``kind`` overrides the commit type (see :func:`commit_type`).
     """
-    return _commit_message(job, changelog_file), _issue_comment(job)
+    return _commit_message(job, changelog_file, kind), _issue_comment(job)
 
 
 def _attempt_line(index: int, attempt: dict) -> str:

@@ -237,3 +237,38 @@ def test_close_writes_the_changelog_atomically(git_repo, capsys, monkeypatch):
     raw = target.read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf# Changelog\r\n")
     assert b"\n" not in raw.replace(b"\r\n", b"")
+
+
+def test_close_type_fix_sets_commit_type_and_changelog_category(git_repo, capsys):
+    job_id = _accepted_job(git_repo, title="Crash on empty file")
+    assert _close(git_repo, job_id, "--type", "fix") == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "changelog: CHANGELOG.md (Fixed)"
+    assert "fix: Crash on empty file" in out
+    text = (git_repo / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "### Fixed\n- Crash on empty file (" in text
+    assert records.load_job(git_repo, job_id)["commit_type"] == "fix"
+
+
+def test_close_honors_a_conventional_prefix_in_the_title(git_repo, capsys):
+    job_id = _accepted_job(git_repo, title="fix(csv): crash on empty file")
+    assert _close(git_repo, job_id) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "changelog: CHANGELOG.md (Fixed)"
+    assert "\nfix(csv): crash on empty file\n" in "\n" + out
+    assert "feat: fix" not in out
+    text = (git_repo / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "- crash on empty file (specs/001-csv" in text
+
+
+def test_close_type_docs_writes_no_changelog(git_repo, capsys):
+    job_id = _accepted_job(git_repo, title="Explain the export")
+    assert _close(git_repo, job_id, "--type", "docs") == 0
+    assert "docs: Explain the export" in capsys.readouterr().out
+    assert not (git_repo / "CHANGELOG.md").exists()
+
+
+def test_close_type_flag_beats_the_title_prefix(git_repo, capsys):
+    job_id = _accepted_job(git_repo, title="feat: faster export")
+    assert _close(git_repo, job_id, "--type", "perf", "--no-changelog") == 0
+    assert "perf: faster export" in capsys.readouterr().out

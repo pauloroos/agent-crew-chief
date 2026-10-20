@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from .records import split_title
+
 #: Conventional commit type -> Keep a Changelog category. Other types
 #: (``docs``, ``test``, ``chore``) get no entry.
 CATEGORY_BY_COMMIT = {
@@ -48,7 +50,8 @@ def entry_line(job: dict) -> str:
     The parentheses hold only what the job has: its spec folder and the
     numbers of the ADRs it recorded.
     """
-    title = " ".join(str(job.get("title", "")).split()).rstrip(".")
+    _, _, rest = split_title(str(job.get("title", "")))
+    title = " ".join(rest.split()).rstrip(".")
     notes = []
     if job.get("spec_dir"):
         notes.append(str(job["spec_dir"]))

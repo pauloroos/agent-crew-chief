@@ -772,7 +772,15 @@ def _cmd_discard(args: argparse.Namespace) -> int:
 
 def _cmd_close(args: argparse.Namespace) -> int:
     project = _project(args)
-    job = records.load_job(project, args.job)
+    if args.type:
+
+        def store_type(stored: dict) -> dict:
+            stored["commit_type"] = args.type
+            return stored
+
+        job = records.update_job(project, args.job, store_type)
+    else:
+        job = records.load_job(project, args.job)
     written = None if args.no_changelog else _write_changelog(project, job)
     commit, issue = records.summaries(job, written[0] if written else None)
     _write_scoreboard(project, render_scoreboard(project))
@@ -1384,6 +1392,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-changelog",
         action="store_true",
         help="do not add the job to the project CHANGELOG",
+    )
+    close_parser.add_argument(
+        "--type",
+        choices=records.CLOSE_TYPES,
+        default=None,
+        help="commit type and CHANGELOG category (default: a 'fix: ' style "
+        "prefix of the job title, else the first piece's work type)",
     )
     close_parser.set_defaults(handler=_cmd_close)
 
