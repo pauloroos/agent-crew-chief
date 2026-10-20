@@ -1190,7 +1190,7 @@ def test_pick_review_accepts_a_free_opencode_model():
     )
 
     assert chosen is opencode
-    assert reason == "best score 70 (opencode:x-free)"
+    assert reason == "best score 70 (opencode:x-free); tier free"
 
 
 def test_pick_review_ranks_free_executors_by_score_not_exec_first():
@@ -1220,7 +1220,7 @@ def test_pick_review_escalates_to_paid_when_no_free_fits():
     assert chosen is codex
     assert reason == (
         "escalated: no free executor available (codex:c1); "
-        "not for review: opencode"
+        "tier paid; climbed: free exhausted; not for review: opencode"
     )
 
 
@@ -1513,3 +1513,336 @@ def test_pick_keeps_the_low_variant_after_a_quota_attempt():
                      _Rng(0.9), job=job, piece=1)
 
     assert chosen is low
+
+
+# --- the cost ladder -------------------------------------------------------
+
+
+def _open_budget(_executor):
+    """A budget callback that always allows spending."""
+    return None
+
+
+def _closed_budget(_executor):
+    return "budget US$ 0 reached (cheap_budget_usd_day)"
+
+
+def test_exec_stays_in_free_while_any_free_left():
+    x = _ex("opencode:x-free")
+    y = _ex("opencode:y-free")
+    included = _ex("claude:sonnet", cost="included")
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    chosen, reason = pick(
+        [x, y, included, cheap], {}, "code", "medium", _prefs(), {x.id},
+        _Rng(0.9), budget=_open_budget,
+    )
+
+    assert chosen is y
+    assert reason.endswith("; tier free")
+    assert "climbed" not in reason
+
+
+def test_exec_climbs_to_included_when_free_exhausted():
+    x = _ex("opencode:x-free")
+    included = _ex("claude:sonnet", cost="included")
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    chosen, reason = pick(
+        [x, included, cheap], {}, "code", "medium", _prefs(), {x.id},
+        _Rng(0.9), budget=_open_budget,
+    )
+
+    assert chosen is included
+    assert reason.endswith("; tier included; climbed: free exhausted")
+
+
+def test_exec_climbs_to_cheap_when_free_and_included_are_gone():
+    x = _ex("opencode:x-free")
+    included = _ex("claude:sonnet", cost="included")
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    chosen, reason = pick(
+        [x, included, cheap], {}, "code", "medium", _prefs(),
+        {x.id, included.id}, _Rng(0.9), budget=_open_budget,
+    )
+
+    assert chosen is cheap
+    assert reason.endswith("; tier cheap; climbed: included exhausted")
+
+
+def test_exec_climbs_when_the_free_quota_is_cooling():
+    x = _ex("opencode:x-free")
+    included = _ex("claude:sonnet", cost="included")
+
+    chosen, reason = pick(
+        [x, included], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+        cooling={x.id}, budget=_open_budget,
+    )
+
+    assert chosen is included
+    assert "tier included; climbed: free exhausted" in reason
+    assert reason.endswith("skipped for quota: opencode:x-free")
+
+
+def test_exec_uses_cheap_only_within_budget():
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+    seen = []
+
+    def budget(executor):
+        seen.append(executor.id)
+        return None
+
+    chosen, reason = pick([cheap], {}, "code", "medium", _prefs(), set(),
+                          _Rng(0.9), budget=budget)
+    assert chosen is cheap
+    assert seen == [cheap.id]
+    assert "; tier cheap" in reason
+
+    chosen, reason = pick([cheap], {}, "code", "medium", _prefs(), set(),
+                          _Rng(0.9), budget=_closed_budget)
+    assert chosen is None
+    assert "budget US$ 0 reached (cheap_budget_usd_day)" in reason
+
+
+def test_budget_is_not_asked_while_a_cheaper_tier_has_someone():
+    free = _ex("opencode:x-free")
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    def budget(_executor):
+        raise AssertionError("the cheap tier must not be reached")
+
+    chosen, _ = pick([free, cheap], {}, "code", "medium", _prefs(), set(),
+                     _Rng(0.9), budget=budget)
+
+    assert chosen is free
+
+
+def test_cheap_is_closed_without_a_budget_callback_and_a_zero_ceiling():
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    chosen, reason = pick([cheap], {}, "code", "medium", _prefs(), set(),
+                          _Rng(0.9))
+
+    assert chosen is None
+    assert "budget US$ 0 reached (cheap_budget_usd_day)" in reason
+
+
+def test_cheap_unknown_cost_without_cap_never_picked():
+    # Review Focus 1: a cheap model with no known cost and no cap_usd_day is
+    # never chosen, and the pick says why.
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    def budget(_executor):
+        return "unknown cost and no cap_usd_day"
+
+    chosen, reason = pick([cheap], {}, "code", "medium", _prefs(), set(),
+                          _Rng(0.9), budget=budget)
+
+    assert chosen is None
+    assert "unknown cost and no cap_usd_day" in reason
+    assert "opencode:cheap-m" in reason
+
+
+def test_cheap_blocked_by_budget_does_not_hide_a_paid_strong_pick():
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+    paid = _ex("codex:c1", cost="paid")
+
+    chosen, reason = pick(
+        [cheap, paid], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+        strong=True, budget=_closed_budget,
+    )
+
+    assert chosen is paid
+    assert "budget US$ 0 reached" in reason
+    assert reason.index("budget US$ 0") < reason.index("; tier paid")
+
+
+def test_exec_never_reaches_paid_without_strong():
+    paid = _ex("codex:c1", cost="paid")
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    chosen, reason = pick([paid, cheap], {}, "code", "medium", _prefs(),
+                          set(), _Rng(0.9), budget=_closed_budget)
+
+    assert chosen is None
+    assert reason.startswith("no executor available")
+    assert "tier paid" not in reason
+
+
+def test_think_can_reach_paid():
+    paid = _ex("codex:c1", cost="paid")
+
+    chosen, reason = pick([paid], {}, "review", "medium", _prefs(), set(),
+                          _Rng(0.9))
+
+    assert chosen is paid
+    assert reason.startswith("escalated: no free executor available")
+    assert "; tier paid" in reason
+
+
+def test_think_climbs_the_ladder_before_paid():
+    free = _ex("opencode:x-free")
+    included = _ex("claude:sonnet", cost="included")
+    paid = _ex("codex:c1", cost="paid")
+
+    chosen, reason = pick([free, included, paid], {}, "design", "medium",
+                          _prefs(), {free.id}, _Rng(0.9))
+    assert chosen is included
+    assert reason.endswith("; tier included; climbed: free exhausted")
+
+    chosen, _ = pick([free, included, paid], {}, "design", "medium",
+                     _prefs(), {free.id, included.id}, _Rng(0.9),
+                     budget=_closed_budget)
+    assert chosen is paid
+
+
+def test_coordinator_cli_is_last_in_included_and_allowed_with_flag():
+    own = _ex("claude:sonnet", cost="included")
+    own2 = _ex("claude:opus", cost="included")
+    other = _ex("codex:gpt-5.5-low", cost="included")
+    # Scores favour the coordinator's own CLI; the preference still wins.
+    stats = _stats(("claude:sonnet", "code", 99.0, 5.0),
+                   ("codex:gpt-5.5-low", "code", 10.0, 5.0))
+
+    chosen, reason = pick(
+        [own, own2, other], stats, "code", "medium", _prefs(), set(),
+        _Rng(0.9), coordinator_tool="claude",
+    )
+    assert chosen is other
+    assert "coordinator claude kept last" in reason
+    assert reason.endswith("; tier included; climbed: free exhausted")
+
+    chosen, _ = pick(
+        [own, own2, other], stats, "code", "medium", _prefs(), set(),
+        _Rng(0.9), coordinator_tool="claude", allow_own_cli=True,
+    )
+    assert chosen is own
+
+    # With nothing else left in the tier, the coordinator's CLI is used.
+    chosen, reason = pick(
+        [own, own2, other], stats, "code", "medium", _prefs(), {other.id},
+        _Rng(0.9), coordinator_tool="claude",
+    )
+    assert chosen is own
+    assert "coordinator claude used: no other included executor left" in reason
+
+
+def test_coordinator_preference_only_applies_to_included():
+    own_free = _ex("opencode:own-free", cost="free")
+    other_free = _ex("antigravity:g-low")
+    stats = _stats(("antigravity:g-low", "design", 10.0, 5.0),
+                   ("opencode:own-free", "design", 90.0, 5.0))
+
+    chosen, _ = pick([own_free, other_free], stats, "design", "medium",
+                     _prefs(), set(), _Rng(0.9), coordinator_tool="opencode")
+
+    assert chosen is own_free
+
+
+def test_no_executor_message_suggests_setup_when_budget_zero():
+    # Review Focus 5.
+    free = _ex("opencode:x-free")
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    chosen, reason = pick([free, cheap], {}, "code", "medium", _prefs(),
+                          {free.id}, _Rng(0.9), budget=_closed_budget)
+
+    assert chosen is None
+    assert reason.startswith("no executor available")
+    assert "split the piece" in reason and "do it yourself" in reason
+    assert "; run setup to allow cheap models (current budget US$ 0)" in reason
+
+
+def test_no_executor_message_has_no_setup_hint_when_nothing_was_blocked():
+    free = _ex("opencode:x-free")
+
+    chosen, reason = pick([free], {}, "code", "medium", _prefs(), {free.id},
+                          _Rng(0.9), budget=_closed_budget)
+
+    assert chosen is None
+    assert "run setup" not in reason
+
+
+def test_setup_hint_shows_the_configured_budget():
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+    prefs = _prefs()
+    prefs.cheap_budget_usd_day = 2.5
+
+    def budget(_executor):
+        return "budget US$ 2.5 reached (cheap_budget_usd_day)"
+
+    chosen, reason = pick([cheap], {}, "code", "medium", prefs, set(),
+                          _Rng(0.9), budget=budget)
+
+    assert chosen is None
+    assert "(current budget US$ 2.5)" in reason
+
+
+def test_unknown_cost_block_gives_no_setup_hint():
+    cheap = _ex("opencode:cheap-m", cost="cheap")
+
+    chosen, reason = pick(
+        [cheap], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+        budget=lambda _e: "unknown cost and no cap_usd_day",
+    )
+
+    assert chosen is None
+    assert "run setup" not in reason
+
+
+def test_after_a_free_low_failure_the_next_pick_is_free_medium_not_included():
+    low = _ex("antigravity:gemini-3-pro-low")
+    medium = _ex("antigravity:gemini-3-pro-medium")
+    included = _ex("codex:gpt-5.5-low", cost="included")
+    job = _job_with_picks([])
+    job["pieces"][0]["attempts"] = [
+        _failed_attempt("antigravity:gemini-3-pro-low")
+    ]
+
+    chosen, reason = pick(
+        [low, medium, included], {}, "code", "medium", _prefs(), {low.id},
+        _Rng(0.9), job=job, piece=1, budget=_open_budget,
+    )
+
+    assert chosen is medium
+    assert "effort medium (low failed 1×)" in reason
+    assert reason.endswith("; tier free")
+
+
+def test_lowest_effort_applies_inside_the_included_and_cheap_pools():
+    low = _ex("codex:gpt-5.5-low", cost="included")
+    high = _ex("codex:gpt-5.5-high", cost="included")
+    cheap_low = _ex("opencode:m-low", cost="cheap")
+    cheap_high = _ex("opencode:m-high", cost="cheap")
+
+    chosen, _ = pick([high, low], {}, "code", "medium", _prefs(), set(),
+                     _Rng(0.9))
+    assert chosen is low
+
+    chosen, _ = pick([cheap_high, cheap_low], {}, "code", "medium", _prefs(),
+                     set(), _Rng(0.9), budget=_open_budget)
+    assert chosen is cheap_low
+
+    job = _job_with_picks([])
+    job["pieces"][0]["attempts"] = [
+        _failed_attempt("codex:gpt-5.5-low", cost="included")
+    ]
+    medium = _ex("codex:gpt-5.5-medium", cost="included")
+    chosen, reason = pick([high, medium, low], {}, "code", "medium",
+                          _prefs(), {low.id}, _Rng(0.9), job=job, piece=1)
+    assert chosen is medium
+    assert "effort medium (low failed 1×)" in reason
+
+
+def test_exec_failures_alone_do_not_climb_while_the_tier_has_executors():
+    x = _ex("opencode:x-free")
+    y = _ex("opencode:y-free")
+    included = _ex("claude:sonnet", cost="included")
+    job = _job_with_picks([])
+    job["pieces"][0]["attempts"] = [_failed_attempt(x.id), _failed_attempt(x.id)]
+
+    chosen, _ = pick([x, y, included], {}, "code", "medium", _prefs(), {x.id},
+                     _Rng(0.9), job=job, piece=1)
+
+    assert chosen is y

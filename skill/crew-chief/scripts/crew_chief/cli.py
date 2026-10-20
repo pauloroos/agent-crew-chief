@@ -40,16 +40,17 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import random
 import re
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import economy, records
+from . import economy, records, spend
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
-from .config import Prefs, PrefsError, load_prefs, tool_work_types
+from .config import Prefs, PrefsError, load_prefs, model_cap, tool_work_types
 from .decisions import DECISIONS_DIR, next_number, write_adr
 from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
@@ -60,6 +61,7 @@ from .scoring import (
     free_failures,
     grade as score_piece,
     pick as pick_executor,
+    picked_effort,
     quota_cooldown,
     quota_family,
     render_scoreboard,
@@ -87,6 +89,10 @@ _SCOREBOARD_RELATIVE_PATH = Path("docs") / "crew-chief" / "scoreboard.md"
 #: How much of the reviewer's answer (the end of the attempt note) ``dispatch
 #: --review`` prints.
 _REVIEW_ANSWER_CHARS = 3000
+
+#: Environment variable naming the CLI that is coordinating (``claude``,
+#: ``codex``...): its ``included`` executors go last in ``pick``.
+_COORDINATOR_ENV = "CREW_CHIEF_COORDINATOR"
 
 #: Escalation reasons recorded by ``pick``.
 _ESCALATION_FREE_FAILURES = "2 free failures"
@@ -306,6 +312,39 @@ def _cmd_piece_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def _budget_check(prefs: Prefs, job_id: str):
+    """The ``budget`` callback of ``pick`` for ``job_id``.
+
+    Reads the global spend log once. A ``cheap`` executor may be used only
+    while today's spend (all projects) is under ``cheap_budget_usd_day``
+    (``0`` closes the tier), the job's spend is under
+    ``cheap_budget_usd_job`` when that is set, and either the executor's cost
+    is known (a past line with a known cost above zero: a ``0`` is what
+    OpenCode prints for an unpriced model, so it proves nothing) or its model
+    rule sets ``cap_usd_day``. A cap also limits the executor's own spend of
+    the day.
+    """
+    ledger = spend.ledger(datetime.now(timezone.utc).date())
+    day_cap = prefs.cheap_budget_usd_day
+    job_cap = prefs.cheap_budget_usd_job
+
+    def check(executor) -> str | None:
+        if day_cap <= 0 or ledger.day_total >= day_cap:
+            return f"budget US$ {day_cap:g} reached (cheap_budget_usd_day)"
+        if job_cap > 0 and ledger.by_job.get(job_id, 0.0) >= job_cap:
+            return f"budget US$ {job_cap:g} reached (cheap_budget_usd_job)"
+        cap = model_cap(executor.id, prefs)
+        if cap is not None:
+            if ledger.executor_day.get(executor.id, 0.0) >= cap:
+                return f"cap US$ {cap:g} reached (cap_usd_day)"
+            return None
+        if executor.id not in ledger.priced:
+            return "unknown cost and no cap_usd_day"
+        return None
+
+    return check
+
+
 def _cmd_pick(args: argparse.Namespace) -> int:
     project = _project(args)
     prefs = load_prefs(project)
@@ -315,6 +354,7 @@ def _cmd_pick(args: argparse.Namespace) -> int:
     _check_models_to_stderr(project, prefs, found, due_only=True)
     stats = build_stats(project)
     cooling = quota_cooldown(project, prefs.quota_cooldown_min)
+    coordinator = args.coordinator or os.environ.get(_COORDINATOR_ENV) or None
 
     def choose(job: dict) -> tuple:
         """Pick under the job lock, so parallel picks see each other's picks.
@@ -322,9 +362,10 @@ def _cmd_pick(args: argparse.Namespace) -> int:
         With ``--review`` the pick is for a reviewer: the work type is
         ``review``, failed review attempts are left out instead of failed exec
         attempts, and so is every executor in the quota family of an executor
-        with an ``ok`` exec attempt on the piece. Two free failures escalate
-        on their own only on thinking work; execution work stays free unless
-        ``--strong`` is given.
+        with an ``ok`` exec attempt on the piece. Two free failures send
+        thinking work to the next tier on their own; execution work only
+        climbs when its tier is exhausted and reaches ``paid`` only with
+        ``--strong``.
         """
         piece = _piece(job, args.piece)
         role = "review" if args.review else "exec"
@@ -386,6 +427,9 @@ def _cmd_pick(args: argparse.Namespace) -> int:
             cooling=cooling,
             strong=args.strong,
             piece=args.piece,
+            budget=_budget_check(prefs, job["id"]),
+            coordinator_tool=coordinator,
+            allow_own_cli=args.allow_own_cli,
         )
         if reviewed:
             reason += (
@@ -401,15 +445,25 @@ def _cmd_pick(args: argparse.Namespace) -> int:
             if args.review:
                 entry["role"] = "review"
             piece.setdefault("picks", []).append(entry)
-        return choice, reason
+        effort = (
+            picked_effort(choice, job, args.piece) if choice is not None else None
+        )
+        return choice, reason, effort
 
-    choice, reason = records.update_job(project, args.job, choose)
+    choice, reason, effort = records.update_job(project, args.job, choose)
 
     if choice is None:
         _emit(args, reason, {"executor": None, "reason": reason})
         return 1
 
-    _emit(args, f"{choice.id}\n{reason}", {"executor": choice.id, "reason": reason})
+    text = f"{choice.id}\n{reason}"
+    if effort is not None:
+        text += f"\neffort: {effort}"
+    _emit(
+        args,
+        text,
+        {"executor": choice.id, "reason": reason, "effort": effort},
+    )
     return 0
 
 
@@ -435,6 +489,12 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
 
     brief = _read_text(Path(args.brief_file), "--brief-file")
     _check_models_to_stderr(project, prefs, found, due_only=True)
+    effort = args.effort
+    if effort is None:
+        # The effort ``pick`` printed: lowest first, one step up per failure.
+        effort = picked_effort(
+            executor, records.load_job(project, args.job), args.piece
+        )
     attempt = run_attempt(
         project,
         args.job,
@@ -443,7 +503,7 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         brief,
         prefs,
         role="review" if args.review else "exec",
-        effort=args.effort,
+        effort=effort,
         timeout_s=args.timeout,
         review_target=(
             Path(args.target).expanduser().resolve() if args.target else None
@@ -1397,6 +1457,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="pick a reviewer for the piece: thinking work, outside the quota "
         "family of the executor that did it",
     )
+    pick_parser.add_argument(
+        "--coordinator",
+        default=None,
+        metavar="TOOL",
+        help=f"the CLI coordinating this job (default: ${_COORDINATOR_ENV}): "
+        "its included executors are used last",
+    )
+    pick_parser.add_argument(
+        "--allow-own-cli",
+        action="store_true",
+        help="do not put the coordinator's own CLI last among the included "
+        "executors",
+    )
     pick_parser.set_defaults(handler=_cmd_pick)
 
     dispatch_parser = subcommands.add_parser(
@@ -1441,7 +1514,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="dispatch a spec piece although a dependency or an earlier phase "
         "is not accepted yet (recorded as ignored_deps)",
     )
-    dispatch_parser.add_argument("--effort", default=None, help="effort/reasoning")
+    dispatch_parser.add_argument(
+        "--effort",
+        default=None,
+        help="effort/reasoning (default: the effort pick prints)",
+    )
     dispatch_parser.add_argument(
         "--timeout", type=int, default=None, metavar="S", help="timeout in seconds"
     )

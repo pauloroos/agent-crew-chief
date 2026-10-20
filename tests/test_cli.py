@@ -1404,3 +1404,441 @@ def test_pick_takes_the_lowest_effort_then_rises_after_a_failure(
 
     assert main(argv) == 0
     assert capsys.readouterr().out.splitlines()[0].strip() == "freebie:m-medium"
+
+
+# --- the cost ladder in pick and dispatch -----------------------------------
+
+_LADDER_PREFS = """
+{extra}
+[[tools]]
+name = "freebie"
+kind = "generic"
+bin = "freebie"
+models = ["m"]
+run_cmd = ["freebie", "{{prompt}}"]
+
+[[tools]]
+name = "mine"
+kind = "generic"
+bin = "mine"
+models = ["m"]
+run_cmd = ["mine", "{{prompt}}"]
+
+[[tools]]
+name = "other"
+kind = "generic"
+bin = "other"
+models = ["m"]
+run_cmd = ["other", "{{prompt}}"]
+
+[[tools]]
+name = "cheapo"
+kind = "generic"
+bin = "cheapo"
+models = ["m"]
+run_cmd = ["cheapo", "{{prompt}}"]
+
+[[tools]]
+name = "strong"
+kind = "generic"
+bin = "strong"
+models = ["s"]
+run_cmd = ["strong", "{{prompt}}"]
+
+[[models]]
+match = "freebie:*"
+cost = "free"
+
+[[models]]
+match = "mine:*"
+cost = "included"
+
+[[models]]
+match = "other:*"
+cost = "included"
+
+[[models]]
+match = "cheapo:*"
+cost = "cheap"
+{cap}
+
+[[models]]
+match = "strong:*"
+cost = "paid"
+"""
+
+_LADDER_BINS = {"freebie", "mine", "other", "cheapo", "strong"}
+
+
+def _ladder_repo(repo, fake_bin, monkeypatch, extra="", cap="", bins=None):
+    _write_prefs(repo, _LADDER_PREFS.format(extra=extra, cap=cap))
+    for name in sorted(bins or _LADDER_BINS):
+        fake_bin(name, "print('x')\n")
+    _only_bins(monkeypatch, set(bins or _LADDER_BINS))
+
+
+def _ladder_job(repo, piece_type="code", attempts=()):
+    job = records.new_job(repo, "Ladder", "do it", True, "parts")
+    records.add_piece(job, "Bit", piece_type, "low")
+    for attempt in attempts:
+        records.add_attempt(job, 1, attempt)
+    records.save_job(repo, job)
+    return job
+
+
+def _failed(executor, cost="free"):
+    return {"executor": executor, "role": "exec", "status": "failed",
+            "cost": cost}
+
+
+def _pick_argv(repo, job, *extra):
+    return ["pick", "--project", str(repo), "--job", job["id"], "--piece", "1",
+            *extra]
+
+
+def _spend_line(executor="cheapo:m", cost_usd=0.5, known=True, job="other-job",
+                days_ago=0):
+    from crew_chief import spend
+
+    at = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    spend.record({"at": at.isoformat(), "project": "p", "job": job, "piece": 1,
+                  "executor": executor, "tier": "cheap", "cost_usd": cost_usd,
+                  "known": known})
+
+
+def test_cli_pick_stays_free_then_climbs_to_included(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch)
+    job = _ladder_job(git_repo)
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "freebie:m"
+    assert lines[1].endswith("; tier free")
+
+    job = _ladder_job(git_repo, attempts=[_failed("freebie:m")])
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() in ("mine:m", "other:m")
+    assert "tier included; climbed: free exhausted" in lines[1]
+
+
+def test_cli_pick_exec_work_does_not_reach_cheap_with_a_zero_budget(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # Review Focus 5, end to end: free and included are gone, budget is 0.
+    _ladder_repo(git_repo, fake_bin, monkeypatch)
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    out = capsys.readouterr().out
+    assert out.startswith("no executor available")
+    assert "cheap skipped: budget US$ 0 reached" in out
+    assert "split the piece" in out
+    assert "run setup to allow cheap models (current budget US$ 0)" in out
+
+
+def test_cli_pick_cheap_unknown_cost_without_cap_is_never_picked(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # Review Focus 1, end to end: the budget is open, the cost is unknown.
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 5.0")
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    out = capsys.readouterr().out
+    assert "unknown cost and no cap_usd_day" in out
+    assert "run setup" not in out
+
+
+def test_cli_pick_cheap_unknown_cost_with_a_cap_is_allowed(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 5.0", cap="cap_usd_day = 1.0")
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "cheapo:m"
+    assert "tier cheap; climbed: included exhausted" in lines[1]
+
+
+def test_cli_pick_cheap_zero_cost_lines_still_count_as_unknown(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # OpenCode prints cost 0 for unpriced models: not proof of a known price.
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 5.0")
+    _spend_line(cost_usd=0.0, known=True)
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    assert "unknown cost and no cap_usd_day" in capsys.readouterr().out
+
+
+def test_cli_pick_cheap_with_a_known_price_needs_no_cap(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 5.0")
+    _spend_line(cost_usd=0.5, known=True, days_ago=2)
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "cheapo:m"
+
+
+def test_cli_pick_cheap_stops_when_the_day_budget_is_reached(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 1.0")
+    _spend_line(cost_usd=0.6, known=True, job="a")
+    _spend_line(executor="x:y", cost_usd=0.4, known=True, job="b")
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    out = capsys.readouterr().out
+    assert "budget US$ 1 reached (cheap_budget_usd_day)" in out
+    assert "(current budget US$ 1)" in out
+
+
+def test_cli_pick_cheap_stops_when_the_job_budget_is_reached(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 10.0\ncheap_budget_usd_job = 0.5")
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+    _spend_line(cost_usd=0.5, known=True, job=job["id"], days_ago=1)
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    assert "budget US$ 0.5 reached (cheap_budget_usd_job)" in (
+        capsys.readouterr().out
+    )
+
+
+def test_cli_pick_cheap_stops_at_the_cap_of_the_model(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 10.0", cap="cap_usd_day = 0.3")
+    _spend_line(cost_usd=0.3, known=True)
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 1
+    assert "cap US$ 0.3 reached (cap_usd_day)" in capsys.readouterr().out
+
+
+def test_cli_pick_ignores_a_malformed_spend_line_instead_of_blocking(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    from crew_chief import spend
+
+    _ladder_repo(git_repo, fake_bin, monkeypatch,
+                 extra="cheap_budget_usd_day = 5.0", cap="cap_usd_day = 1.0")
+    spend.spend_file().write_text(
+        '{"at": "%s", "executor": "cheapo:m", "job": "z", "cost_usd": NaN}\n'
+        % datetime.now(timezone.utc).isoformat(),
+        encoding="utf-8",
+    )
+    job = _ladder_job(git_repo, attempts=[
+        _failed("freebie:m"), _failed("mine:m", "included"),
+        _failed("other:m", "included"),
+    ])
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "cheapo:m"
+
+
+def test_cli_pick_thinking_after_two_free_failures_goes_to_the_next_tier(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch)
+    job = _ladder_job(git_repo, "design",
+                      attempts=[_failed("freebie:m"), _failed("freebie:m")])
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() in ("mine:m", "other:m")
+    assert "tier included" in lines[1]
+    piece = _stored_job(git_repo, job["id"])["pieces"][0]
+    assert piece["escalations"][0]["reason"] == "2 free failures"
+
+
+def test_cli_pick_coordinator_cli_goes_last_unless_allowed(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch)
+    attempts = [_failed("freebie:m")]
+    monkeypatch.setenv("CREW_CHIEF_COORDINATOR", "mine")
+
+    job = _ladder_job(git_repo, attempts=attempts)
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "other:m"
+    assert "coordinator mine kept last" in lines[1]
+
+    job = _ladder_job(git_repo, attempts=attempts)
+    assert main(_pick_argv(git_repo, job, "--allow-own-cli")) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "mine:m"
+
+    # The flag beats the environment.
+    job = _ladder_job(git_repo, attempts=attempts)
+    assert main(_pick_argv(git_repo, job, "--coordinator", "other")) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "mine:m"
+
+    monkeypatch.delenv("CREW_CHIEF_COORDINATOR")
+    job = _ladder_job(git_repo, attempts=attempts)
+    assert main(_pick_argv(git_repo, job)) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "mine:m"
+
+
+_EFFORT_PREFS = """
+[[tools]]
+name = "eff"
+kind = "generic"
+bin = "eff"
+effort = true
+models = ["m"]
+run_cmd = ["eff", "{prompt}"]
+
+[[models]]
+match = "eff:*"
+cost = "free"
+"""
+
+
+def _effort_repo(repo, fake_bin, monkeypatch):
+    _write_prefs(repo, _EFFORT_PREFS)
+    fake_bin("eff", _STUB)
+    _only_bins(monkeypatch, {"eff"})
+
+
+def test_cli_pick_prints_effort_line(git_repo, fake_bin, monkeypatch, capsys):
+    _effort_repo(git_repo, fake_bin, monkeypatch)
+    job = _ladder_job(git_repo)
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "eff:m"
+    assert lines[2] == "effort: low"
+    assert len(lines) == 3
+
+    assert main(_pick_argv(git_repo, job, "--json")) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["executor"] == "eff:m"
+    assert payload["effort"] == "low"
+
+
+def test_cli_pick_effort_rises_after_a_failure_of_the_family(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # The tool takes an effort flag and has two models; the first one failed
+    # once on the piece, so the second starts at medium: the family is the tool
+    # model, so use two efforts of one model instead.
+    _write_prefs(git_repo, _EFFORT_PREFS.replace('models = ["m"]',
+                                                 'models = ["m-low", "m-medium"]'))
+    fake_bin("eff", _STUB)
+    _only_bins(monkeypatch, {"eff"})
+    job = _ladder_job(git_repo, attempts=[_failed("eff:m-low")])
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "eff:m-medium"
+    assert "effort medium (low failed 1×)" in lines[1]
+    assert lines[2] == "effort: medium"
+
+
+def test_cli_pick_has_no_effort_line_for_a_tool_without_effort(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _ladder_repo(git_repo, fake_bin, monkeypatch)
+    job = _ladder_job(git_repo)
+
+    assert main(_pick_argv(git_repo, job)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    assert not any(line.startswith("effort:") for line in lines)
+
+    assert main(_pick_argv(git_repo, job, "--json")) == 0
+    assert json.loads(capsys.readouterr().out)["effort"] is None
+
+
+def _spy_dispatch(monkeypatch):
+    from crew_chief import cli
+
+    seen = []
+    real = cli.run_attempt
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("effort"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "run_attempt", spy)
+    return seen
+
+
+def _effort_dispatch_argv(repo, job, brief, executor, *extra):
+    return ["dispatch", "--project", str(repo), "--job", job["id"],
+            "--piece", "1", "--executor", executor, "--brief-file", str(brief),
+            *extra]
+
+
+def test_dispatch_defaults_to_picked_effort(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    _write_prefs(git_repo, _EFFORT_PREFS.replace('models = ["m"]',
+                                                 'models = ["m-low", "m-medium"]'))
+    fake_bin("eff", _STUB)
+    _only_bins(monkeypatch, {"eff"})
+    brief = _write(git_repo.parent / "brief.md", "Create out.py.\n")
+    seen = _spy_dispatch(monkeypatch)
+
+    job = _ladder_job(git_repo)
+    main(_effort_dispatch_argv(git_repo, job, brief, "eff:m-low"))
+    job = _ladder_job(git_repo, attempts=[_failed("eff:m-low")])
+    main(_effort_dispatch_argv(git_repo, job, brief, "eff:m-medium"))
+    job = _ladder_job(git_repo, attempts=[_failed("eff:m-low")])
+    main(_effort_dispatch_argv(git_repo, job, brief, "eff:m-medium",
+                               "--effort", "high"))
+
+    assert seen == ["low", "medium", "high"]
+
+
+def test_dispatch_default_effort_is_none_for_a_tool_without_effort(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    brief = _stub_repo(git_repo, fake_bin, monkeypatch)
+    seen = _spy_dispatch(monkeypatch)
+    job = _ladder_job(git_repo)
+
+    main(_effort_dispatch_argv(git_repo, job, brief, "stub:m"))
+
+    assert seen == [None]

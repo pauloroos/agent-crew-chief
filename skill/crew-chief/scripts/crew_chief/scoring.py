@@ -9,18 +9,19 @@ Three jobs live here:
 * :func:`build_stats` folds every grade on disk into a per
   ``(executor, type)`` :class:`Stat`, weighting each grade by how recent it
   is (a half-life decay, so a stale 100 fades against a fresh 20).
-* :func:`pick` chooses the next executor, free-first, by decayed score, with
-  a small exploration chance that gives an unrated or below-median executor
-  a second chance on low-risk work. Executors tied on score are spread over
-  the job (least used first, then a tool the job has used least), and an
-  executor that hit its quota recently (:func:`quota_cooldown`) sits out with
-  every executor of its :func:`quota_family`. Only tools whose
-  ``work_types`` take the piece's type are candidates; execution types
-  (:data:`EXEC_TYPES`) try ``exec_first`` tools first and never escalate to a
-  paid executor unless the coordinator asks (``strong``).
+* :func:`pick` chooses the next executor by climbing the cost ladder
+  (``free``, ``included``, ``cheap``, ``paid``): a tier is left only when
+  nobody is available in it, ``cheap`` only within the spend budget, and
+  execution types (:data:`EXEC_TYPES`) reach ``paid`` only when the
+  coordinator asks (``strong``). Inside a tier the choice is by decayed score,
+  with a small exploration chance on low-risk work. Executors tied on score
+  are spread over the job (least used first, then a tool the job has used
+  least), an executor that hit its quota recently (:func:`quota_cooldown`)
+  sits out with every executor of its :func:`quota_family`, and the lowest
+  effort that suits the piece wins.
 
 :func:`free_failures` counts the free-executor failures on one piece, which is
-the signal that stops free retries and escalates thinking work.
+the signal that stops free retries and sends thinking work to the next tier.
 """
 
 from __future__ import annotations
@@ -28,12 +29,14 @@ from __future__ import annotations
 import random
 import re
 import statistics
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import Prefs, tool_work_types
 from .records import EXEC_TYPES, WORK_TYPES, iter_jobs, piece_grades
+from .tiers import TIER_ORDER
 from .tools import Executor, wants_effort
 
 #: Deductions applied by :func:`grade`, in score points.
@@ -432,6 +435,11 @@ def _strong_index(executor: Executor, prefs: Prefs) -> int:
     return len(prefs.strong_order)
 
 
+#: Budget callback of :func:`pick`: ``None`` when the executor may spend money,
+#: else the reason it may not (``"budget US$ 0 reached (cheap_budget_usd_day)"``).
+Budget = Callable[[Executor], "str | None"]
+
+
 def pick(
     candidates: list[Executor],
     stats: dict,
@@ -444,36 +452,58 @@ def pick(
     cooling: set[str] | None = None,
     strong: bool = False,
     piece: int | None = None,
+    budget: Budget | None = None,
+    coordinator_tool: str | None = None,
+    allow_own_cli: bool = False,
 ) -> tuple[Executor | None, str]:
     """Choose the next executor and return ``(choice, one-line reason)``.
 
-    Free executors come first, ranked by decayed score descending (unrated
+    The choice climbs the cost ladder (:data:`tiers.TIER_ORDER`): ``free``,
+    then ``included`` (covered by a subscription the user already pays),
+    then ``cheap`` (pay per use, only within the spend budget), then
+    ``paid``. A tier is left only when nobody is available in it (excluded,
+    already tried on the piece, or paused for quota), never because a
+    free executor merely failed. Execution types (:data:`EXEC_TYPES`) stop at
+    ``cheap`` and reach ``paid`` only with ``strong``; thinking types may
+    reach ``paid``. The reason ends with ``; tier <name>`` and, when the
+    choice sits above ``free``, ``; climbed: <tier below> exhausted``.
+
+    Inside a tier executors are ranked by decayed score descending (unrated
     get ``-1``). Ties go to the executor least used in ``job`` (picks and
     exec attempts on its pieces, see :func:`job_usage`), then to a tool the
     job has used least, then by mean duration ascending with ``None`` last,
-    then by id. On ``low`` risk, ``prefs.explore_rate`` of the time an
-    executor that is unrated or below the pool median is given a second
-    chance and picked uniformly. With no free executor the paid ones are
-    tried in ``prefs.strong_order``; with neither pool populated there is no
-    choice.
+    then by id. In the ``free`` and ``included`` tiers, on ``low`` risk,
+    ``prefs.explore_rate`` of the time an executor that is unrated or below
+    the pool median is given a second chance and picked uniformly. The
+    ``paid`` tier is ordered by ``prefs.strong_order``.
+
+    ``budget(executor)`` decides whether a ``cheap`` executor may be used:
+    ``None`` allows it, a string is the reason it is skipped (the reason of
+    the pick lists them). Without a callback the cheap tier is open only when
+    ``prefs.cheap_budget_usd_day`` is above zero. With every tier empty on an
+    execution type the reason tells the coordinator to split the piece or do
+    it itself, and adds ``run setup to allow cheap models`` when the budget
+    kept cheap executors out.
+
+    ``coordinator_tool`` names the CLI that is coordinating: in the
+    ``included`` tier its executors (same tool, or same subscription family)
+    go last unless ``allow_own_cli``.
 
     Only executors whose tool takes ``type`` (:func:`config.tool_work_types`)
     are candidates; the reason then ends with ``; not for <type>: <tools>``,
-    one name per tool left out. On an execution type (:data:`EXEC_TYPES`)
-    the free pool is first narrowed to the tools in ``prefs.exec_first``
-    when any of them is available, and the paid pool is only used when
-    ``strong`` is set: without it, an empty free pool means no choice and a
-    reason telling the coordinator to split the piece or do it itself.
-    Thinking types escalate to paid executors on their own.
+    one name per tool left out. On an execution type each tier's pool is
+    first narrowed to the tools in ``prefs.exec_first`` when any of them is
+    available there.
 
     Executors whose :func:`quota_family` matches one in ``cooling`` (see
     :func:`quota_cooldown`) are left out like excluded ones, and the reason
     ends with ``; skipped for quota: <ids>``.
 
-    Among the variants of one model that differ only by effort suffix, the
-    free pool takes the lowest :func:`effort_rank` the :func:`effort_ceiling`
-    of ``piece`` allows, so effort rises after a failure on the piece before
-    anything else escalates.
+    Among the variants of one model that differ only by effort suffix, every
+    tier takes the lowest :func:`effort_rank` the :func:`effort_ceiling` of
+    ``piece`` allows, so effort rises after a failure on the piece before
+    anything else escalates; the reason then says ``effort medium (low
+    failed 1×)``.
     """
     unfit = sorted(
         {
@@ -513,12 +543,50 @@ def pick(
         strong,
         job,
         piece,
+        budget,
+        coordinator_tool,
+        allow_own_cli,
+        frozenset(executor.cost for executor in candidates),
     )
     if unfit:
         reason += f"; not for {type}: {', '.join(unfit)}"
     if skipped:
         reason += f"; skipped for quota: {', '.join(skipped)}"
     return choice, reason
+
+
+def _default_budget(prefs: Prefs) -> Budget:
+    """The budget check when the caller gives none: only the daily ceiling."""
+
+    def check(_executor: Executor) -> str | None:
+        if prefs.cheap_budget_usd_day <= 0:
+            return (
+                f"budget US$ {prefs.cheap_budget_usd_day:g} reached "
+                "(cheap_budget_usd_day)"
+            )
+        return None
+
+    return check
+
+
+def _blocked_note(blocked: dict[str, list[str]]) -> str:
+    """``cheap skipped: <reason> [ids]`` for each reason, ids capped at 3."""
+    parts = []
+    for why, ids in blocked.items():
+        shown = ", ".join(ids[:3])
+        if len(ids) > 3:
+            shown += f", +{len(ids) - 3} more"
+        parts.append(f"cheap skipped: {why} [{shown}]")
+    return "; ".join(parts)
+
+
+def _is_own_cli(executor: Executor, coordinator_tool: str) -> bool:
+    """Whether ``executor`` belongs to the coordinator's CLI or subscription."""
+    tool = executor.id.split(":", 1)[0]
+    return coordinator_tool in (executor.tool.get("name"), tool) or (
+        quota_family(executor.id, executor.cost)
+        == f"{_SUB_PREFIX}{coordinator_tool}"
+    )
 
 
 def _pick(
@@ -533,65 +601,188 @@ def _pick(
     allow_paid_exec: bool = False,
     job: dict | None = None,
     piece: int | None = None,
+    budget: Budget | None = None,
+    coordinator_tool: str | None = None,
+    allow_own_cli: bool = False,
+    known_tiers: frozenset[str] = frozenset(),
 ) -> tuple[Executor | None, str]:
     """:func:`pick` once unfit and cooling executors are left out."""
     available = [
         executor for executor in candidates if executor.id not in exclude
     ]
-    free = [executor for executor in available if executor.cost == "free"]
-    strong = [executor for executor in available if executor.cost == "paid"]
-    strong.sort(key=lambda executor: _strong_index(executor, prefs))
     execution = type in EXEC_TYPES
-    if execution:
-        first = [
-            executor
-            for executor in free
-            if executor.tool.get("name") in prefs.exec_first
-        ]
-        if first:
-            free = first
-        if not allow_paid_exec:
-            strong = []
+    last = "paid" if (allow_paid_exec or not execution) else "cheap"
+    ladder = TIER_ORDER[: TIER_ORDER.index(last) + 1]
+    costs = {executor.id: executor.cost for executor in candidates}
+    check = budget or _default_budget(prefs)
+    blocked: dict[str, list[str]] = {}
+    seen = set(known_tiers) | {executor.cost for executor in candidates}
 
-    if free:
-        costs = {executor.id: executor.cost for executor in candidates}
-        pool = sorted(
-            _lowest_effort(free, job, piece),
-            key=lambda executor: _rank_key(executor, stats, type, usage, costs),
-        )
+    for tier in ladder:
+        pool = [executor for executor in available if executor.cost == tier]
+        if tier == "cheap":
+            allowed = []
+            for executor in pool:
+                why = check(executor)
+                if why is None:
+                    allowed.append(executor)
+                else:
+                    blocked.setdefault(why, []).append(executor.id)
+            pool = allowed
+        if not pool:
+            continue
 
-        # Second chance. This uses rng.random() once for the explore check and
-        # once more for the uniform choice, so a test stub whose random()
-        # always returns 0.0 drives both: 0.0 < explore_rate is true and the
-        # uniform index is int(0.0 * len(candidates)) == 0, the first of the
-        # ranked second-chance candidates.
-        if risk == "low" and rng.random() < prefs.explore_rate:
-            candidates_for_chance = _second_chance_candidates(
-                pool, stats, type
+        suffix = ""
+        if blocked:
+            suffix += f"; {_blocked_note(blocked)}"
+        if tier == "paid":
+            pool = sorted(
+                _lowest_effort(pool, job, piece),
+                key=lambda executor: _strong_index(executor, prefs),
             )
-            if candidates_for_chance:
-                chosen = candidates_for_chance[
-                    int(rng.random() * len(candidates_for_chance))
+            chosen = pool[0]
+            base = f"escalated: no free executor available ({chosen.id})"
+        else:
+            if execution:
+                first = [
+                    executor
+                    for executor in pool
+                    if executor.tool.get("name") in prefs.exec_first
                 ]
-                return chosen, _second_chance_reason(chosen, stats, type)
+                if first:
+                    pool = first
+            if tier == "included" and coordinator_tool and not allow_own_cli:
+                own = [e for e in pool if _is_own_cli(e, coordinator_tool)]
+                others = [e for e in pool if e not in own]
+                if own and others:
+                    pool = others
+                    suffix += f"; coordinator {coordinator_tool} kept last"
+                elif own:
+                    suffix += (
+                        f"; coordinator {coordinator_tool} used: "
+                        "no other included executor left"
+                    )
+            pool = sorted(
+                _lowest_effort(pool, job, piece),
+                key=lambda executor: _rank_key(
+                    executor, stats, type, usage, costs
+                ),
+            )
+            chosen, base = _choose_in_pool(
+                pool, stats, type, risk, prefs, rng, tier
+            )
+        note = _effort_note(chosen, job, piece)
+        if note:
+            suffix += f"; {note}"
+        reason = f"{base}{suffix}; tier {tier}"
+        if tier != ladder[0]:
+            reason += f"; climbed: {_tier_below(tier, seen)} exhausted"
+        return chosen, reason
 
-        chosen = pool[0]
-        stat = stats.get((chosen.id, type))
-        if stat is not None and stat.score is not None:
-            return chosen, f"best score {_num(stat.score)} ({chosen.id})"
-        return chosen, f"unrated, no history ({chosen.id})"
+    return None, _no_executor(type, execution, allow_paid_exec, prefs, blocked)
 
-    if strong:
-        chosen = strong[0]
-        return chosen, f"escalated: no free executor available ({chosen.id})"
 
+def _tier_below(tier: str, seen: set[str]) -> str:
+    """The nearest tier under ``tier`` that has executors, else ``free``."""
+    for name in reversed(TIER_ORDER[: TIER_ORDER.index(tier)]):
+        if name in seen:
+            return name
+    return TIER_ORDER[0]
+
+
+def _choose_in_pool(
+    pool: list[Executor],
+    stats: dict,
+    type: str,
+    risk: str,
+    prefs: Prefs,
+    rng: random.Random,
+    tier: str,
+) -> tuple[Executor, str]:
+    """The ranked ``pool``'s pick and its base reason (second chance included)."""
+    # Second chance. This uses rng.random() once for the explore check and
+    # once more for the uniform choice, so a test stub whose random()
+    # always returns 0.0 drives both: 0.0 < explore_rate is true and the
+    # uniform index is int(0.0 * len(candidates)) == 0, the first of the
+    # ranked second-chance candidates. Money is never spent exploring.
+    if tier != "cheap" and risk == "low" and rng.random() < prefs.explore_rate:
+        candidates_for_chance = _second_chance_candidates(pool, stats, type)
+        if candidates_for_chance:
+            chosen = candidates_for_chance[
+                int(rng.random() * len(candidates_for_chance))
+            ]
+            return chosen, _second_chance_reason(chosen, stats, type)
+
+    chosen = pool[0]
+    stat = stats.get((chosen.id, type))
+    if stat is not None and stat.score is not None:
+        return chosen, f"best score {_num(stat.score)} ({chosen.id})"
+    return chosen, f"unrated, no history ({chosen.id})"
+
+
+def _no_executor(
+    type: str,
+    execution: bool,
+    allow_paid_exec: bool,
+    prefs: Prefs,
+    blocked: dict[str, list[str]],
+) -> str:
+    """The reason when no tier has anyone."""
     if execution and not allow_paid_exec:
-        return None, (
+        text = (
             f"no executor available: no free executor left for {type}; split "
             f"the piece into smaller pieces or do it yourself (paid executors "
             f"run {type} only on --strong)"
         )
-    return None, "no executor available"
+    else:
+        text = "no executor available"
+    if blocked:
+        text += f"; {_blocked_note(blocked)}"
+        if any(why.startswith("budget US$") for why in blocked):
+            text += (
+                "; run setup to allow cheap models (current budget US$ "
+                f"{prefs.cheap_budget_usd_day:g})"
+            )
+    return text
+
+
+def _family_failures(
+    executor: Executor, job: dict | None, piece: int | None
+) -> int:
+    """Failures of ``executor``'s quota family on ``piece`` (see effort_ceiling)."""
+    return (
+        effort_ceiling(job, piece, quota_family(executor.id, executor.cost))
+        - _DEFAULT_EFFORT_RANK
+    )
+
+
+def _effort_note(
+    executor: Executor, job: dict | None, piece: int | None
+) -> str:
+    """``effort medium (low failed 1×)`` once the piece's family failed."""
+    failures = _family_failures(executor, job, piece)
+    if failures <= 0:
+        return ""
+    if wants_effort(executor.tool):
+        level = next_effort(executor.tool, failures)
+    else:
+        match = _EFFORT_SUFFIX.search(executor.id)
+        level = match.group(1) if match else None
+    if level is None:
+        return ""
+    before = _EFFORT_STEPS[min(failures - 1, len(_EFFORT_STEPS) - 1)]
+    return f"effort {level} ({before} failed {failures}×)"
+
+
+def picked_effort(
+    executor: Executor, job: dict | None, piece: int | None
+) -> str | None:
+    """The effort flag value for the next attempt of ``executor`` on ``piece``.
+
+    ``None`` for a tool without an effort flag; otherwise :func:`next_effort`
+    with the failures its quota family has on the piece.
+    """
+    return next_effort(executor.tool, _family_failures(executor, job, piece))
 
 
 #: Trailing effort suffix of a model id, dropped by :func:`quota_family`.
@@ -817,8 +1008,9 @@ def free_failures(job: dict, piece: int) -> int:
     Counts attempts with role ``exec``, cost ``free`` and a status other than
     ``ok``, plus corrections drawn by the executor of such a free attempt.
     At 2, on thinking work, the CLI calls :func:`pick` with every free
-    executor excluded, so the choice escalates; execution work stays free
-    (see SKILL.md).
+    executor excluded, so the choice skips to the next tier; execution work
+    never climbs because of failures, only when its tier is exhausted (see
+    SKILL.md).
     """
     target = _find_piece(job, piece)
     attempts = target.get("attempts") or []
