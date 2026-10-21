@@ -229,7 +229,7 @@ plano. O trecho instalado diz isso numa linha.
 
 O [Ponytail](https://github.com/DietrichGebert/ponytail) (MIT, de DietrichGebert)
 v5.3.2 vem dentro do crew-chief: as duas skills `ponytail` e `ponytail-review`,
-vendorizadas em `vendor/ponytail/`. Ponytail é o conjunto de regras do "dev sênior
+incluídas em `vendor/ponytail/`. Ponytail é o conjunto de regras do "dev sênior
 preguiçoso" — a menor mudança que resolve a tarefa por inteiro, sem opção que
 ninguém pediu.
 

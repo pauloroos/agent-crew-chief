@@ -344,6 +344,20 @@ def test_missing_project_exits_2_with_one_line(tmp_path):
     assert "nope" in result.stderr
 
 
+def test_missing_ponytail_source_exits_2_unless_no_ponytail(
+    tmp_path, monkeypatch, capsys
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr(install, "PONYTAIL_SOURCE", tmp_path / "broken-vendor")
+
+    assert install.main([str(project)]) == 2
+    stderr = capsys.readouterr().err.strip().splitlines()
+    assert len(stderr) == 1
+    assert "broken-vendor" in stderr[0]
+
+    assert install.main([str(project), "--no-ponytail"]) == 0
+
+
 # --- snippet ---------------------------------------------------------------
 
 

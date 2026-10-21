@@ -304,6 +304,12 @@ def main(argv: list[str] | None = None) -> int:
     if not SKILL_SOURCE.is_dir():
         print(f"install.py: skill source not found at {SKILL_SOURCE}", file=sys.stderr)
         return 2
+    if not args.no_ponytail and not PONYTAIL_SOURCE.is_dir():
+        print(
+            f"install.py: ponytail source not found at {PONYTAIL_SOURCE}",
+            file=sys.stderr,
+        )
+        return 2
 
     for line in install(project, args.force_snippet, not args.no_ponytail):
         print(line)

@@ -50,7 +50,6 @@ def _style_section(level: str) -> list[str]:
     ]
 
 
-
 def _bullets(items: list[str], empty: str) -> list[str]:
     return [f"- {item}" for item in items] if items else [f"- {empty}"]
 
