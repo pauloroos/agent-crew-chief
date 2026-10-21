@@ -309,6 +309,25 @@ def test_equivalent_reply_replay_returns_original_id(tmp_path):
         send(root, cid, _envelope(cid, kind="answer", reply_to=qid, body="different choice"))
 
 
+def test_concurrent_equivalent_answers_share_one_id(tmp_path):
+    root, cid = _root(tmp_path), _coord(tmp_path)
+    qid = send(root, cid, _envelope(cid, direction="out", kind="question", task_refs=["T001"]))
+    start = threading.Barrier(2)
+
+    def contender():
+        start.wait(timeout=5)
+        return send(root, cid, _envelope(cid, kind="answer", reply_to=qid,
+                                          task_refs=["T001"], body="choice"))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.submit(contender), pool.submit(contender)
+        ids = {first.result(timeout=5), second.result(timeout=5)}
+    assert len(ids) == 1
+    rows = pending(root, cid, "in")
+    assert [row["id"] for row in rows] == [ids.pop()]
+    assert questions(root) == []
+
+
 def test_answer_requires_an_existing_question(tmp_path):
     root, cid = _root(tmp_path), _coord(tmp_path)
     for reply in (None, str(uuid.uuid4())):
