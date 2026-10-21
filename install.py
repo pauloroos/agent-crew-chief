@@ -4,6 +4,7 @@
 Usage::
 
     python install.py <project> [--force-snippet]
+    python install.py --command [--bin-dir DIR]
 
 What it does:
 
@@ -21,6 +22,13 @@ What it does:
    missing, plus ``docs/crew-chief/jobs/.gitkeep``.
 4. Never touches an existing ``preferences.toml``, ``jobs/``,
    ``scoreboard.md`` or ``models-seen.json``, and never edits other skills.
+
+``--command`` installs only the user-scoped ``acc`` wrapper for this released
+bundle (Windows ``acc.cmd``, Linux/macOS executable ``acc``) into
+``--bin-dir`` or the platform's user bin directory, without a project. It
+never creates project files, never edits global preferences and never changes
+``PATH``: it prints where the wrapper went and leaves ``PATH`` to the owner.
+Combining ``--command`` with a project installs both.
 
 A file without markers is left alone once the skill is installed in the project
 (``.claude/skills/crew-chief`` or ``.agents/skills/crew-chief`` already
@@ -244,29 +252,87 @@ def install(project: Path, force: bool) -> list[str]:
 # --- entry point -----------------------------------------------------------
 
 
+#: Where the released bundle's ``crew_chief`` package lives.
+SCRIPTS_DIR = SKILL_SOURCE / "scripts"
+
+
+def _install_command_wrapper(bin_dir: Path | None) -> list[str]:
+    """Install the ``acc`` wrapper for this bundle and return the report lines."""
+    from crew_chief.command_install import (
+        default_bin_dir,
+        install_command,
+        path_hint,
+    )
+
+    directory = Path(bin_dir).expanduser() if bin_dir else default_bin_dir()
+    target = install_command(
+        REPO_ROOT,
+        directory,
+        Path(sys.executable),
+        sys.platform,
+        replace_owned=True,
+    )
+    return [f"installed {target}", path_hint(directory)]
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the installer for ``argv`` and return the exit code."""
     parser = argparse.ArgumentParser(
         prog="install.py",
         description="Install (or update) the crew-chief skill in a project.",
     )
-    parser.add_argument("project", help="path to the target project")
+    parser.add_argument(
+        "project", nargs="?", help="path to the target project"
+    )
     parser.add_argument(
         "--force-snippet",
         action="store_true",
         help="re-insert the snippet even if the markers were removed",
     )
+    parser.add_argument(
+        "--command",
+        action="store_true",
+        help="install only the user-scoped `acc` wrapper for this bundle",
+    )
+    parser.add_argument(
+        "--bin-dir",
+        help="directory that receives the `acc` wrapper (default: user bin)",
+    )
     args = parser.parse_args(argv)
 
-    project = Path(args.project).expanduser()
-    if not project.is_dir():
-        print(f"{project}: no such directory", file=sys.stderr)
-        return 2
+    if args.bin_dir and not args.command:
+        parser.error("--bin-dir requires --command")
+    if args.project is None and not args.command:
+        parser.error("give a project to install into, or --command")
+
     if not SKILL_SOURCE.is_dir():
         print(f"install.py: skill source not found at {SKILL_SOURCE}", file=sys.stderr)
         return 2
 
-    for line in install(project, args.force_snippet):
+    project = Path(args.project).expanduser() if args.project else None
+    if project is not None and not project.is_dir():
+        print(f"{project}: no such directory", file=sys.stderr)
+        return 2
+
+    report = install(project, args.force_snippet) if project else []
+    if args.command:
+        if not (SCRIPTS_DIR / "crew_chief").is_dir():
+            print(
+                f"install.py: skill source not found at {SKILL_SOURCE}",
+                file=sys.stderr,
+            )
+            return 2
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from crew_chief.command_install import CommandInstallError
+
+        try:
+            report += _install_command_wrapper(args.bin_dir)
+        except CommandInstallError as error:
+            print(f"install.py: {error}", file=sys.stderr)
+            return 2
+
+    for line in report:
         print(line)
     return 0
 
