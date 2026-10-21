@@ -1,0 +1,519 @@
+"""Coordinator usage accounting in the active job (FR-013, FR-025, SC-006).
+
+One coordinator round reports what the model CLI spent on it.  This module
+records that usage in the job the round belongs to, exactly once, and keeps
+the accounting honest when the job is not known yet, when the process crashes
+half way and when the coordinator switches jobs.
+
+The rules:
+
+* The event id is stable: ``central:<coordinator id>:<round id>``.  Every
+  usage entry carries it, so one round can never be counted twice, in the
+  same job or in another one.
+* The round's usage payload is authoritative.  Counts the CLI did not report
+  stay ``None``; a sum is derived only when both components are known.  When
+  no count was reported the characters of the round's output give a
+  ``characters / 4`` estimate, marked as estimated.
+* The target job is bound in the round metadata *before* the job is updated.
+  A crash, or a job switch, after that point can no longer reassign usage
+  that was already spent.
+* Until a job is known the usage stays pending in the round metadata;
+  :func:`backfill_usage` counts it once, when the job appears.
+* The job record is changed through :func:`records.update_job`, so the entry
+  is appended under the job lock and the duplicate check is atomic.
+"""
+
+from __future__ import annotations
+
+import json
+import warnings
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from . import central_messages, central_rounds, records
+
+__all__ = [
+    "UsageError",
+    "backfill_usage",
+    "pending_usage",
+    "record_round_usage",
+]
+
+#: Bounded read of one round metadata file.
+ROUND_READ_MAX_BYTES = 1024 * 1024
+
+#: The roles a usage entry may carry (see :data:`records.USAGE_ROLES`).
+ROLES = ("coordinator", "central")
+
+#: Characters per token in the fallback estimate.
+CHARS_PER_TOKEN = 4
+
+
+class UsageError(ValueError):
+    """A usage event cannot be read, bound or recorded."""
+
+
+# --- small helpers ----------------------------------------------------------
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _count(value: Any) -> int | None:
+    """A non-negative token count, or ``None`` when it is unknown."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _job_id(value: Any) -> str | None:
+    """A job id safe to use as a file name, or ``None``."""
+    if not isinstance(value, str) or not value:
+        return None
+    if value in (".", ".."):
+        return None
+    if any(ch in value for ch in '/\\:*?"<>|\x00'):
+        return None
+    return value
+
+
+def _coordinator_of(record: Any) -> str:
+    """The canonical coordinator id of a registry record."""
+    if not isinstance(record, dict):
+        raise UsageError("the coordinator record must be an object")
+    coordinator_id = central_messages._canonical_uuid(record.get("id"))
+    if coordinator_id is None:
+        raise UsageError(
+            "the coordinator id must be a canonical UUID string, "
+            f"got {record.get('id')!r}"
+        )
+    return coordinator_id
+
+
+def _worktree_of(record: dict) -> Path:
+    """The worktree that holds the coordinator's job records."""
+    value = record.get("worktree")
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        raise UsageError(
+            f"the coordinator record has no absolute worktree path, got {value!r}"
+        )
+    return Path(value)
+
+
+def _round_of(round_result: Any) -> str | None:
+    """The canonical round id of a round result."""
+    if not isinstance(round_result, dict):
+        raise UsageError("the round result must be an object")
+    value = round_result.get("round_id")
+    if value is None:
+        return None
+    canonical = central_messages._canonical_uuid(value)
+    if canonical is None:
+        raise UsageError(
+            f"the round id must be a canonical UUID string, got {value!r}"
+        )
+    return canonical
+
+
+# --- the round metadata -----------------------------------------------------
+
+
+def _coord_dir(root: Path, coordinator_id: str) -> Path:
+    try:
+        return central_messages._coordinator_dir(root, coordinator_id)
+    except central_messages.MessageError as exc:
+        raise UsageError(str(exc)) from exc
+
+
+def _rounds_dir(root: Path, coordinator_id: str) -> Path:
+    """The rounds directory, guarded like the accepted round module."""
+    try:
+        return central_rounds._subdir(_coord_dir(root, coordinator_id), "rounds")
+    except (central_messages.MessageError, central_rounds.RoundError) as exc:
+        raise UsageError(str(exc)) from exc
+
+
+def _round_path(root: Path, coordinator_id: str, round_id: str) -> Path:
+    """The metadata file of one round, refused when it escapes the root."""
+    rounds = _rounds_dir(root, coordinator_id)
+    path = rounds / f"{round_id}.json"
+    base = rounds.resolve(strict=False)
+    if path.is_symlink() or not path.resolve(strict=False).is_relative_to(base):
+        raise UsageError(f"{path}: the round path escapes the coordinator directory")
+    return path
+
+
+def _read_round(path: Path) -> tuple[dict, bool, str]:
+    """The round metadata, whether it had a BOM and its newline style."""
+    try:
+        data = central_messages._read_bounded(path, ROUND_READ_MAX_BYTES)
+    except (OSError, central_messages.MessageError) as exc:
+        raise UsageError(f"cannot read the round metadata: {exc}") from exc
+    bom = data.startswith(b"\xef\xbb\xbf")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise UsageError(f"the round metadata is not valid UTF-8: {exc}") from exc
+    newline = "\r\n" if "\r\n" in text else "\n"
+    try:
+        meta = json.loads(text)
+    except (ValueError, RecursionError) as exc:
+        raise UsageError(f"the round metadata is not valid JSON: {exc}") from exc
+    if not isinstance(meta, dict):
+        raise UsageError("the round metadata is not a JSON object")
+    return meta, bom, newline
+
+
+def _write_round(path: Path, meta: dict, bom: bool, newline: str) -> None:
+    """Write the round metadata back, keeping its BOM and newline style."""
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    if newline == "\r\n":
+        payload = payload.replace("\n", "\r\n")
+    text = ("\ufeff" if bom else "") + payload + newline
+    try:
+        records.write_atomic(path, text)
+    except OSError as exc:
+        raise UsageError(f"cannot persist the round metadata: {exc}") from exc
+
+
+def _rounds(root: Path, coordinator_id: str) -> list[tuple[Path, dict, bool, str]]:
+    """Every readable round of a coordinator, oldest first."""
+    found: list[tuple[Path, dict, bool, str]] = []
+    for path in sorted(_rounds_dir(root, coordinator_id).glob("*.json")):
+        if path.is_symlink():
+            warnings.warn(f"{path}: symbolic link refused", UserWarning, stacklevel=2)
+            continue
+        try:
+            meta, bom, newline = _read_round(path)
+        except UsageError as exc:
+            warnings.warn(f"{path}: {exc}", UserWarning, stacklevel=2)
+            continue
+        found.append((path, meta, bom, newline))
+    found.sort(key=lambda item: (str(item[1].get("started_at") or ""), item[0].name))
+    return found
+
+
+# --- the usage of one round -------------------------------------------------
+
+
+def _payload(meta: dict) -> dict:
+    """The usage of one round: role, counts, estimate flag and model."""
+    usage = meta.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
+    role = usage.get("role") or "coordinator"
+    if role not in ROLES:
+        raise UsageError(
+            f"unknown usage role {role!r} (expected one of {', '.join(ROLES)})"
+        )
+    model = usage.get("model")
+    family = usage.get("quota_family")
+    return {
+        "role": role,
+        "tokens_in": _count(usage.get("tokens_in")),
+        "tokens_out": _count(usage.get("tokens_out")),
+        "tokens_total": _count(usage.get("tokens_total")),
+        "estimated": usage.get("estimated") is True,
+        "model": model if isinstance(model, str) else None,
+        "quota_family": family if isinstance(family, str) else None,
+        "chars": _count(usage.get("chars")),
+    }
+
+
+def _log_chars(coord: Path, meta: dict) -> int | None:
+    """The characters of the round's stdout log, when it is readable."""
+    logs = meta.get("logs")
+    ref = logs.get("stdout") if isinstance(logs, dict) else None
+    if not isinstance(ref, str) or not ref:
+        return None
+    path = coord / ref
+    base = coord.resolve(strict=False)
+    if path.is_symlink() or not path.resolve(strict=False).is_relative_to(base):
+        return None
+    try:
+        data = central_messages._read_bounded(path, central_rounds.LOG_MAX_BYTES)
+    except (OSError, central_messages.MessageError):
+        return None
+    return len(data.decode("utf-8", errors="replace"))
+
+
+def _numbers(payload: dict, chars: int | None) -> dict:
+    """The counts to record: what the CLI reported, else a marked estimate."""
+    tokens_in = payload["tokens_in"]
+    tokens_out = payload["tokens_out"]
+    total = payload["tokens_total"]
+    estimated = payload["estimated"]
+    if tokens_in is not None and tokens_out is not None:
+        derived = tokens_in + tokens_out
+        return {
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "tokens_total": derived if total is None else total,
+            "estimated": estimated,
+            # the job entry can only be built by records.add_usage when the
+            # reported total is the sum of the two components
+            "sum_ok": total is None or total == derived,
+        }
+    if total is None and chars is not None:
+        guess = chars // CHARS_PER_TOKEN
+        total = guess or None
+        estimated = True
+    return {
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "tokens_total": total,
+        "estimated": estimated,
+        "sum_ok": False,
+    }
+
+
+def _note(numbers: dict, round_id: str) -> str:
+    """The note of the usage entry: what the number is and where it is from."""
+    if numbers["tokens_total"] is None:
+        return f"coordinator round {round_id}: no usage was reported"
+    if numbers["estimated"]:
+        return f"coordinator round {round_id}: estimated from the round output"
+    return f"coordinator round {round_id}"
+
+
+def _entry(
+    job: dict, numbers: dict, payload: dict, event_id: str, note: str
+) -> bool:
+    """Append the usage entry to the job; ``False`` when it is already there."""
+    entries = job.get("usage")
+    if entries is None:
+        entries = []
+        job["usage"] = entries
+    elif not isinstance(entries, list):
+        raise UsageError("the job usage is not a list")
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("central_event_id") == event_id:
+            return False
+    if numbers["sum_ok"]:
+        before = len(entries)
+        records.add_usage(
+            job,
+            payload["role"],
+            numbers["tokens_in"],
+            numbers["tokens_out"],
+            numbers["estimated"],
+            note,
+        )
+        entry = entries[before]
+    else:
+        entry = {
+            "role": payload["role"],
+            "tokens_in": numbers["tokens_in"],
+            "tokens_out": numbers["tokens_out"],
+            "tokens_total": numbers["tokens_total"],
+            "estimated": numbers["estimated"],
+            "note": note,
+            "at": _now(),
+        }
+        entries.append(entry)
+    entry["central_event_id"] = event_id
+    entry["model"] = payload["model"]
+    entry["quota_family"] = payload["quota_family"]
+    return True
+
+
+def _apply_job(
+    record: dict,
+    job_id: str,
+    payload: dict,
+    numbers: dict,
+    event_id: str,
+    note: str,
+) -> bool | None:
+    """Add the usage entry to the job; ``None`` when the job is not there yet."""
+    worktree = _worktree_of(record)
+
+    def change(job: dict) -> bool:
+        return _entry(job, numbers, payload, event_id, note)
+
+    try:
+        return bool(records.update_job(worktree, job_id, change))
+    except records.RecordError:
+        return None
+
+
+# --- the recording ----------------------------------------------------------
+
+
+def _event(meta: dict) -> dict:
+    """The usage event block of a round, empty when it has none."""
+    event = meta.get("usage_event")
+    return dict(event) if isinstance(event, dict) else {}
+
+
+def _target_job(meta: dict, record: dict) -> str | None:
+    """The job the usage belongs to: the round's own job, else the current one."""
+    for value in (meta.get("active_job_id"), record.get("active_job_id")):
+        job = _job_id(value)
+        if job:
+            return job
+    return None
+
+
+def _bind(
+    path: Path, meta: dict, bom: bool, newline: str, event: dict, job_id: str
+) -> None:
+    """Persist the target binding before the job is updated."""
+    meta["usage_event"] = {
+        "event_id": event["event_id"],
+        "role": event["role"],
+        "job_id": job_id,
+        "state": "pending",
+        "bound_at": event.get("bound_at") or _now(),
+        "recorded_at": None,
+    }
+    _write_round(path, meta, bom, newline)
+
+
+def _mark_recorded(path: Path, meta: dict, bom: bool, newline: str) -> None:
+    """Mark the round's usage as counted in its job."""
+    event = _event(meta)
+    event["state"] = "recorded"
+    event["recorded_at"] = _now()
+    meta["usage_event"] = event
+    _write_round(path, meta, bom, newline)
+
+
+def _record_round(
+    record: dict,
+    coord: Path,
+    path: Path,
+    meta: dict,
+    bom: bool,
+    newline: str,
+) -> None:
+    """Count one round's usage in its job, exactly once."""
+    event = _event(meta)
+    if event.get("state") == "recorded":
+        return
+    round_id = str(meta.get("id") or path.stem)
+    payload = _payload(meta)
+    event_id = event.get("event_id") or f"central:{coord.name}:{round_id}"
+    bound = event.get("job_id")
+    if bound is not None:
+        job_id = _job_id(bound)
+        if job_id is None:
+            raise UsageError(f"the round binds an unusable job id {bound!r}")
+    else:
+        job_id = _target_job(meta, record)
+    if job_id is None:
+        # the job is unknown: the usage stays pending in the round metadata
+        if not event:
+            meta["usage_event"] = {
+                "event_id": f"central:{coord.name}:{round_id}",
+                "role": payload["role"],
+                "job_id": None,
+                "state": "pending",
+                "bound_at": None,
+                "recorded_at": None,
+            }
+            _write_round(path, meta, bom, newline)
+        return
+    event["event_id"] = event_id
+    event["role"] = payload["role"]
+    _bind(path, meta, bom, newline, event, job_id)
+    chars = payload["chars"]
+    if chars is None:
+        chars = _log_chars(coord, meta)
+    numbers = _numbers(payload, chars)
+    added = _apply_job(
+        record, job_id, payload, numbers, event_id, _note(numbers, round_id)
+    )
+    if added is None:
+        return  # the job is not there yet: the usage stays pending
+    _mark_recorded(path, meta, bom, newline)
+
+
+def _check_binding(meta: dict, coordinator_id: str, round_id: str) -> None:
+    """Refuse a round metadata that belongs to another round or coordinator."""
+    stored = meta.get("id")
+    if stored is not None and stored != round_id:
+        raise UsageError(
+            f"the round metadata belongs to round {stored!r}, not {round_id!r}"
+        )
+    owner = meta.get("coordinator_id")
+    if owner is not None and owner != coordinator_id:
+        raise UsageError(f"the round metadata belongs to coordinator {owner!r}")
+
+
+def record_round_usage(root: Path, record: dict, round_result: dict) -> None:
+    """Record the usage of one finished round in the job it belongs to.
+
+    The round's usage is counted exactly once: the entry carries the stable
+    event id of the round, and the round metadata remembers that it was
+    counted.  While no job is known the usage stays pending in the round
+    metadata and :func:`backfill_usage` counts it later.
+    """
+    coordinator_id = _coordinator_of(record)
+    round_id = _round_of(round_result)
+    if round_id is None:
+        return  # the round never ran: there is no usage to record
+    path = _round_path(root, coordinator_id, round_id)
+    meta, bom, newline = _read_round(path)
+    _check_binding(meta, coordinator_id, round_id)
+    _record_round(record, _coord_dir(root, coordinator_id), path, meta, bom, newline)
+
+
+def backfill_usage(root: Path, record: dict) -> None:
+    """Count every pending round's usage in the job it belongs to, once.
+
+    A round that cannot be read is reported and left alone: the history of
+    the coordinator is never deleted to make a backfill succeed.
+    """
+    coordinator_id = _coordinator_of(record)
+    coord = _coord_dir(root, coordinator_id)
+    for path, meta, bom, newline in _rounds(root, coordinator_id):
+        try:
+            _record_round(record, coord, path, meta, bom, newline)
+        except UsageError as exc:
+            warnings.warn(f"{path}: {exc}", UserWarning, stacklevel=2)
+
+
+def pending_usage(root: Path, record: dict) -> list[dict]:
+    """The usage events that are not counted in a job yet.
+
+    Each entry carries the stable event id, so the caller can tell a pending
+    event from one that is already part of a job.
+    """
+    coordinator_id = _coordinator_of(record)
+    coord = _coord_dir(root, coordinator_id)
+    pending: list[dict] = []
+    for path, meta, _bom, _newline in _rounds(root, coordinator_id):
+        event = _event(meta)
+        if event.get("state") == "recorded":
+            continue
+        try:
+            payload = _payload(meta)
+        except UsageError as exc:
+            warnings.warn(f"{path}: {exc}", UserWarning, stacklevel=2)
+            continue
+        round_id = str(meta.get("id") or path.stem)
+        chars = payload["chars"]
+        if chars is None:
+            chars = _log_chars(coord, meta)
+        numbers = _numbers(payload, chars)
+        pending.append(
+            {
+                "event_id": event.get("event_id")
+                or f"central:{coordinator_id}:{round_id}",
+                "round_id": round_id,
+                "coordinator_id": coordinator_id,
+                "job_id": event.get("job_id"),
+                "role": payload["role"],
+                "tokens_in": numbers["tokens_in"],
+                "tokens_out": numbers["tokens_out"],
+                "tokens_total": numbers["tokens_total"],
+                "estimated": numbers["estimated"],
+                "model": payload["model"],
+                "quota_family": payload["quota_family"],
+                "started_at": meta.get("started_at"),
+            }
+        )
+    return pending
