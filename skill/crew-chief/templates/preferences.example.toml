@@ -40,6 +40,15 @@
 # The CHANGELOG file, relative to the project root.
 # changelog_path = "CHANGELOG.md"
 
+# How much Ponytail (vendor/ponytail) goes into every brief. Ponytail is the
+# "lazy senior dev" rules: the smallest change that fully solves the task.
+# - lite:  build what was asked; name a smaller option in one line.
+# - full:  the smallest complete change (the default).
+# - ultra: also question the request and push back on what the need does not
+#          justify. Can make a cheap model argue instead of building.
+# - off:   no Ponytail rules; the brief is unchanged.
+# ponytail_level = "full"
+
 # Hard limit for one dispatch attempt, in seconds. On overrun the process tree
 # is killed and the attempt is recorded as `timeout`.
 # dispatch_timeout_s = 900

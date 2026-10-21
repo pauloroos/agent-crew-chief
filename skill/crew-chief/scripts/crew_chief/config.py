@@ -25,6 +25,8 @@ COST_VALUES = (*TIER_ORDER, "forbidden")
 KIND_VALUES = ("claude-code", "opencode", "codex", "antigravity", "generic")
 ISSUE_TRACKERS = ("none", "github", "plane", "linear", "other")
 CHANGELOG_VALUES = ("keep-a-changelog", "none")
+#: How much Ponytail the briefs carry; see ``vendor/ponytail``.
+PONYTAIL_LEVELS = ("lite", "full", "ultra", "off")
 
 # Location of the project preferences file, relative to the project root.
 PREFS_RELATIVE_PATH = Path("docs") / "crew-chief" / "preferences.toml"
@@ -54,6 +56,8 @@ DEFAULT_EXEC_FIRST = ["opencode"]
 
 #: ``close`` adds the job to the project CHANGELOG in the Keep a Changelog style.
 DEFAULT_CHANGELOG = "keep-a-changelog"
+#: Ponytail rules that go into every brief: lite, full or ultra (``off`` none).
+DEFAULT_PONYTAIL_LEVEL = "full"
 #: The project CHANGELOG, relative to the project root.
 DEFAULT_CHANGELOG_PATH = "CHANGELOG.md"
 
@@ -128,6 +132,8 @@ class Prefs:
     exec_first: list[str] = field(default_factory=lambda: list(DEFAULT_EXEC_FIRST))
     #: ``keep-a-changelog`` (``close`` writes the entry) or ``none``.
     changelog: str = DEFAULT_CHANGELOG
+    #: Ponytail rules the brief carries: lite, full or ultra (``off`` = none).
+    ponytail_level: str = DEFAULT_PONYTAIL_LEVEL
     #: Path of the project CHANGELOG, relative to the project root.
     changelog_path: str = DEFAULT_CHANGELOG_PATH
     #: Paid-by-use spending limits in US dollars (``0`` = no cheap models).
@@ -328,6 +334,13 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
             f"got {changelog_path!r}"
         )
 
+    ponytail_level = data.get("ponytail_level")
+    if ponytail_level is not None and ponytail_level not in PONYTAIL_LEVELS:
+        raise PrefsError(
+            f"{path}: ponytail_level must be one of "
+            f"{', '.join(PONYTAIL_LEVELS)}, got {ponytail_level!r}"
+        )
+
     issue_tracker = data.get("issue_tracker")
     if issue_tracker is not None and issue_tracker not in ISSUE_TRACKERS:
         raise PrefsError(
@@ -444,6 +457,7 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         alert_job_minutes=pick("alert_job_minutes", DEFAULT_ALERT_JOB_MINUTES),
         exec_first=list(pick("exec_first", DEFAULT_EXEC_FIRST)),
         changelog=pick("changelog", DEFAULT_CHANGELOG),
+        ponytail_level=pick("ponytail_level", DEFAULT_PONYTAIL_LEVEL),
         changelog_path=pick("changelog_path", DEFAULT_CHANGELOG_PATH),
         cheap_budget_usd_day=float(pick("cheap_budget_usd_day", 0.0)),
         cheap_budget_usd_job=float(pick("cheap_budget_usd_job", 0.0)),
