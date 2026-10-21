@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from pathlib import Path
 
@@ -115,6 +116,61 @@ def test_resolve_settings_negative_timeout():
 def test_resolve_settings_zero_poll():
     with pytest.raises(CentralConfigError, match="central_poll_s must be positive"):
         resolve_settings({}, {}, {"central_poll_s": 0}, "codex")
+
+
+#: Bad timing values shared by the parametrized assertions below, as
+#: (value, expected CentralConfigError message fragment) pairs.
+_TIMING_BAD_CASES = [
+    pytest.param(math.inf, "must be finite", id="plus-inf"),
+    pytest.param(-math.inf, "must be finite", id="minus-inf"),
+    pytest.param(math.nan, "must be finite", id="nan"),
+    pytest.param(0, "must be positive", id="zero-int"),
+    pytest.param(0.0, "must be positive", id="zero-float"),
+    pytest.param(-1, "must be positive", id="negative-int"),
+    pytest.param(-0.5, "must be positive", id="negative-float"),
+    pytest.param(True, "must be a number", id="bool-true"),
+    pytest.param(False, "must be a number", id="bool-false"),
+    pytest.param("5", "must be a number", id="string-digits"),
+    pytest.param("1.5", "must be a number", id="string-float"),
+]
+
+
+@pytest.mark.parametrize("value,fragment", _TIMING_BAD_CASES)
+@pytest.mark.parametrize("launch_key", ["poll", "central_poll_s"])
+def test_launch_poll_bad_value_rejected(value, fragment, launch_key):
+    with pytest.raises(CentralConfigError, match=f"central_poll_s {fragment}"):
+        resolve_settings({}, {}, {launch_key: value}, "codex")
+
+
+@pytest.mark.parametrize("value,fragment", _TIMING_BAD_CASES)
+@pytest.mark.parametrize("launch_key", ["round_timeout_s", "central_round_timeout_s"])
+def test_launch_round_timeout_bad_value_rejected(value, fragment, launch_key):
+    with pytest.raises(CentralConfigError, match=f"central_round_timeout_s {fragment}"):
+        resolve_settings({}, {}, {launch_key: value}, "codex")
+
+
+@pytest.mark.parametrize("value,fragment", _TIMING_BAD_CASES)
+def test_global_preference_poll_bad_value_rejected(value, fragment):
+    with pytest.raises(CentralConfigError, match=f"central_poll_s {fragment}"):
+        resolve_settings({"central_poll_s": value}, {}, {}, "codex")
+
+
+@pytest.mark.parametrize("value,fragment", _TIMING_BAD_CASES)
+def test_project_preference_poll_bad_value_rejected(value, fragment):
+    with pytest.raises(CentralConfigError, match=f"central_poll_s {fragment}"):
+        resolve_settings({}, {"central_poll_s": value}, {}, "codex")
+
+
+@pytest.mark.parametrize("value,fragment", _TIMING_BAD_CASES)
+def test_global_preference_round_timeout_bad_value_rejected(value, fragment):
+    with pytest.raises(CentralConfigError, match=f"central_round_timeout_s {fragment}"):
+        resolve_settings({"central_round_timeout_s": value}, {}, {}, "codex")
+
+
+@pytest.mark.parametrize("value,fragment", _TIMING_BAD_CASES)
+def test_project_preference_round_timeout_bad_value_rejected(value, fragment):
+    with pytest.raises(CentralConfigError, match=f"central_round_timeout_s {fragment}"):
+        resolve_settings({}, {"central_round_timeout_s": value}, {}, "codex")
 
 
 def test_resolve_settings_restricted_override():
@@ -264,6 +320,41 @@ def test_project_empty_default_falls_back_to_caller_not_global():
 def test_launch_none_coordinator_falls_back_to_caller():
     result = resolve_settings({}, {}, {"cli": None}, "codex")
     assert result["coordinator_default"] == "codex"
+
+
+def test_input_dictionaries_unchanged_after_resolution():
+    global_data = {
+        "coordinator_default": "codex",
+        "coordinator_unrestricted": False,
+        "central_poll_s": 2.5,
+        "central_round_timeout_s": 1200,
+        "central_backend": "gemini",
+    }
+    project_data = {
+        "coordinator_default": "claude",
+        "coordinator_unrestricted": True,
+        "central_poll_s": 3.5,
+        "central_round_timeout_s": 600,
+        "central_backend": "grok",
+    }
+    overrides = {
+        "cli": None, "unrestricted": None, "restricted": None,
+        "poll": None, "round_timeout_s": None, "backend": None,
+    }
+    before = copy.deepcopy((global_data, project_data, overrides))
+    resolve_settings(global_data, project_data, overrides, "codex")
+    assert (global_data, project_data, overrides) == before
+
+
+@pytest.mark.parametrize("value,fragment", _TIMING_BAD_CASES)
+def test_input_dictionaries_unchanged_after_timing_error(value, fragment):
+    global_data = {"coordinator_default": "codex", "central_poll_s": 5.0}
+    project_data = {"central_round_timeout_s": 300}
+    overrides = {"poll": value}
+    before = copy.deepcopy((global_data, project_data, overrides))
+    with pytest.raises(CentralConfigError, match=f"central_poll_s {fragment}"):
+        resolve_settings(global_data, project_data, overrides, "codex")
+    assert (global_data, project_data, overrides) == before
 
 
 def test_no_filesystem_writes(tmp_path, monkeypatch):
