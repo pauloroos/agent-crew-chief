@@ -383,6 +383,65 @@ def test_pick_excludes_an_executor_with_no_change_on_the_piece(
     assert capsys.readouterr().out.splitlines()[0].strip() == "stub:n"
 
 
+def _three_model_stub_repo(repo, fake_bin, monkeypatch):
+    """A repo whose only tool offers three free models: stub:m, stub:n, stub:p."""
+    _write_prefs(
+        repo, _STUB_PREFS.replace('models = ["m"]', 'models = ["m", "n", "p"]')
+    )
+    fake_bin("stub", "print('x')\n")
+    _only_bins(monkeypatch, {"stub"})
+
+
+def _excluded_pick_job(repo):
+    """A job with one code piece, ready to be picked."""
+    job = records.new_job(repo, "Exclude", "do it", True, "one part")
+    records.add_piece(job, "One", "code", "low")
+    records.save_job(repo, job)
+    return job
+
+
+def test_pick_exclude_repeated_flags_exclude_every_executor(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # --exclude twice must leave out both ids: the second flag used to
+    # replace the first one, so only the last id was excluded.
+    repo = git_repo
+    _three_model_stub_repo(repo, fake_bin, monkeypatch)
+    job = _excluded_pick_job(repo)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--exclude", "stub:m",
+                 "--exclude", "stub:n"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "stub:p"
+
+
+def test_pick_exclude_takes_several_ids_in_one_flag(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # One flag with several ids keeps working.
+    repo = git_repo
+    _three_model_stub_repo(repo, fake_bin, monkeypatch)
+    job = _excluded_pick_job(repo)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--exclude", "stub:m", "stub:n"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].strip() == "stub:p"
+
+
+def test_pick_exclude_repeated_flags_leave_no_executor(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # The ids of every flag pile up, so excluding all three leaves nobody.
+    repo = git_repo
+    _three_model_stub_repo(repo, fake_bin, monkeypatch)
+    job = _excluded_pick_job(repo)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--exclude", "stub:m",
+                 "--exclude", "stub:n", "stub:p"]) == 1
+    assert "no executor available" in capsys.readouterr().out
+
+
 def test_pick_hands_a_correction_to_another_executor(
     git_repo, fake_bin, monkeypatch, capsys
 ):

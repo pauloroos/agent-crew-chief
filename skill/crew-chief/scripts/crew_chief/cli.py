@@ -1491,9 +1491,10 @@ def build_parser() -> argparse.ArgumentParser:
     pick_parser.add_argument(
         "--exclude",
         nargs="+",
+        action="extend",
         default=[],
         metavar="EXECUTOR",
-        help="executor ids to leave out",
+        help="executor ids to leave out (repeat the flag to add more)",
     )
     pick_parser.add_argument(
         "--strong",
