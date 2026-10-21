@@ -35,6 +35,23 @@ def test_resolve_root_none_env():
     assert resolve_root(None, None, home) == home / ".config" / "agent-crew-chief" / "central"
 
 
+def test_resolve_root_injected_home_never_consults_real_home(tmp_path, monkeypatch):
+    # The injected home must be used as-is. If the resolver reached for the
+    # real home directory, this raises instead of silently resolving against
+    # the machine running the tests.
+    class RealHomeConsulted(RuntimeError):
+        pass
+
+    def _refuse_real_home(*args, **kwargs):
+        raise RealHomeConsulted("resolve_root must not consult the real home directory")
+
+    monkeypatch.setattr(Path, "home", _refuse_real_home)
+    injected_home = tmp_path / "injected-home"
+    assert resolve_root(None, {}, injected_home) == (
+        injected_home / ".config" / "agent-crew-chief" / "central"
+    )
+
+
 def test_resolve_root_empty_explicit_falls_through():
     home = Path("/home/test")
     assert resolve_root("", {"AGENT_CREW_CHIEF_CENTRAL_DIR": "/env/root"}, home) == Path("/env/root")
