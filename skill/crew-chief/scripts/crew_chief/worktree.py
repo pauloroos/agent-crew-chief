@@ -77,6 +77,9 @@ AGENT_HOME_ENTRIES: tuple[str, ...] = (
     ".cache",
     # Cursor agent.
     ".cursor",
+    # Docker Desktop: it updates its own home entry (contexts, build
+    # metadata) independently of any attempt.
+    ".docker",
     # Package caches the CLIs fill when they install helpers.
     ".npm",
     ".bun",

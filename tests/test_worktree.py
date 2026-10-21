@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -305,6 +306,48 @@ def test_windows_shell_folders_in_home_are_not_outside_write(
 
     after = snapshot(git_repo, worktree)
     assert outside_writes(before, after) == []
+
+
+def test_new_docker_home_entry_is_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    # Docker Desktop creates and updates its own home entry (~/.docker,
+    # contexts and build metadata) on its own schedule, so an attempt is
+    # never the one writing it.
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    docker = home_dir / ".docker"
+    docker.mkdir()
+    (docker / "config.json").write_text("{}", encoding="utf-8")
+    (home_dir / "escaped.txt").write_text("escaped\n", encoding="utf-8")
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == ["home: escaped.txt"]
+
+
+def test_changed_docker_home_entry_is_not_outside_write(
+    git_repo: Path, home_dir: Path
+):
+    # The same entry, already there, whose mtime moves: Docker Desktop
+    # rewrites it without the attempt having touched it.
+    docker = home_dir / ".docker"
+    docker.mkdir()
+    (docker / "config.json").write_text("{}", encoding="utf-8")
+    worktree, _ = create_worktree(git_repo, "job1", 1, 1)
+    before = snapshot(git_repo, worktree)
+
+    (docker / "contexts").mkdir()
+    (docker / "config.json").write_text(
+        '{"currentContext": "default"}', encoding="utf-8"
+    )
+    # A distinct mtime, so the change does not depend on the clock
+    # granularity of the filesystem.
+    os.utime(docker, ns=(1_000_000_000, 1_000_000_000))
+    (home_dir / "escaped.txt").write_text("escaped\n", encoding="utf-8")
+
+    after = snapshot(git_repo, worktree)
+    assert outside_writes(before, after) == ["home: escaped.txt"]
 
 
 def test_snapshot_ignores_the_worktree_itself(git_repo: Path, home_dir: Path):
