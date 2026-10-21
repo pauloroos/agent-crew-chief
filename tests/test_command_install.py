@@ -73,6 +73,21 @@ def _entry_of(release: Path) -> Path:
     return release / BUNDLE_ENTRY
 
 
+def _relative_to_anchor(interpreter: str, anchor: Path) -> Path | None:
+    """A relative path to ``interpreter`` from ``anchor``, or ``None``.
+
+    The relative-interpreter scenario only applies where the native platform
+    permits one: on Windows ``os.path.relpath`` cannot bridge different
+    drives and raises (``path is on mount ..``, CI may place the interpreter
+    on ``C:`` while ``tmp_path`` is on ``D:``). ``None`` means the case is
+    impossible on this machine, not a bug.
+    """
+    try:
+        return Path(os.path.relpath(interpreter, anchor))
+    except ValueError:
+        return None
+
+
 def _run_wrapper(target: Path, *args: str) -> subprocess.CompletedProcess:
     """Run a wrapper the way a user would, and capture its output."""
     return subprocess.run(
@@ -502,7 +517,12 @@ def test_the_native_wrapper_runs_with_a_relative_interpreter(tmp_path, monkeypat
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
 
-    relative_python = Path(os.path.relpath(sys.executable, tmp_path))
+    relative_python = _relative_to_anchor(sys.executable, tmp_path)
+    if relative_python is None:
+        pytest.skip(
+            "the interpreter and tmp_path sit on different Windows drives; "
+            "a relative interpreter is not expressible here"
+        )
 
     monkeypatch.chdir(tmp_path)
     target = install_command(
@@ -521,6 +541,35 @@ def test_the_native_wrapper_runs_with_a_relative_interpreter(tmp_path, monkeypat
 
     assert result.returncode == 7, result.stderr
     assert "fake-entry:rel" in result.stdout
+
+
+# --- the portable relative-interpreter helper -------------------------------
+
+
+def test_a_relative_interpreter_is_impossible_across_windows_drives():
+    """Regression: the different-drive case must be detected, not fatal.
+
+    On Windows CI the interpreter can live on ``C:`` while the test's
+    temporary directory lives on ``D:``; ``os.path.relpath`` raises there.
+    The helper turns that into ``None``; on a single-mount POSIX platform
+    no such case exists, so the same call simply yields a path.
+    """
+    result = _relative_to_anchor(r"C:\python\python.exe", Path(r"D:\tmp\run"))
+
+    if os.name == "nt":
+        assert result is None
+    else:
+        assert result is not None
+        assert not result.is_absolute()
+
+
+def test_a_relative_interpreter_still_works_on_the_same_drive(tmp_path):
+    """The helper keeps producing plain relative paths in the normal case."""
+    inside = tmp_path / "venv" / "python"
+
+    result = _relative_to_anchor(str(inside), tmp_path)
+
+    assert result == Path("venv") / "python"
 
 
 # --- the documented user bin directory --------------------------------------
