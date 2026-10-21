@@ -55,6 +55,8 @@ def _record(tmp_path: Path, **overrides) -> dict:
         "active_job_id": None,
         "state": "created",
         "last_error": None,
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
     }
     base.update(overrides)
     return base
@@ -132,7 +134,9 @@ def test_register_rejects_invalid_records(tmp_path):
         ({"unknown_extra": 1}, "unknown_extra"),
     ]
     for index, (overrides, fragment) in enumerate(cases):
-        record = _record(tmp_path, id=str(uuid.uuid4()), **overrides)
+        merged_overrides = {"id": str(uuid.uuid4())}
+        merged_overrides.update(overrides)
+        record = _record(tmp_path, **merged_overrides)
         with pytest.raises(RegistryError, match=fragment):
             register(root, record)
         assert load_registry(root)["coordinators"] == {}, f"case {index} wrote anyway"
@@ -242,7 +246,7 @@ def test_load_registry_isolates_corrupt_rows(tmp_path):
         },
     )
     data = load_registry(root)
-    assert set(data["coordinators"]) == {good1, good2}
+    assert set(data["coordinators"]) == {good1}
     reported = {entry["record"] for entry in data["errors"]}
     assert {"x/../y", "not-an-object", good2} <= reported
 
@@ -423,7 +427,7 @@ def test_stray_temp_files_are_ignored(tmp_path):
     root = _root(tmp_path)
     record = _record(tmp_path)
     register(root, record)
-    (root / "registry.json.ab12cd.tmp").write_bytes(b'{"half-a": "write"', encoding="utf-8")
+    (root / "registry.json.ab12cd.tmp").write_bytes(b'{"half-a": "write"')
     data = load_registry(root)
     assert record["id"] in data["coordinators"]
     register(root, _record(tmp_path, id=str(uuid.uuid4())))

@@ -41,13 +41,15 @@ from __future__ import annotations
 import json
 import math
 import os
+import random
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .records import file_lock, write_atomic
+from .records import _sharing_retry, file_lock, write_atomic
 
 __all__ = [
     "RECORD_MAX_BYTES",
@@ -142,9 +144,18 @@ def _validate_record(record: Any) -> list[str]:
     canonical = _canonical_uuid(record.get("id"))
     if canonical is None:
         problems.append(f"id must be a canonical UUID string, got {record.get('id')!r}")
-    if record.get("schema_version") != SCHEMA_VERSION:
+    schema_version = record.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version != SCHEMA_VERSION
+    ):
         problems.append(
             f"schema_version must be {SCHEMA_VERSION}, got {record.get('schema_version')!r}"
+        )
+    if _record_size(record) > RECORD_MAX_BYTES:
+        problems.append(
+            f"record exceeds the {RECORD_MAX_BYTES} byte per-row cap"
         )
 
     for field in _PATH_FIELDS:
@@ -191,7 +202,21 @@ def _record_size(record: Any) -> int:
 
 
 def _registry_path(root: Path) -> Path:
-    return Path(root) / _FILE
+    root = Path(root)
+    path = root / _FILE
+    if path.is_symlink():
+        raise RegistryError(
+            f"{path}: registry path escapes the central root via a "
+            "symbolic link; explicit recovery required"
+        )
+    try:
+        if path.resolve(strict=False) != (root.resolve(strict=False) / _FILE):
+            raise RegistryError(
+                f"{path}: registry path escapes the central root; explicit recovery required"
+            )
+    except OSError as exc:
+        raise RegistryError(f"{path}: cannot resolve registry path: {exc}") from exc
+    return path
 
 
 def _read_bounded(path: Path, max_bytes: int) -> bytes:
@@ -224,7 +249,7 @@ def _newline_style(text: str) -> str:
 class _Style:
     """A registry file's fetched text plus its BOM and newline style."""
 
-    __slots__ = bom, data, newline
+    __slots__ = ("bom", "data", "newline")
 
     def __init__(self, data: dict, *, bom: bool, newline: str):
         self.bom = bom
@@ -242,7 +267,12 @@ def _parse_registry(path: Path, text: str) -> dict:
         raise RegistryStructureError(
             f"{path}: registry must be a JSON object, got {type(data).__name__}"
         )
-    if data.get("schema_version") != SCHEMA_VERSION:
+    schema_version = data.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version != SCHEMA_VERSION
+    ):
         raise RegistryStructureError(
             f"{path}: registry schema_version must be {SCHEMA_VERSION}, got "
             f"{data.get('schema_version')!r}; explicit recovery required"
@@ -311,7 +341,12 @@ def _row_error(key: str, problems: list[str]) -> dict:
 
 def _structural_errors(data: dict) -> Iterator[dict]:
     """Whole-file problems as report rows; nothing else is checked here."""
-    if data.get("schema_version") != SCHEMA_VERSION:
+    schema_version = data.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version != SCHEMA_VERSION
+    ):
         yield {
             "record": "<registry>",
             "message": f"registry schema_version must be {SCHEMA_VERSION}, got {data.get('schema_version')!r}",
@@ -363,7 +398,14 @@ def load_registry(root: Path) -> dict:
             "coordinators": {},
             "errors": [],
         }
-    data = _parse_registry(path, text)
+    try:
+        data = _parse_registry(path, text)
+    except RegistryStructureError as exc:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "coordinators": {},
+            "errors": [{"record": "<registry>", "message": str(exc)}],
+        }
     coordinators, errors = _load_rows(data)
     return {"schema_version": SCHEMA_VERSION, "coordinators": coordinators, "errors": errors}
 
@@ -402,7 +444,7 @@ def register(root: Path, record: dict, *, timeout_s: float = LOCK_TIMEOUT_S) -> 
     with _registry_lock(root, timeout_s):
         data, style = _read_registry(_registry_path(root))
         if data is None:
-            data, style = dict(_FRESH), None
+            data, style = {"schema_version": SCHEMA_VERSION, "coordinators": {}}, None
         coordinators = data["coordinators"]
         if coordinator_id in coordinators:
             raise RegistryError(
@@ -480,14 +522,14 @@ def owner_lease(
     nonce: str,
     *,
     timeout_s: float = LOCK_TIMEOUT_S,
-) -> Iterator[dict]:
+) -> Any:
     """Hold one coordinator's exclusive supervisor lease for the ``with`` block.
 
     The lease file ``coordinators/<uuid>/supervisor.lock`` records the owning
     nonce, PID and acquisition time. Acquiring for the same nonce from the
     same or another process renews nothing and simply re-enters; a different
     nonce waits up to ``timeout_s`` and then raises
-    :class:`RegistryLockTimeout` naming the holder — the lock file is never
+    :class:`RegistryLockTimeout` naming the holder -- the lock file is never
     deleted or rewritten for them, however old it looks, because age and a
     PID alone do not prove an owner gone. Recovery is explicit: the operator
     removes the lease file after checking :data:`_LEASE`'s payload. Yields a
@@ -505,28 +547,61 @@ def owner_lease(
 
     def timeout_error(waited: float) -> Exception:
         holder = _read_lease(path)
-        holder_text = f"nonce {holder['nonce']!r}, pid {holder.get('pid')!r}" if holder else "unknown owner"
+        holder_text = (
+            f"nonce {holder['nonce']!r}, pid {holder.get('pid')!r}" if holder else "unknown owner"
+        )
         return RegistryLockTimeout(
             f"{path}: coordinator lease held by {holder_text} for {waited:g}s; "
             "age or PID alone never authorizes taking over or removing another "
-            "owner's lock: recover explicitly after verifying the owner is gone"
+            "owner's lock: explicit recovery required after verifying the owner is gone"
         )
 
-    if _read_lease(path) == nonce_str:
-        yield snapshot
-        return
-    with file_lock(path, timeout_s, math.inf, timeout_error):
-        write_atomic(
-            path,
-            json.dumps(
-                {"nonce": nonce_str, "pid": os.getpid(), "acquired_at": _now_iso()},
-                sort_keys=True,
-            )
-            + "\n",
-        )
-        yield snapshot
+    @contextmanager
+    def _impl() -> Iterator[dict]:
+        existing = _read_lease(path)
+        if isinstance(existing, dict) and existing.get("nonce") == nonce_str:
+            yield snapshot
+            return
 
+        deadline = time.monotonic() + timeout_s
+        delay = 0.01
+        while True:
+            try:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except (FileExistsError, PermissionError):
+                if time.monotonic() >= deadline:
+                    raise timeout_error(timeout_s) from None
+                time.sleep(delay * (0.5 + random.random()))
+                delay = min(delay * 2, 0.5)
+                continue
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(
+                        json.dumps(
+                            {"nonce": nonce_str, "pid": os.getpid(), "acquired_at": _now_iso()},
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    )
+            except BaseException:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+            break
 
+        try:
+            yield snapshot
+        finally:
+            current = _read_lease(path)
+            if isinstance(current, dict) and current.get("nonce") == nonce_str:
+                try:
+                    _sharing_retry(lambda: path.unlink(missing_ok=True))
+                except OSError:
+                    pass
+
+    return _impl()
 def string_nonce(nonce: Any) -> str:
     """Validate the owner nonce given to :func:`owner_lease`."""
     if not isinstance(nonce, str) or not nonce.strip() or "\x00" in nonce:
@@ -573,15 +648,17 @@ def _read_lease(path: Path) -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _registry_lock(root: Path, timeout_s: float) -> Iterator[Path]:
-    """Hold :file:`registry.lock` for one registry.json rewrite.
+def _registry_lock(root: Path, timeout_s: float) -> Any:
+    """Hold ``registry.lock`` for one registry.json rewrite.
 
-    A :func:`records.file_lock` file whose stale takeover is disabled
-    (``math.inf``): the lock records the owner's nonce, PID and acquisition
-    time inside itself so a hung or crashed holder is recovered explicitly,
-    never broken by mtime age or an unrelated PID.
+    A bounded lock with stale takeover disabled (``math.inf`` semantics):
+    the lock records the owner's nonce, PID and acquisition time inside
+    itself so a hung or crashed holder is recovered explicitly, never
+    broken by mtime age or an unrelated PID.
     """
-    path = Path(root) / _LOCK
+    root = Path(root)
+    path = root / _LOCK
+    path.parent.mkdir(parents=True, exist_ok=True)
     identity = {"nonce": uuid.uuid4().hex, "pid": os.getpid(), "acquired_at": _now_iso()}
 
     def timeout_error(waited: float) -> Exception:
@@ -592,13 +669,43 @@ def _registry_lock(root: Path, timeout_s: float) -> Iterator[Path]:
         return RegistryLockTimeout(
             f"{path}: registry lock held by {holder_text} for {waited:g}s; "
             "age or PID alone never authorizes taking over or removing another "
-            "owner's lock: recover explicitly after verifying the owner is gone"
+            "owner's lock: explicit recovery required after verifying the owner is gone"
         )
 
-    with file_lock(path, timeout_s, math.inf, timeout_error):
-        write_atomic(path, json.dumps(identity, sort_keys=True) + "\n")
-        yield path
+    @contextmanager
+    def _impl() -> Iterator[Path]:
+        deadline = time.monotonic() + timeout_s
+        delay = 0.01
+        while True:
+            try:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except (FileExistsError, PermissionError):
+                if time.monotonic() >= deadline:
+                    raise timeout_error(timeout_s) from None
+                time.sleep(delay * (0.5 + random.random()))
+                delay = min(delay * 2, 0.5)
+                continue
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(json.dumps(identity, sort_keys=True) + "\n")
+            except BaseException:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+            break
 
+        try:
+            yield path
+        finally:
+            current = _read_lease(path)
+            if isinstance(current, dict) and current.get("nonce") == identity["nonce"]:
+                try:
+                    _sharing_retry(lambda: path.unlink(missing_ok=True))
+                except OSError:
+                    pass
 
+    return _impl()
 # Keep the late alias so the name above reads exactly once.
 RegistriesError_t = FileNotFoundError
