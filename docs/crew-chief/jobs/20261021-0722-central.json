@@ -2015,36 +2015,322 @@
       "title": "T007 Create isolated long-lived coordinator worktrees in skill/crew-chief/scripts/crew_chief/central_worktrees.py, tests/test_central_worktrees.py; depends on T003",
       "type": "code",
       "risk": "medium",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:23:13.123602+00:00",
+          "duration_s": 177.5,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief first.\n\nBrief is clear: T007, one new module + one new test file. Red test first.\n\nRed confirmed (collection ImportError). Now the minimal implementation.\n\nGreen (11 passed). One hardening tweak: pass `--end-of-options` so a `base` starting with `-` can't be read as a git option.\n\nImplemented T007 in the assigned worktree only.\n\n**Files added**\n- `skill/crew-chief/scripts/crew_chief/central_worktrees.py` — `create(repo, coordinator_id, base=\"HEAD\")` creates branch `central/<uuid>` and worktree `<repo-root>.crew/central-<uuid>` via argv-only git (`shell=False`); validates the canonical UUID (T003 rule), the repository root, and that the base resolves to a commit; rejects existing branches/paths instead of deleting anything; returns `coordinator_id`, `repo`, `worktree`, `branch`, `base_commit`.\n- `tests/test_central_worktrees.py` — 11 tests covering two repos, two coordinators in one repo, dirty checkout preservation (modified + untracked stay untouched and are absent from the new worktree), explicit base, branch collision, orphan folder left intact, unborn HEAD, repo path with spaces, non-canonical IDs, non-repo, missing base, plus an argv recorder asserting no `merge`, `push`, `-D`, `remove` or `prune` ever runs.\n\n**Red → green evidence**\n- Red: `python -m pytest tests/test_central_worktrees.py -q` → `ImportError: cannot import name 'central_worktrees'` (1 collection error).\n- Green: same command → `11 passed in 8.66s`.\n- Immediate regression: `python -m pytest tests/test_worktree.py -q` → `48 passed in 48.09s`.\n\nNothing committed; no full-suite run, no changes outside the two declared files.\n\nDONE\n\nSkipped: neighboring tasks (T008/T011 adapters) and the full suite, per the brief's verification boundary. Risk: `git worktree add` behavior on a stale registered-but-missing worktree is only surfaced as a bounded `WorktreeError`, not repaired.",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_worktrees.py",
+              "added": 132,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_worktrees.py",
+              "added": 222,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-7-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-7-1",
+          "base": null,
+          "steps": 15,
+          "tokens_in": 599669,
+          "tokens_out": 8484,
+          "tokens_total": 608153,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "852719f61eec44106a5a205033eb09938bd1bb9f",
+          "end_sha": "6850659d11302385480e633b9ec130e6b2be8c82",
+          "proof": {
+            "cmd": "python -m pytest tests/test_central_worktrees.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 2,
+          "executor": "antigravity:gpt-oss-120b-medium",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:26:50.145328+00:00",
+          "duration_s": 49.3,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "HEAD at start and end: **6850659**\n\n**Spec‑verdict**\n\n| Acceptance criterion | Status |\n|----------------------|--------|\n| **FR‑002** – unique worktrees/branches, multiple coordinators, preserve dirty source, no merge/push/delete | **done** |\n| **FR‑021** – no private data in public artifacts, tests use temporary homes & fake CLIs | **done** |\n| **SC‑001** – fake‑CLI covers two repos and two worktrees of one repo, unique sessions/branches, unchanged source, no merge/push | **done** |\n| **US1/AC1** – distinct central ID, branch, worktree per repo, source checkout unchanged | **done** |\n\n**Extra files** – none (only the two files added by the diff).\n\n**Quality findings**\n\n> **[!IMPORTANT] Critical**  \n> None identified.\n\n> **[!TIP] Important**  \n> *`_repo_root` catches `WorktreeError` only to re‑raise the same type; catching a generic `Exception` would be safer, but current behaviour still provides a clear error.\n\n> **[!NOTE] Minor**  \n> *The test module imports `from crew_chief import central_worktrees`. This relies on the package being discoverable (e.g., an `__init__.py` in `skill/crew-chief/scripts/crew_chief`). If the package isn’t on `PYTHONPATH` the import could fail, but the test suite runs in the repository root where the path is likely added automatically.  \n> *The `_command_error` helper trims stderr to `_STDERR_MAX` = 500 bytes; this limits diagnostic size but may cut off useful context for very long errors. Not a functional defect.  \n\nAll acceptance criteria are satisfied, no extra modifications were made, and no critical issues were found.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 95888,
+          "tokens_out": 3048,
+          "tokens_total": 34744,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        }
+      ],
       "corrections": [],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode/deepseek-v4.1-flash-free": {
+          "score": 100,
+          "explain": "adherence 4/4 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 4,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "graded_at": "2026-10-21T17:28:06.960823+00:00"
+        }
+      },
       "ref": "T007",
-      "task_text": "Create isolated long-lived coordinator worktrees in skill/crew-chief/scripts/crew_chief/central_worktrees.py, tests/test_central_worktrees.py; depends on T003"
+      "task_text": "Create isolated long-lived coordinator worktrees in skill/crew-chief/scripts/crew_chief/central_worktrees.py, tests/test_central_worktrees.py; depends on T003",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 62.6 (opencode:opencode/deepseek-v4.1-flash-free); tier free",
+          "at": "2026-10-21T17:22:00.683094+00:00"
+        },
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 62.6 (opencode:opencode/deepseek-v4.1-flash-free); tier free",
+          "at": "2026-10-21T17:23:08.971209+00:00"
+        },
+        {
+          "pick": "antigravity:gpt-oss-120b-medium",
+          "reason": "unrated, no history (antigravity:gpt-oss-120b-medium); tier free; reviewer outside the family of: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:26:47.141667+00:00",
+          "role": "review"
+        }
+      ],
+      "next_attempt": 3,
+      "accepted": {
+        "attempt": 1,
+        "branch": "crew/20261021-0722-central-7-1",
+        "at": "2026-10-21T17:28:07.705162+00:00"
+      }
     },
     {
       "n": 8,
       "title": "T008 Adapt Claude Code session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_claude.py, tests/test_coordinator_claude.py; depends on T001, T005",
       "type": "code",
       "risk": "high",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:23:22.483932+00:00",
+          "duration_s": 321.2,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "- `parse_events()` normalizes `session_id`, assistant-only `text` (result-field fallback, never tool payloads), measured `tokens_in` (incl. cache) / `tokens_out` / total, `estimated` character/4 when usage is missing, `model`, `quota_family`, `permission_denied` (tool names only), and bounded `error` from result failures, conflicting session IDs, unparseable output or stderr; output capped at 16 MiB chars, text at 1 MiB.\n28 tests cover first launch, exact resume identity, session capture, stream-json usage, estimates, quota (result and stderr), malformed/unusable events, conflicting sessions, missing capabilities, restrictive no-prompt denial, tool-text impersonation, permission denials, BOM/CRLF, bounds and shell metacharacters — all with fake stubs, no model calls.\n\nI'll read the brief first.\n\nNow I'll write the focused test file first (red step).\n\nRed confirmed (module missing). Now the adapter.\n\nImplemented T008 inside the worktree.\n\n**Red first:** `python -m pytest tests/test_coordinator_claude.py -q` → `1 error` (`ImportError: cannot import name 'coordinator_claude'`), before any implementation existed.\n\n**Implementation:** `skill/crew-chief/scripts/crew_chief/coordinator_claude.py`\n- `probe()` runs only `--version` and `--help` (bounded 10 s), parses version/capabilities (`--resume`, `stream-json`, `--verbose`, bypass, permission modes) and reports `available`/`restricted_headless`/`error`; capability results are cached per executable.\n- `headless(record, prompt)` builds exact argv (`-p --output-format stream-json --verbose`, `--resume SESSION` when persisted) and validates the prompt (non-empty, ≤128 KiB); the prompt is never placed in argv — the caller writes stdin.\n- Permissions come from `record[\"authorization\"][\"settings\"][\"coordinator_unrestricted\"]`, default `True`; non-boolean values raise instead of silently enabling bypass. Restricted headless adds a probed deny-without-prompt mode (`dontAsk`, else `plan`) or raises a capability error rather than hanging on approval.\n- `interactive(record)` resumes the exact persisted session in the calling terminal (no pty), constrained to restrictive settings when asked, and refuses without a session.\n\n**Green proof:** `python -m pytest tests/test_coordinator_claude.py -q` → `28 passed`. Relevant immediate regression: `python -m pytest tests/test_coordinator_protocol.py tests/test_conftest.py -q` → `53 passed`.\n\n\nSkipped: no CLI-version matrix (capability probe defers that to preflight) and no real-session smoke test; `parse_events` estimate covers answer characters only, which understates input tokens — marked `estimated` for downstream accounting.\n\nDONE",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/coordinator_claude.py",
+              "added": 399,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_coordinator_claude.py",
+              "added": 453,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-8-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-8-1",
+          "base": null,
+          "steps": 31,
+          "tokens_in": 1885577,
+          "tokens_out": 31793,
+          "tokens_total": 1917370,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "852719f61eec44106a5a205033eb09938bd1bb9f",
+          "end_sha": "f0fb0d2605e61f8dbd35c533361625e613be8897",
+          "proof": {
+            "cmd": "python -m pytest tests/test_coordinator_claude.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 2,
+          "executor": "antigravity:gpt-oss-120b-medium",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:29:07.420479+00:00",
+          "duration_s": 14.9,
+          "status": "failed",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 20560,
+          "tokens_out": 355,
+          "tokens_total": 5683,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Coordinator executable reproducer: parse_events with NaN raises ValueError, Infinity raises OverflowError, negative usage returns negative totals; headless ignores missing required flags. Require strict finite nonnegative integer usage/error handling, validated mandatory capabilities before argv, and no plan-mode assumption of deny-without-prompt. Keep adapter argv-only contract; tests isolated.",
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:30:02.088278+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode/deepseek-v4.1-flash-free": {
+          "score": 42,
+          "explain": "adherence 4/7 → 57.1; 1 correction −15; 0 extra; penalties none → 42",
+          "corrections": 1,
+          "done": 4,
+          "missing": 3,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "graded_at": "2026-10-21T17:30:02.363849+00:00"
+        }
+      },
       "ref": "T008",
-      "task_text": "Adapt Claude Code session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_claude.py, tests/test_coordinator_claude.py; depends on T001, T005"
+      "task_text": "Adapt Claude Code session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_claude.py, tests/test_coordinator_claude.py; depends on T001, T005",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 62.6 (opencode:opencode/deepseek-v4.1-flash-free); tier free",
+          "at": "2026-10-21T17:23:18.016951+00:00"
+        },
+        {
+          "pick": "antigravity:gpt-oss-120b-medium",
+          "reason": "unrated, no history (antigravity:gpt-oss-120b-medium); tier free; reviewer outside the family of: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:29:04.540733+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 61.7 (opencode:opencode-go/beam-free); tier free",
+          "at": "2026-10-21T17:30:14.117262+00:00"
+        }
+      ],
+      "next_attempt": 4
     },
     {
       "n": 9,
       "title": "T009 Adapt Codex session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_codex.py, tests/test_coordinator_codex.py; depends on T001, T005",
       "type": "code",
       "risk": "high",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:23:24.917699+00:00",
+          "duration_s": 394.0,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "- `parse_events(stdout, stderr)` — normalized exactly `session_id, text, tokens_in, tokens_out, tokens_total, estimated, model, quota_family, error`; reported usage wins, otherwise character/4 estimate marked `estimated`; quota errors map to `sub:codex` via the existing `quota_family`/`QUOTA_PATTERNS`; malformed streams yield a visible error, never a guessed answer.\n\nI'll start by reading the brief file.\n\nNow I'll write the failing test first, as the brief requires.\n\nRed confirmed. Now the implementation:\n\nDone. Summary:\n\n**Implemented** `skill/crew-chief/scripts/crew_chief/coordinator_codex.py`:\n- `probe(record=None)` — resolves `codex` on PATH, reads version/help, reports `exec_json`, `exec_resume`, `interactive_resume`, `bypass`, plus explicit `missing`/`supported`/`error` (bypass only required for unrestricted launches).\n- `headless(record, prompt)` — `codex exec --json -` on the first round, `codex exec resume --json SESSION -` afterwards, prompt on stdin, cwd = `record[\"worktree\"]`, bypass flag only when `authorization.settings.coordinator_unrestricted` is not `False`, bounded timeout from `central_round_timeout_s` (killed tree, no hang). Rejects a reported session different from the requested one; nonzero exits/timeouts raise `CodexError` retaining bounded stdout/stderr/returncode.\n- `interactive(record)` — argv for `codex resume SESSION` (`+ bypass` when unrestricted); no pty/tmux dependency; requires a persisted `session_id`.\n- Windows `.cmd`/`.bat` shims routed through `cmd.exe` with `shell=False`; the prompt never enters a command line.\n\n**Observed proof**\n- Red before implementation: `python -m pytest tests/test_coordinator_codex.py -q` → collection error, `ModuleNotFoundError: crew_chief.coordinator_codex`.\n- Green: same command → `17 passed in 3.88s`.\n- Immediate regressions: `pytest tests/test_coordinator_codex.py tests/test_coordinator_protocol.py tests/test_tools.py -q` → `107 passed in 5.88s`.\n\nSkipped: full suite, any live CLI/model call, commit. Note: `headless` was implemented as run-and-return-stdout-lines (stderr travels on failures) since the declared signature left that open; `interactive` returns argv because the terminal must own it.\n\nDONE",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/coordinator_codex.py",
+              "added": 442,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_coordinator_codex.py",
+              "added": 313,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-9-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-9-1",
+          "base": null,
+          "steps": 43,
+          "tokens_in": 2557298,
+          "tokens_out": 31497,
+          "tokens_total": 2588795,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "852719f61eec44106a5a205033eb09938bd1bb9f",
+          "end_sha": "1e939445342400b0d85d5bbe43577ab01124f72c",
+          "proof": {
+            "cmd": "python -m pytest tests/test_coordinator_codex.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Coordinator red executable check with injected Popen proves headless spawns instead of returning argv; breaks declared adapter composition with T012. Remove process lifecycle from adapter, enforce probed restrictive deny/no-prompt or capability error, exact session validation and finite nonnegative integer usage. Preserve scoped tests, update incorrect test assumptions.",
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:31:34.215591+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode/deepseek-v4.1-flash-free": {
+          "score": 23,
+          "explain": "adherence 3/7 → 42.9; 1 correction −15; 1 extra −5; penalties none → 23",
+          "corrections": 1,
+          "done": 3,
+          "missing": 4,
+          "extra": 1,
+          "penalties": [],
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "graded_at": "2026-10-21T17:31:34.785201+00:00"
+        }
+      },
       "ref": "T009",
-      "task_text": "Adapt Codex session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_codex.py, tests/test_coordinator_codex.py; depends on T001, T005"
+      "task_text": "Adapt Codex session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_codex.py, tests/test_coordinator_codex.py; depends on T001, T005",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 62.6 (opencode:opencode/deepseek-v4.1-flash-free); tier free",
+          "at": "2026-10-21T17:23:19.102347+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 61.7 (opencode:opencode-go/beam-free); tier free",
+          "at": "2026-10-21T17:31:41.842286+00:00"
+        }
+      ],
+      "next_attempt": 3
     },
     {
       "n": 10,
@@ -2087,12 +2373,112 @@
       "title": "T013 Add explicit command-only installation mode in tests/test_command_install_cli.py, install.py; depends on T006",
       "type": "code",
       "risk": "medium",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:23:22.268077+00:00",
+          "duration_s": 394.3,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief first.\n\nNow I'll write the focused red tests first.\n\nRed confirmed (16 failed, 1 passed). Now the implementation.\n\nDone. Summary of the change:\n\n**`install.py`**\n- `--command` installs only the `acc` wrapper for this released bundle by calling T006's `install_command(...)` with `sys.executable`, the released entry script and `sys.platform`.\n- `--bin-dir DIR` overrides the destination; otherwise `default_bin_dir()` picks `%LOCALAPPDATA%/agent-crew-chief/bin` or `~/.local/bin`.\n- Positional project mode is untouched (still installs skill/snippet/preferences); both can be combined explicitly.\n- No project files, no global preferences, no `PATH` edits — it prints the wrapper path plus the \"add it to PATH yourself\" hint. Unrelated wrappers are still refused; wrapper errors exit 2 with one line.\n\n**`tests/test_command_install_cli.py`** (new, 17 tests)\n- Command-only: wrapper installed, no project files/`AGENTS.md`/`docs`, sentinel preferences and `PATH` unchanged, default bin dir, spaces/Unicode paths.\n- Three OS families by content (windows→`acc.cmd` CRLF, linux/macos→executable `acc`), native wrapper actually executed against a fake release entry.\n- Updating an owned wrapper, idempotent reinstall, legacy project install still works, combined mode, legacy script bytes untouched and still runs, unrelated-wrapper refusal, bad source, usage error.\n\nProof:\n- Red before implementation: `python -m pytest tests/test_command_install_cli.py -q` → **16 failed, 1 passed** (only the pre-existing project-mode test passed).\n- Green: `python -m pytest tests/test_command_install_cli.py -q` → **17 passed**.\n- Immediate regressions: `tests/test_install.py tests/test_command_install.py` → 48 passed, 1 skipped; adding `tests/test_cli.py` → **129 passed, 1 skipped**.\n\nSkipped: no `--platform`, `--python` or `--source` flags (not in the declared interface; bad source is tested via a bundle missing `skill/`), and no README/docs edits since they are outside the allowed files. Risk: in explicit combined mode the project is installed before a wrapper refusal can be detected, so a refused wrapper leaves the project install done and exits 2.\n\nDONE",
+          "diffstat": [
+            {
+              "file": "install.py",
+              "added": 72,
+              "deleted": 6
+            },
+            {
+              "file": "tests/test_command_install_cli.py",
+              "added": 397,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-13-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-13-1",
+          "base": null,
+          "steps": 38,
+          "tokens_in": 2044866,
+          "tokens_out": 18333,
+          "tokens_total": 2063199,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "852719f61eec44106a5a205033eb09938bd1bb9f",
+          "end_sha": "cfaea26c7fda4f37c298cb54c6e53a933b291dc7",
+          "proof": {
+            "cmd": "python -m pytest tests/test_command_install_cli.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 2,
+          "executor": "antigravity:gemini-3.8-flash-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:31:34.968270+00:00",
+          "duration_s": 61.5,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "cfaea26c7fda4f37c298cb54c6e53a933b291dc7\n\n## Spec verdict\n\n- **FR-001**: done — `install.py --command` added, installs user-scoped wrapper (`acc.cmd` / `acc`) without requiring project directory, retains legacy script/entry points, and leaves PATH/preferences untouched while outputting guidance.\n- **FR-021**: done — Tests mock environments using temporary directories (`tmp_path`), fake CLIs/sentinels, and isolated `HOME`/`USERPROFILE`/`LOCALAPPDATA`/`AGENT_CREW_CHIEF_GLOBAL_PREFS`. No credentials, personal paths, or real user directories are accessed.\n- **FR-022**: done — File reads and writes specify UTF-8 encoding with preservation of newlines and byte-level verification.\n- **SC-007**: done — Comprehensive coverage across Windows, Linux, and macOS platforms, spaces/Unicode paths (`pacote ação`, `binários do usuário`), preference isolation, and legacy entry point compatibility.\n- **US6/AC1**: done — Command installation targets wrapper in user bin directory, updates target accurately, preserves legacy script, and leaves configuration intact.\n\n**extra**:\n- None. Changes are strictly confined to the allowed files (`install.py`, `tests/test_command_install_cli.py`).\n\n---\n\n## Quality verdict\n\n- **Findings**: None (no `Critical`, `Important`, or `Minor` issues found).\n  - Clean modular delegation to `crew_chief.command_install`.\n  - Proper error handling and argument validation in [install.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-13-1/install.py#L302-L334) returning exit code 2 with clean one-line messages.\n  - Test suite in [tests/test_command_install_cli.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-13-1/tests/test_command_install_cli.py) thoroughly isolates environments and validates idempotency, ownership validation, foreign file refusal, and subprocess execution across OS families.\n  - Automated proof passes: 17 passed.\n\ncfaea26c7fda4f37c298cb54c6e53a933b291dc7\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 160936,
+          "tokens_out": 1163,
+          "tokens_total": 143625,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        }
+      ],
       "corrections": [],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode/deepseek-v4.1-flash-free": {
+          "score": 100,
+          "explain": "adherence 5/5 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 5,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "graded_at": "2026-10-21T17:33:13.472937+00:00"
+        }
+      },
       "ref": "T013",
-      "task_text": "Add explicit command-only installation mode in tests/test_command_install_cli.py, install.py; depends on T006"
+      "task_text": "Add explicit command-only installation mode in tests/test_command_install_cli.py, install.py; depends on T006",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 62.6 (opencode:opencode/deepseek-v4.1-flash-free); tier free",
+          "at": "2026-10-21T17:23:18.905176+00:00"
+        },
+        {
+          "pick": "antigravity:gemini-3.8-flash-low",
+          "reason": "unrated, no history (antigravity:gemini-3.8-flash-low); tier free; reviewer outside the family of: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:31:31.432666+00:00",
+          "role": "review"
+        }
+      ],
+      "next_attempt": 3,
+      "accepted": {
+        "attempt": 1,
+        "branch": "crew/20261021-0722-central-13-1",
+        "at": "2026-10-21T17:33:14.267685+00:00"
+      }
     },
     {
       "n": 14,
@@ -2671,6 +3057,30 @@
       "n": 42,
       "text": "PHASE 1 FINAL REPORT: T001-T006 accepted (6/6), none skipped; T007-T040 have zero attempts. This resumption completed only the pending free DeepSeek T003 source-hygiene correction through rendered review, free Muse Spark Contributor independent-family review at exact HEAD, grade 100, ACC accept and immediate branch proof. Fresh branch proofs: T001 181 passed; T002 17 passed; T003 36 passed/1 skipped; T004 25 passed/1 skipped; T005 50 passed; T006 36 passed/1 skipped; prior failing source guard 1 passed. Required full python -m pytest -q on feat/v0.4-central: 1098 passed, 4 skipped in 455.40s, exit 0, no flaky retry. Execution attempts used only free OpenCode GLM Flash, Beam, LongCat, MiniMax and DeepSeek; coordinator fallback for T003/T004/T005 followed two free failures and remains attributed in earlier rulings. Successful final task reviews: T001 Opus Low; T002 Gemini Argon Low; T003 Gemini Flash Low and correction Muse Spark Contributor; T004 Opus Low; T005 Gemini Argon Low; T006 Nemotron Ultra Free. Additional reviewer attempts and failures remain in job history. Economy: free work: 100% of pieces, 100% of recorded tokens; coordinator: not recorded; 3.7 attempts/piece; mean score 55. Alerts: attempts 3.7 above 2.5 and recorded job time 349 min above 180; no invented savings/usage. Inspected accepted diffs: no unwanted existing-code/test deletion; BOM reader change is required. Approved spec/plan/sidecar unchanged; only six task checkboxes accepted. No owner questions, no setup/global preference edits, no push/tag/main integration. Phase 2 is technically ready (T007/T008/T009/T013), awaiting explicit authorization. Keep shared job open and preserve worktree; web/Orca unapproved. Report is this durable job record.",
       "at": "2026-10-21T17:20:29.458472+00:00",
+      "promoted": null
+    },
+    {
+      "n": 43,
+      "text": "Phase 2 authorized only: resume from spec status/job; clean initial tree means no pending metadata commit. Policy compact planning, dependency context, full suite verification, ACC free delegation. Execute T007-T014 only, never redo accepted Phase 1. Author Paulo Roos; no coauthor trailers. Adapter internal integration uses canonical resolved preference keys in record.authorization.settings, session_id/worktree at record top level; this preserves strict accepted registry schema. Record future owner US7 requirement unchanged and apply only when Phase 3 is explicitly started. Discovery reports no model changes; no setup or global preference edits.",
+      "at": "2026-10-21T17:22:55.457180+00:00",
+      "promoted": null
+    },
+    {
+      "n": 44,
+      "text": "T007 free GPT-OSS independent review confirms pinned short HEAD 6850659, all four scoped criteria done and no extras. Coordinator read entire two-new-file diff: no baseline deletion. Generic catch suggestion is not a demonstrated defect (Git required); conftest explicitly owns test imports and bounded diagnostics are intentional. Accept the minimal worktree module; no cleanup/recovery or future launch work added. Red/green evidence and 48 existing worktree regressions retained in attempt note.",
+      "at": "2026-10-21T17:28:06.588698+00:00",
+      "promoted": null
+    },
+    {
+      "n": 45,
+      "text": "T007 immediate post-accept branch proof: 11 passed in 7.26s. T013 Gemini Flash Low independent review confirms full HEAD cfaea26c7fda4f37c298cb54c6e53a933b291dc7 at both ends, five scoped criteria done, no extras or quality findings. Coordinator inspected complete diff: six replaced old installer lines implement optional positional argument/routing; no unwanted deletion of behavior/tests. Red 16 failed/1 passed and green 17 passed recorded; existing installer/CLI regressions 129 passed/1 skipped. Accept then repeat proof.",
+      "at": "2026-10-21T17:33:13.200972+00:00",
+      "promoted": null
+    },
+    {
+      "n": 46,
+      "text": "T013 post-accept branch proof: 17 passed in 15.19s. Mid-phase economy is 100 percent recorded free work/tokens, coordinator not recorded, 2.6 attempts/piece, mean score 57; inherited job-time alert 370 min above 180 and attempts above 2.5 remain visible. Response: narrow red-backed correction briefs and free independent reviews; no paid escalation, no invented coordinator usage/savings. Checkpoint records before further work.",
+      "at": "2026-10-21T17:33:44.203953+00:00",
       "promoted": null
     }
   ]
