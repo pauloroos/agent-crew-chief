@@ -28,13 +28,15 @@ authorization evidence on a failed or successful launch:
 
 Only ``spec.md``, ``plan.md``, ``tasks.md`` and ``crew.toml`` travel into the
 worktree, after the existing brief secret/sensitive-path checks. Neighbours,
-symlinks, traversal and collisions are refused.
+symlinks, junctions, traversal and collisions are refused.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -250,11 +252,17 @@ def _select_spec(spec_dir: Path | None, mode: str, sensitive: list[str]) -> tupl
     try:
         if source.is_symlink():
             raise PreflightError(f"selected spec directory is a symbolic link: {source}")
+        if _is_reparse_point(source):
+            raise PreflightError(
+                f"selected spec directory is a link or junction: {source}"
+            )
         root = source.resolve(strict=True)
     except OSError as exc:
         raise PreflightError(f"selected spec directory is not readable: {exc}")
     if not root.is_dir():
         raise PreflightError(f"selected spec directory not found: {source}")
+    if briefcheck.path_is_sensitive(str(root), sensitive):
+        raise PreflightError("selected spec is in a configured sensitive path")
 
     files: dict[str, bytes] = {}
     for name in SPEC_FILES:
@@ -284,6 +292,20 @@ def _select_spec(spec_dir: Path | None, mode: str, sensitive: list[str]) -> tupl
             )
         files[name] = data
     return root, files
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """True for a Windows junction or other reparse point.
+
+    ``Path.is_symlink`` is false for a directory junction, so a Windows
+    alias would otherwise be followed silently.
+    """
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(getattr(info, "st_file_attributes", 0) & flag)
 
 
 def _digest(files: dict[str, bytes]) -> str:

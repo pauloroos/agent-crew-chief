@@ -680,3 +680,46 @@ def test_selected_spec_dir_matching_configured_sensitive_path_is_refused(
     assert prefs.read_bytes() == before_prefs
     for path in spec.iterdir():
         assert path.read_bytes() == before_spec[path.name]
+
+
+def test_selected_spec_behind_a_junction_alias_is_refused(tmp_path, fake_bin):
+    log = _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree = _worktree(tmp_path)
+    prefs = worktree / "docs" / "crew-chief" / "preferences.toml"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_text('sensitive_paths = ["external-spec"]' + chr(10), encoding="utf-8")
+    spec = _spec_dir(tmp_path)
+    alias = tmp_path / "selected-spec"
+    with _directory_link(alias, spec):
+        result = preflight(
+            _record(worktree), "synthetic", alias, False, _release(tmp_path)
+        )
+    assert result["ok"] is False
+    assert "sensitive" in result["error"] or "link" in result["error"].casefold()
+    assert not (worktree / "specs").exists()
+    assert _calls(log) == []
+
+
+def test_selected_spec_resolving_into_a_sensitive_path_is_refused(tmp_path, fake_bin):
+    log = _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree = _worktree(tmp_path)
+    prefs = worktree / "docs" / "crew-chief" / "preferences.toml"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_text(
+        'sensitive_paths = ["outside/external-spec"]' + chr(10), encoding="utf-8"
+    )
+    outside = tmp_path / "outside"
+    real = _spec_dir(outside)
+    alias_parent = tmp_path / "alias"
+    with _directory_link(alias_parent, outside):
+        result = preflight(
+            _record(worktree),
+            "synthetic",
+            alias_parent / real.name,
+            False,
+            _release(tmp_path),
+        )
+    assert result["ok"] is False
+    assert "sensitive" in result["error"]
+    assert not (worktree / "specs").exists()
+    assert _calls(log) == []
