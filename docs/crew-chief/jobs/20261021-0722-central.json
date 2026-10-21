@@ -4335,12 +4335,48 @@
       "title": "T014 Record idempotent coordinator usage in active jobs in skill/crew-chief/scripts/crew_chief/central_usage.py, tests/test_central_usage.py; depends on T003, T012",
       "type": "code",
       "risk": "high",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T22:45:35.434197+00:00",
+          "duration_s": 5.8,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Rate limit exceeded. Please try again later. (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-14-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-14-1",
+          "base": null,
+          "steps": 1,
+          "tokens_in": 1346,
+          "tokens_out": 18,
+          "tokens_total": 1364,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false,
+          "start_sha": "11217c03aee2346438344dd6c9d10b3b22bf093f",
+          "end_sha": "11217c03aee2346438344dd6c9d10b3b22bf093f"
+        }
+      ],
       "corrections": [],
       "escalations": [],
       "grades": {},
       "ref": "T014",
-      "task_text": "Record idempotent coordinator usage in active jobs in skill/crew-chief/scripts/crew_chief/central_usage.py, tests/test_central_usage.py; depends on T003, T012"
+      "task_text": "Record idempotent coordinator usage in active jobs in skill/crew-chief/scripts/crew_chief/central_usage.py, tests/test_central_usage.py; depends on T003, T012",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/beam-free, opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode-go/minimax-m3.1-flash-free, opencode:opencode/beam-free, opencode:opencode/flint-40b-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/longcat-2.5-preview-free, opencode:opencode/mimo-v2.6-flash-free, opencode:opencode/minimax-m3.1-flash-free, opencode:opencode/nemotron-3-ultra-free, opencode:opencode/nemotron-3.5-lightning-free, opencode:opencode/nemotron-3.5-super-vl-free",
+          "at": "2026-10-21T22:45:24.454942+00:00"
+        }
+      ],
+      "next_attempt": 2
     },
     {
       "n": 15,
@@ -5099,6 +5135,18 @@
       "n": 74,
       "text": "T012 supplemental Gemini Flash Low review explicitly confirms full accepted HEAD ba7acb2c883b7bf063f7a413f212ef855ae78b48 at both ends, proof 24 passed in 11.37s, all six scoped criteria and no Critical/Important findings. git diff c630141..HEAD on both task files is empty. Reviewer minor heapq.nlargest/filename-order statement is factually incorrect: actual implementation uses bounded min-heap of (mtime_ns,path), then newest-first reads, with >256-round regression. No fix warranted for that comment. Exactly-once job accounting is T014, not claimed complete by T012. Proceed T014 only.",
       "at": "2026-10-21T22:45:20.635286+00:00",
+      "promoted": null
+    },
+    {
+      "n": 75,
+      "text": "T014 first free DeepSeek attempt returned quota in 5.8s with no changes. Every owner-allowed OpenCode *-free executor is now in quota/cooldown; strict-allowlist pick has no executor. Begin owner-required 15-minute wait and retry, up to four waits/retries. No paid or contributor hands-on executor, no coordinator fallback on T014 after only one attempt. During the wait run the requested full branch suite and inspect delivery metadata, then retry only Phase 2 pending T014.",
+      "at": "2026-10-21T22:46:46.085748+00:00",
+      "promoted": null
+    },
+    {
+      "n": 76,
+      "text": "Requested full branch suite on accepted Phase-2 state through T012: python -m pytest -q -> 1279 passed, 5 skipped in 500.51s (8m20s), exit 0, no flaky rerun needed. T014 remains pending with no code after free quota attempt; if T014 later lands rerun full suite after acceptance. Author audit from Phase-1 boundary: all commits Paulo Roos <142347456+pauloroos@users.noreply.github.com>, zero Co-Authored-By trailers. Global preference SHA-256 sentinel unchanged. No architecture/scope/data question identified. First 15-minute quota retry due no earlier than 23:01:46 UTC.",
+      "at": "2026-10-21T22:55:24.831736+00:00",
       "promoted": null
     }
   ]
