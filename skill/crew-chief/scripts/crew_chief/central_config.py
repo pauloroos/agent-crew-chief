@@ -212,7 +212,20 @@ def resolve_settings(
     restricted_found, restricted_raw, restricted_label = _first_present(
         overrides, _LAUNCH_RESTRICTED, ignore_none=True
     )
-    if unrestricted_found:
+    if unrestricted_found and restricted_found:
+        # Both flags supplied: validate both strictly and reject the
+        # contradictory combinations. None means "unset", so only a supplied
+        # pair is compared.
+        unrestricted = _validate_bool(unrestricted_label, unrestricted_raw)
+        restricted = _validate_bool(restricted_label, restricted_raw)
+        if unrestricted == restricted:
+            raise CentralConfigError(
+                "unrestricted and restricted are contradictory; "
+                "supply only one of the two flags"
+            )
+        # Consistent pair: unrestricted=True/restricted=False or
+        # unrestricted=False/restricted=True both resolve to `unrestricted`.
+    elif unrestricted_found:
         unrestricted = _validate_bool(unrestricted_label, unrestricted_raw)
     elif restricted_found:
         unrestricted = not _validate_bool(restricted_label, restricted_raw)

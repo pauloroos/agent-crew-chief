@@ -271,6 +271,50 @@ def test_launch_explicit_false_is_preserved():
     assert result["coordinator_unrestricted"] is True
 
 
+def test_both_flags_true_is_rejected():
+    with pytest.raises(CentralConfigError, match="contradictory"):
+        resolve_settings({}, {}, {"unrestricted": True, "restricted": True}, "codex")
+
+
+def test_both_flags_false_is_rejected():
+    with pytest.raises(CentralConfigError, match="contradictory"):
+        resolve_settings({}, {}, {"unrestricted": False, "restricted": False}, "codex")
+
+
+def test_both_flags_validated_when_unrestricted_present():
+    # A malformed restricted value must not be ignored because unrestricted is
+    # also supplied.
+    with pytest.raises(CentralConfigError, match="restricted must be a boolean"):
+        resolve_settings({}, {}, {"unrestricted": True, "restricted": "false"}, "codex")
+
+
+def test_both_flags_validated_when_restricted_present():
+    with pytest.raises(CentralConfigError, match="unrestricted must be a boolean"):
+        resolve_settings({}, {}, {"unrestricted": "true", "restricted": False}, "codex")
+
+
+def test_consistent_flags_remain_supported():
+    result = resolve_settings({}, {}, {"unrestricted": True, "restricted": False}, "codex")
+    assert result["coordinator_unrestricted"] is True
+
+    result = resolve_settings({}, {}, {"unrestricted": False, "restricted": True}, "codex")
+    assert result["coordinator_unrestricted"] is False
+
+
+def test_both_flags_none_unset_behavior_kept():
+    result = resolve_settings(
+        {}, {"coordinator_unrestricted": False},
+        {"unrestricted": None, "restricted": True}, "codex",
+    )
+    assert result["coordinator_unrestricted"] is False
+
+    result = resolve_settings(
+        {}, {"coordinator_unrestricted": False},
+        {"unrestricted": True, "restricted": None}, "codex",
+    )
+    assert result["coordinator_unrestricted"] is True
+
+
 @pytest.mark.parametrize("bad", ["false", "true", "no", "0", 0, 1, 0.0, [], {}, (), ["false"]])
 def test_preference_unrestricted_rejects_non_bool(bad):
     with pytest.raises(CentralConfigError, match="coordinator_unrestricted must be a boolean"):
