@@ -1,0 +1,5 @@
+# Project settings; global executor and cost preferences remain authoritative.
+issue_tracker = "none"
+sensitive_paths = []
+changelog = "keep-a-changelog"
+changelog_path = "CHANGELOG.md"

@@ -1,0 +1,445 @@
+# ACC v0.3.4 sidecar. Task text is bound to tasks.md; re-import after any edit.
+global_constraints = ["Python 3.11+ stdlib only at runtime; Git is the only required external tool.", "Support Windows, Linux and macOS; pytest is a development-only dependency.", "No AI co-author trailers in commits or generated commit instructions.", "Read UTF-8 with optional BOM and CRLF; preserve existing BOM and newline style when editing text.", "Tests use temporary HOME/USERPROFILE, AGENT_CREW_CHIEF_GLOBAL_PREFS and AGENT_CREW_CHIEF_CENTRAL_DIR; never touch real ~/.config or invoke live model CLIs.", "No private data, client names, credentials or personal paths in committed artifacts.", "Never merge/push coordinator branches or remove their worktrees automatically.", "Preserve v0.3.4 SDD, free-first selection, spending gates and job history.", "Every task owns its proof/test support; prerequisites must already be accepted, never supplied by a later task.", "FR/SC references trace shared requirements; assess only this task's declared deliverable and verification boundary, without implementing neighboring tasks."]
+
+spec_dir = "specs/001-central"
+job = "20261021-0722-central"
+
+[tasks.T001]
+task = "Resolve central roots and coordinator settings in skill/crew-chief/scripts/crew_chief/central_config.py, tests/test_central_config.py"
+type = "code"
+risk = "medium"
+accept = ["FR-003", "FR-006", "FR-019", "FR-021", "US1/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_config.py", "tests/test_central_config.py"]
+proof = "python -m pytest tests/test_central_config.py -q"
+expect = "passed"
+depends = []
+interfaces = { consumes = "Python pathlib/os only; callers inject home/env and preference dictionaries.", produces = "resolve_root(explicit: str | None, env: dict[str,str], home: Path) -> Path; resolve_settings(global_data: dict, project_data: dict, overrides: dict, caller: str | None) -> dict", verification = "Check explicit/env/home root precedence; launch/project/global/caller precedence; unknown CLI; non-finite/negative timing; no filesystem writes.", design = "Read the relevant contract only in specs/001-central/plan.md: Configuration and registry" }
+
+[tasks.T002]
+task = "Expose validated central preference keys in tests/test_central_preferences.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml; depends on T001"
+type = "code"
+risk = "medium"
+accept = ["FR-003", "FR-019", "FR-022", "US1/AC3"]
+files = ["tests/test_central_preferences.py", "skill/crew-chief/scripts/crew_chief/config.py", "skill/crew-chief/templates/preferences.example.toml"]
+proof = "python -m pytest tests/test_central_preferences.py -q"
+expect = "passed"
+depends = ["T001"]
+interfaces = { consumes = "Existing config.load_prefs(project) -> Prefs and resolve_settings from T001.", produces = "Prefs gains coordinator_default, coordinator_unrestricted, central_poll_s, central_round_timeout_s, central_backend with plan defaults.", verification = "Load new scalars with project-over-global precedence; preserve unknown existing settings; parse BOM/CRLF and leave input bytes unchanged.", design = "Read the relevant contract only in specs/001-central/plan.md: Configuration and registry" }
+
+[tasks.T003]
+task = "Persist versioned coordinator registry records in skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_registry.py; depends on T001"
+type = "code"
+risk = "medium"
+accept = ["FR-006", "FR-022", "FR-024", "US1/AC1"]
+files = ["skill/crew-chief/scripts/crew_chief/central_registry.py", "tests/test_central_registry.py"]
+proof = "python -m pytest tests/test_central_registry.py -q"
+expect = "passed"
+depends = ["T001"]
+interfaces = { consumes = "T001 resolve_root; existing records.write_atomic(path,text) and file_lock; registry schema in plan.", produces = "load_registry(root: Path) -> dict; register(root: Path, record: dict) -> str; update_record(root: Path, coordinator_id: str, changes: dict) -> dict; owner_lease(root: Path, coordinator_id: str, nonce: str) -> context manager", verification = "Test concurrent register/update without lost entries; BOM/CRLF; invalid UUID/schema/path; atomic-write interruption; bounded reads and contested lease without unsafe stale-lock takeover.", design = "Read the relevant contract only in specs/001-central/plan.md: Configuration and registry" }
+
+[tasks.T004]
+task = "Deliver durable inbox and outbox envelopes in skill/crew-chief/scripts/crew_chief/central_messages.py, tests/test_central_messages.py; depends on T003"
+type = "code"
+risk = "medium"
+accept = ["FR-007", "FR-008", "FR-022", "FR-024", "SC-003", "US2/AC1"]
+files = ["skill/crew-chief/scripts/crew_chief/central_messages.py", "tests/test_central_messages.py"]
+proof = "python -m pytest tests/test_central_messages.py -q"
+expect = "passed"
+depends = ["T003"]
+interfaces = { consumes = "T003 UUID/path validation and atomic storage; message schema and limits in plan.", produces = "send(root: Path, coordinator_id: str, envelope: dict) -> str; pending(root: Path, coordinator_id: str, direction: str) -> list[dict]; acknowledge(root: Path, coordinator_id: str, message_id: str, round_id: str) -> None; questions(root: Path) -> list[dict]", verification = "Test send/ack/reply IDs, concurrent sends, crash before ack, replay without duplicate replies, question correlation, malformed/oversized bodies and symlink/traversal refusal.", design = "Read the relevant contract only in specs/001-central/plan.md: File messages and coordinator round protocol" }
+
+[tasks.T005]
+task = "Define bounded coordinator round prompts and results in skill/crew-chief/scripts/crew_chief/coordinator_protocol.py, tests/test_coordinator_protocol.py"
+type = "code"
+risk = "medium"
+accept = ["FR-004", "FR-008", "FR-009", "FR-018", "US1/AC2", "US2/AC2"]
+files = ["skill/crew-chief/scripts/crew_chief/coordinator_protocol.py", "tests/test_coordinator_protocol.py"]
+proof = "python -m pytest tests/test_coordinator_protocol.py -q"
+expect = "passed"
+depends = []
+interfaces = { consumes = "Plain dict protocol only; existing ACC command names, three launch modes, ACC_ROUND result schema in plan.", produces = "render_round(record: dict, request: str, inbox: list[dict], checkpoint: dict) -> str; parse_round(text: str) -> dict; ready_tasks(tasks: list[dict], blocked_refs: list[str]) -> list[str]", verification = "Test bounded context and each mode; only dependent tasks blocked; correlated answers; invalid/missing result fields rejected; tool-output text cannot impersonate the assistant result.", design = "Read the relevant contract only in specs/001-central/plan.md: File messages and coordinator round protocol" }
+
+[tasks.T006]
+task = "Build portable user command wrappers in skill/crew-chief/scripts/crew_chief/command_install.py, tests/test_command_install.py"
+type = "code"
+risk = "medium"
+accept = ["FR-001", "FR-019", "FR-020", "SC-007", "US6/AC1"]
+files = ["skill/crew-chief/scripts/crew_chief/command_install.py", "tests/test_command_install.py"]
+proof = "python -m pytest tests/test_command_install.py -q"
+expect = "passed"
+depends = []
+interfaces = { consumes = "Python stdlib only; source is an explicit released bundle; installer integration arrives in T013.", produces = "install_command(source: Path, bin_dir: Path, python: Path, platform: str, replace_owned: bool = False) -> Path", verification = "Create Windows acc.cmd and POSIX executable acc in temp bin; test spaces/Unicode/quoting, -I, idempotent update, unrelated-wrapper refusal, unchanged preferences/PATH; run platform-native wrapper with a fake entry point.", design = "Read the relevant contract only in specs/001-central/plan.md: Command installation" }
+
+[tasks.T007]
+task = "Create isolated long-lived coordinator worktrees in skill/crew-chief/scripts/crew_chief/central_worktrees.py, tests/test_central_worktrees.py; depends on T003"
+type = "code"
+risk = "medium"
+accept = ["FR-002", "FR-021", "SC-001", "US1/AC1"]
+files = ["skill/crew-chief/scripts/crew_chief/central_worktrees.py", "tests/test_central_worktrees.py"]
+proof = "python -m pytest tests/test_central_worktrees.py -q"
+expect = "passed"
+depends = ["T003"]
+interfaces = { consumes = "Git subprocess argv; T003 UUID rules; no reuse of executor attempt lifecycle/accept.", produces = "create(repo: Path, coordinator_id: str, base: str = \"HEAD\") -> dict[str,str]", verification = "Use temp Git repos; preserve dirty source files; two launches in one repo; explicit base; branch collision, unborn HEAD and spaces; record all git argv and reject any merge/push/automatic removal.", design = "Read the relevant contract only in specs/001-central/plan.md: Launch and adapter contracts" }
+
+[tasks.T008]
+task = "Adapt Claude Code session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_claude.py, tests/test_coordinator_claude.py; depends on T001, T005"
+type = "code"
+risk = "high"
+accept = ["FR-003", "FR-009", "FR-010", "FR-020", "FR-025", "SC-002", "US1/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/coordinator_claude.py", "tests/test_coordinator_claude.py"]
+proof = "python -m pytest tests/test_coordinator_claude.py -q"
+expect = "passed"
+depends = ["T001", "T005"]
+interfaces = { consumes = "T001 resolved settings; T005 assistant round protocol; normalized adapter fields in plan.", produces = "probe() -> dict; headless(record: dict, prompt: str) -> list[str]; interactive(record: dict) -> list[str]; parse_events(stdout: str, stderr: str) -> dict", verification = "Own fake executable/event fixtures cover first launch, exact --resume identity, session ID capture, stream-json usage, estimates, quota, malformed events, missing flags, restrictive no-prompt capability and shell metacharacters.", design = "Read the relevant contract only in specs/001-central/plan.md: Launch and adapter contracts" }
+
+[tasks.T009]
+task = "Adapt Codex session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_codex.py, tests/test_coordinator_codex.py; depends on T001, T005"
+type = "code"
+risk = "high"
+accept = ["FR-003", "FR-009", "FR-010", "FR-020", "FR-025", "SC-002", "US1/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/coordinator_codex.py", "tests/test_coordinator_codex.py"]
+proof = "python -m pytest tests/test_coordinator_codex.py -q"
+expect = "passed"
+depends = ["T001", "T005"]
+interfaces = { consumes = "T001 settings; T005 result protocol; identical normalized adapter fields to T008.", produces = "probe() -> dict; headless(record: dict, prompt: str) -> list[str]; interactive(record: dict) -> list[str]; parse_events(stdout: str, stderr: str) -> dict", verification = "Own fake executable/event fixtures cover exec JSON, exec resume exact session, interactive resume, usage, estimates, quota, session mismatch, nonzero exits and restrictive mode that cannot hang on approval.", design = "Read the relevant contract only in specs/001-central/plan.md: Launch and adapter contracts" }
+
+[tasks.T010]
+task = "Preflight requests and explicit worktree skill updates in skill/crew-chief/scripts/crew_chief/central_preflight.py, tests/test_central_preflight.py; depends on T005, T007, T008, T009"
+type = "code"
+risk = "high"
+accept = ["FR-004", "FR-005", "FR-021", "US1/AC2", "US1/AC4"]
+files = ["skill/crew-chief/scripts/crew_chief/central_preflight.py", "tests/test_central_preflight.py"]
+proof = "python -m pytest tests/test_central_preflight.py -q"
+expect = "passed"
+depends = ["T005", "T007", "T008", "T009"]
+interfaces = { consumes = "T007 worktree result; T008/T009 probe; existing briefcheck sensitive/secret validation; selected released installer.", produces = "preflight(record: dict, request: str, spec_dir: Path | None, consent: bool, release_root: Path) -> dict", verification = "Missing CLI, denied mismatch update and unapproved/raw modes launch no model; matching version passes; explicit update targets only temp worktree; selected spec copy excludes neighbors, private paths, traversal and secrets.", design = "Read the relevant contract only in specs/001-central/plan.md: Launch and adapter contracts" }
+
+[tasks.T011]
+task = "Prepare authorized central launches in skill/crew-chief/scripts/crew_chief/central_launch.py, tests/test_central_launch.py; depends on T002, T003, T007, T008, T009, T010"
+type = "code"
+risk = "medium"
+accept = ["FR-002", "FR-003", "FR-004", "FR-005", "FR-006", "SC-001", "US1/AC1", "US1/AC2"]
+files = ["skill/crew-chief/scripts/crew_chief/central_launch.py", "tests/test_central_launch.py"]
+proof = "python -m pytest tests/test_central_launch.py -q"
+expect = "passed"
+depends = ["T002", "T003", "T007", "T008", "T009", "T010"]
+interfaces = { consumes = "T007 create; T010 preflight; T003 register/update; T001/T002 preference resolution; adapter APIs.", produces = "prepare_launch(repo: Path, request_file: Path, options: dict, root: Path) -> dict; adapter_for(cli: str) -> object", verification = "Prepare creates unique durable record with authorization digest, worktree/session placeholders and selected adapter; failed preflight preserves diagnostic/worktree and never starts a supervisor; no source mutation.", design = "Read the relevant contract only in specs/001-central/plan.md: Launch and adapter contracts" }
+
+[tasks.T012]
+task = "Execute one bounded headless coordinator round in skill/crew-chief/scripts/crew_chief/central_rounds.py, tests/test_central_rounds.py; depends on T003, T004, T005, T008, T009, T011"
+type = "code"
+risk = "high"
+accept = ["FR-007", "FR-009", "FR-024", "FR-025", "US2/AC1", "US2/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/central_rounds.py", "tests/test_central_rounds.py"]
+proof = "python -m pytest tests/test_central_rounds.py -q"
+expect = "passed"
+depends = ["T003", "T004", "T005", "T008", "T009", "T011"]
+interfaces = { consumes = "T004 pending/ack; T005 render/parse; T008/T009 event API; T011 prepared record. spawn is injectable and returns an owned child.", produces = "run_round(record: dict, root: Path, adapter: object, spawn: object, timeout_s: float) -> dict", verification = "Fake child proves cwd/stdin/env, exact resume, ack only consumed IDs, result persistence, timeout/failure/session mismatch and 10-MiB log truncation while draining output; tests need no future supervisor.", design = "Read the relevant contract only in specs/001-central/plan.md: File messages and coordinator round protocol; Supervision, ownership and recovery" }
+
+[tasks.T013]
+task = "Add explicit command-only installation mode in tests/test_command_install_cli.py, install.py; depends on T006"
+type = "code"
+risk = "medium"
+accept = ["FR-001", "FR-021", "FR-022", "SC-007", "US6/AC1"]
+files = ["tests/test_command_install_cli.py", "install.py"]
+proof = "python -m pytest tests/test_command_install_cli.py -q"
+expect = "passed"
+depends = ["T006"]
+interfaces = { consumes = "T006 install_command; existing install.py project-copy/snippet behavior.", produces = "install.py --command [--bin-dir DIR] installs only a wrapper; positional project mode remains backward compatible; explicit combined mode is allowed.", verification = "Temp released bundle and temp bins verify command-only does not create project skills; legacy installation still works; unchanged real-settings sentinel, no PATH writes, bad source/wrapper errors.", design = "Read the relevant contract only in specs/001-central/plan.md: Command installation" }
+
+[tasks.T014]
+task = "Record idempotent coordinator usage in active jobs in skill/crew-chief/scripts/crew_chief/central_usage.py, tests/test_central_usage.py; depends on T003, T012"
+type = "code"
+risk = "high"
+accept = ["FR-013", "FR-025", "SC-006", "US4/AC1"]
+files = ["skill/crew-chief/scripts/crew_chief/central_usage.py", "tests/test_central_usage.py"]
+proof = "python -m pytest tests/test_central_usage.py -q"
+expect = "passed"
+depends = ["T003", "T012"]
+interfaces = { consumes = "T012 round IDs/usage; existing records.update_job and add_usage; job usage entries may carry central_event_id as compatible additive metadata.", produces = "record_round_usage(root: Path, record: dict, round_result: dict) -> None; backfill_usage(root: Path, record: dict) -> None", verification = "Own temp job fixtures cover measured/estimated/missing totals, unknown active job, backfill once, crash between job update and round mark, repeated calls, attributed central role and no double counting.", design = "Read the relevant contract only in specs/001-central/plan.md: Usage, quota and snapshot contracts" }
+
+[tasks.T015]
+task = "Supervise coordinator rounds without idle model calls in skill/crew-chief/scripts/crew_chief/central_supervisor.py, tests/test_central_supervisor.py; depends on T011, T012, T014"
+type = "code"
+risk = "high"
+accept = ["FR-009", "FR-011", "FR-020", "FR-024", "SC-004", "US2/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/central_supervisor.py", "tests/test_central_supervisor.py"]
+proof = "python -m pytest tests/test_central_supervisor.py -q"
+expect = "passed"
+depends = ["T011", "T012", "T014"]
+interfaces = { consumes = "T012 run_round; T014 usage persistence; T003 owner_lease/update_record; launch prepared state. This module owns its subprocess bootstrap and supervisor_main; no T019 parser is required for its proof.", produces = "start_supervisor(record: dict, root: Path) -> dict; supervisor_main(argv: list[str]) -> int; supervise(root: Path, coordinator_id: str, clock: object, runner: object) -> None", verification = "Own fake CLI and subprocess bootstrap prove hidden Windows start before public CLI integration; fake runner/clock proves state transitions, heartbeat, session reuse, failed hold, no-progress pause, idle zero-call behavior and log retention preserving metadata.", design = "Read the relevant contract only in specs/001-central/plan.md: Supervision, ownership and recovery" }
+
+[tasks.T016]
+task = "Implement cooperative pause resume and stop controls in skill/crew-chief/scripts/crew_chief/central_controls.py, tests/test_central_controls.py; depends on T003, T004, T015"
+type = "code"
+risk = "high"
+accept = ["FR-007", "FR-011", "SC-004", "US2/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/central_controls.py", "tests/test_central_controls.py"]
+proof = "python -m pytest tests/test_central_controls.py -q"
+expect = "passed"
+depends = ["T003", "T004", "T015"]
+interfaces = { consumes = "T003 atomic records; T004 ID/correlation; T015 supervisor calls injected control handler at checkpoints, default no-op until integrated by T019.", produces = "request_control(root: Path, coordinator_id: str, action: str) -> str; apply_controls(record: dict, commands: list[dict], owned_child: object | None) -> dict", verification = "Pause finishes current bounded round; resume restores eligibility; stop routes only to live owner and its child tree; repeated controls idempotent; view exit cannot stop a coordinator; stale PID never signalled.", design = "Read the relevant contract only in specs/001-central/plan.md: Supervision, ownership and recovery" }
+
+[tasks.T017]
+task = "Hand off exclusive session ownership for interactive attach in skill/crew-chief/scripts/crew_chief/central_attach.py, tests/test_central_attach.py; depends on T008, T009, T015, T016"
+type = "code"
+risk = "high"
+accept = ["FR-010", "FR-011", "FR-020", "SC-004", "US2/AC3", "US2/AC4"]
+files = ["skill/crew-chief/scripts/crew_chief/central_attach.py", "tests/test_central_attach.py"]
+proof = "python -m pytest tests/test_central_attach.py -q"
+expect = "passed"
+depends = ["T008", "T009", "T015", "T016"]
+interfaces = { consumes = "T016 request_control; T003 owner_lease; T008/T009 interactive argv; T015 running/idle ownership.", produces = "attach(root: Path, coordinator_id: str, terminal: object, timeout_s: float) -> dict", verification = "Fake terminal proves yield before resume, same worktree/session, no competing writer, busy timeout, exception/finally release, interrupted-client recovery state, unsupported CLI and redirected fallback.", design = "Read the relevant contract only in specs/001-central/plan.md: Supervision, ownership and recovery" }
+
+[tasks.T018]
+task = "Reconcile stale supervisors and recover explicitly in skill/crew-chief/scripts/crew_chief/central_recovery.py, tests/test_central_recovery.py; depends on T003, T015, T016, T017"
+type = "code"
+risk = "high"
+accept = ["FR-006", "FR-011", "FR-024", "SC-004", "US2/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/central_recovery.py", "tests/test_central_recovery.py"]
+proof = "python -m pytest tests/test_central_recovery.py -q"
+expect = "passed"
+depends = ["T003", "T015", "T016", "T017"]
+interfaces = { consumes = "T003 nonce leases; T015 heartbeat/round metadata; T017 attach ownership; only owner-held child objects permit termination.", produces = "reconcile(root: Path, coordinator_id: str, now: object) -> dict; recover(root: Path, coordinator_id: str, decision: str) -> dict", verification = "PID reuse, stale heartbeat, unknown child, held attach lease, crash during persistence and missing worktree yield explicit states; recovery never kills by PID, loses messages or silently retries failed rounds.", design = "Read the relevant contract only in specs/001-central/plan.md: Supervision, ownership and recovery" }
+
+[tasks.T019]
+task = "Wire public launch and lifecycle CLI commands in skill/crew-chief/scripts/crew_chief/central_cli.py, tests/test_central_cli.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py; depends on T011, T012, T014, T015, T016, T017, T018"
+type = "code"
+risk = "high"
+accept = ["FR-004", "FR-005", "FR-009", "FR-010", "FR-011", "FR-018", "US1/AC2", "US2/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_cli.py", "tests/test_central_cli.py", "skill/crew-chief/scripts/crew_chief/cli.py", "skill/crew-chief/scripts/crew_chief/central_supervisor.py"]
+proof = "python -m pytest tests/test_central_cli.py -q"
+expect = "passed"
+depends = ["T011", "T012", "T014", "T015", "T016", "T017", "T018"]
+interfaces = { consumes = "T011 prepare_launch then T015 start_supervisor; T016 checkpoint controls integrated with T015; T017/T018 lifecycle and T004 message API.", produces = "handle_launch(args) -> int; handle_message(args) -> int; handle_attach(args) -> int; handle_control(args) -> int; CLI parses launch/message/attach/pause/resume/stop/recover plus private supervisor entry.", verification = "Subprocess CLI fake tests cover exact help/JSON/exit codes and each launch mode; launch now starts supervisor; controls consumed; no dev-bundle coordinator execution; old commands retain parser behavior.", design = "Read the relevant contract only in specs/001-central/plan.md: Launch and adapter contracts; Supervision, ownership and recovery" }
+
+[tasks.T020]
+task = "Share observed quota cooldowns across central coordinators in skill/crew-chief/scripts/crew_chief/central_quota.py, tests/test_central_quota.py, skill/crew-chief/scripts/crew_chief/scoring.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/dispatch.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py; depends on T003, T015, T019"
+type = "code"
+risk = "high"
+accept = ["FR-015", "FR-018", "SC-004", "US4/AC4"]
+files = ["skill/crew-chief/scripts/crew_chief/central_quota.py", "tests/test_central_quota.py", "skill/crew-chief/scripts/crew_chief/scoring.py", "skill/crew-chief/scripts/crew_chief/cli.py", "skill/crew-chief/scripts/crew_chief/dispatch.py", "skill/crew-chief/scripts/crew_chief/central_supervisor.py"]
+proof = "python -m pytest tests/test_central_quota.py -q"
+expect = "passed"
+depends = ["T003", "T015", "T019"]
+interfaces = { consumes = "Existing scoring.quota_family and quota_cooldown semantics; dispatch statuses; T015 supervisor boundary; T003 atomic root. Context-free jobs must not read central.", produces = "observe(root: Path, family: str, source_id: str, until: str) -> None; blocked(root: Path, family: str, now: object) -> bool; central context uses CREW_CHIEF_CENTRAL_ID.", verification = "Two coordinator fake jobs share same-family expiry, unrelated families proceed, latest expiry wins; supervisor and executor quota both observed; no change to budgets/free-first; absent central context preserves baseline.", design = "Read the relevant contract only in specs/001-central/plan.md: Usage, quota and snapshot contracts" }
+
+[tasks.T021]
+task = "Aggregate raw economy counts with coverage labels in skill/crew-chief/scripts/crew_chief/central_metrics.py, tests/test_central_metrics.py; depends on T014, T020"
+type = "code"
+risk = "medium"
+accept = ["FR-013", "FR-014", "FR-025", "SC-006", "US4/AC1", "US4/AC2", "US4/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_metrics.py", "tests/test_central_metrics.py"]
+proof = "python -m pytest tests/test_central_metrics.py -q"
+expect = "passed"
+depends = ["T014", "T020"]
+interfaces = { consumes = "Existing economy.job_economy semantics and record grades; T014 central_event_id; stable attempt identity and worktree/job key from plan.", produces = "aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: object) -> dict", verification = "Own synthetic jobs prove exact tier/model sums including retries/reviews, shared-history dedup, weighted ratios, wall vs execution time, estimates/unknown/coverage and all zero-disabled threshold alerts.", design = "Read the relevant contract only in specs/001-central/plan.md: Usage, quota and snapshot contracts" }
+
+[tasks.T022]
+task = "Read one shared snapshot from live worktree records in skill/crew-chief/scripts/crew_chief/central_snapshot.py, tests/test_central_snapshot.py; depends on T003, T004, T018, T021"
+type = "code"
+risk = "medium"
+accept = ["FR-006", "FR-024", "FR-026", "SC-006", "US3/AC4", "US4/AC1"]
+files = ["skill/crew-chief/scripts/crew_chief/central_snapshot.py", "tests/test_central_snapshot.py"]
+proof = "python -m pytest tests/test_central_snapshot.py -q"
+expect = "passed"
+depends = ["T003", "T004", "T018", "T021"]
+interfaces = { consumes = "T003 registry; existing records.iter_jobs; T004 questions; T021 aggregate; bounded read and stale-row policy.", produces = "snapshot(root: Path, now: object, previous: dict | None = None) -> dict with schema_version/generated_at/coordinators/questions/totals/diagnostics.", verification = "Temporary worktree records cover duplicate refs, missing/corrupt/oversized files, unknown schema, last-complete stale row, read-only byte/hash sentinels and parity-ready deterministic payload.", design = "Read the relevant contract only in specs/001-central/plan.md: Usage, quota and snapshot contracts" }
+
+[tasks.T023]
+task = "Read terminal keys and restore OS terminal state in skill/crew-chief/scripts/crew_chief/central_keys.py, tests/test_central_keys.py; depends on T001"
+type = "code"
+risk = "medium"
+accept = ["FR-012", "FR-019", "FR-020", "SC-005", "US3/AC2", "US3/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_keys.py", "tests/test_central_keys.py"]
+proof = "python -m pytest tests/test_central_keys.py -q"
+expect = "passed"
+depends = ["T001"]
+interfaces = { consumes = "Stdlib msvcrt on Windows, select/termios/tty on POSIX; injected fake streams and platform wrappers in own test.", produces = "terminal_input(stream: object, platform: str) -> context manager; read_key(timeout_s: float) -> str | None; terminal_size() -> tuple[int,int]", verification = "Decode arrows/Enter/Esc/m/p/d/q, timeouts, unsupported/redirected input, resize and restoration after exceptions; importing on Windows never imports unavailable termios.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T024]
+task = "Render coordinator rows questions and details in skill/crew-chief/scripts/crew_chief/central_terminal.py, tests/test_central_terminal.py; depends on T022"
+type = "code"
+risk = "medium"
+accept = ["FR-012", "FR-013", "FR-024", "SC-005", "US3/AC1", "US3/AC4"]
+files = ["skill/crew-chief/scripts/crew_chief/central_terminal.py", "tests/test_central_terminal.py"]
+proof = "python -m pytest tests/test_central_terminal.py -q"
+expect = "passed"
+depends = ["T022"]
+interfaces = { consumes = "T022 shared snapshot; pure rendering only, no model/process calls.", produces = "render(snapshot: dict, selected: str | None, width: int, details: bool = False, plain: bool = False) -> str", verification = "Render repository/CLI/state/piece counts/free share/score and active executor/type/time; pending questions first; empty/unknown/stale/narrow/Unicode/ANSI plain behavior without filesystem changes.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T025]
+task = "Run the refreshing terminal and route its actions in skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_screen.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py; depends on T017, T019, T022, T023, T024"
+type = "code"
+risk = "high"
+accept = ["FR-010", "FR-012", "FR-020", "FR-026", "SC-005", "US3/AC2", "US3/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_screen.py", "tests/test_central_screen.py", "skill/crew-chief/scripts/crew_chief/cli.py", "skill/crew-chief/scripts/crew_chief/central_cli.py"]
+proof = "python -m pytest tests/test_central_screen.py -q"
+expect = "passed"
+depends = ["T017", "T019", "T022", "T023", "T024"]
+interfaces = { consumes = "T022 snapshot; T023 keys; T024 render; T004 message/reply; T016 controls; T017 attach; T019 CLI handlers.", produces = "run_screen(root: Path, options: dict, io: object, clock: object) -> int; acc central --once/--plain/--poll handlers.", verification = "Fake clock/input prove every key, two-interval update, message/reply, attach return and busy state, details/Esc, pause toggle, finite redirected snapshot, exception cleanup and q preserving supervisor; zero model polling calls.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T026]
+task = "Teach coordinators the bounded central round workflow in tests/test_central_skill.py, skill/crew-chief/SKILL.md, skill/crew-chief/templates/snippet.md; depends on T005, T019, T025"
+type = "docs"
+risk = "medium"
+accept = ["FR-008", "FR-009", "FR-018", "FR-022", "FR-023", "US2/AC1", "US2/AC2"]
+files = ["tests/test_central_skill.py", "skill/crew-chief/SKILL.md", "skill/crew-chief/templates/snippet.md"]
+proof = "python -m pytest tests/test_central_skill.py -q"
+expect = "passed"
+depends = ["T005", "T019", "T025"]
+interfaces = { consumes = "T005 round fields; T019 public actions; existing skill review/accept/close and proportional SDD.", produces = "Skill and installed snippet document ACC_ROUND checkpoint, inbox/outbox protocol, blocked-task behavior, mode/permission defaults and no automatic source integration.", verification = "Render a synthetic central-runner brief and verify the quoted protocol/constraints survive installation and BOM/CRLF handling; existing job-only path remains valid; no AI trailer instruction.", design = "Read the relevant contract only in specs/001-central/plan.md: File messages and coordinator round protocol" }
+
+[tasks.T027]
+task = "Prove the core multi-worktree coordinator flow in tests/test_central_flow.py; depends on T019, T020, T025, T026"
+type = "tests"
+risk = "high"
+accept = ["FR-002", "FR-007", "FR-008", "FR-009", "FR-010", "FR-011", "FR-018", "SC-001", "SC-002", "SC-003", "SC-004"]
+files = ["tests/test_central_flow.py"]
+proof = "python -m pytest tests/test_central_flow.py -q"
+expect = "passed"
+depends = ["T019", "T020", "T025", "T026"]
+interfaces = { consumes = "Accepted core CLI, registry, messages, round runner, controls, terminal; temporary Git repositories and fake adapters only.", produces = "A self-contained fake CLI harness in tests/test_central_flow.py exercises public subprocess commands and records owned test process IDs for cleanup.", verification = "Launch two repos plus second worktree of one; ask/reply while independent work proceeds; pause/resume/attach/failure/recover; retained close output in coordinator branch, no source merge/push; final cleanup proves no test process survives.", design = "Read the relevant contract only in specs/001-central/plan.md: Launch and adapter contracts; Supervision, ownership and recovery" }
+
+[tasks.T028]
+task = "Extend isolated core verification to macOS CI in tests/test_central_isolation.py, .github/workflows/ci.yml; depends on T027"
+type = "tests"
+risk = "medium"
+accept = ["FR-019", "FR-020", "FR-021", "SC-007", "SC-008"]
+files = ["tests/test_central_isolation.py", ".github/workflows/ci.yml"]
+proof = "python -m pytest tests/test_central_isolation.py -q"
+expect = "passed"
+depends = ["T027"]
+interfaces = { consumes = "Existing CI and conftest; accepted central root injection and fake harness patterns, but own test creates all required fixtures.", produces = "CI matrix includes ubuntu-latest/windows-latest/macos-latest at Python 3.11/3.13; isolated subprocess environment protects real config.", verification = "Test subprocesses inherit only temporary homes/global/central roots, no live CLI lookup; config sentinel unchanged and wrapper executes in native platform. Run full suite in CI across matrix.", design = "Read the relevant contract only in specs/001-central/plan.md: Global Constraints" }
+
+[tasks.T029]
+task = "Document core installation launch and recovery in tests/test_central_docs.py, README.md, docs/tutorials/04-central.md; depends on T025, T026, T027"
+type = "docs"
+risk = "medium"
+accept = ["FR-001", "FR-012", "FR-018", "FR-020", "FR-021", "SC-011", "US6/AC1", "US6/AC2"]
+files = ["tests/test_central_docs.py", "README.md", "docs/tutorials/04-central.md"]
+proof = "python -m pytest tests/test_central_docs.py -q"
+expect = "passed"
+depends = ["T025", "T026", "T027"]
+interfaces = { consumes = "Accepted public CLI/help and defaults; no original private draft or machine-specific paths.", produces = "README and docs/tutorials/04-central.md give a complete synthetic two-repository workflow, supported adapter probes and manual release boundary.", verification = "Own documentation test checks examples against parser with temp requests and fake commands; explain calling CLI override, yolo/restricted, interactive exit vs Esc, estimates, worktree consent, recovery and owner integration.", design = "Read the relevant contract only in specs/001-central/plan.md: Delivery split and gates; Approval handoff" }
+
+[tasks.T030]
+task = "Gate the v0.4.0 core release in tests/test_central_core_gate.py, skill/crew-chief/scripts/crew_chief/__init__.py, CHANGELOG.md; depends on T027, T028, T029"
+type = "tests"
+risk = "high"
+accept = ["FR-018", "FR-019", "FR-021", "FR-022", "FR-023", "SC-001", "SC-004", "SC-005", "SC-006", "SC-007", "SC-008", "SC-011"]
+files = ["tests/test_central_core_gate.py", "skill/crew-chief/scripts/crew_chief/__init__.py", "CHANGELOG.md", "tests/test_docs.py", "README.md", "README.pt-BR.md", "docs/tutorials/01-first-job.md", "docs/tutorials/01-first-job.pt-BR.md"]
+proof = "python -m pytest -q"
+expect = "passed"
+depends = ["T027", "T028", "T029"]
+interfaces = { consumes = "All phases 1-4 and T027-T029 accepted; existing full regression suite and installer tests.", produces = "Core version 0.4.0 and Keep a Changelog entry; core gate test proves packaged installation plus fake launch/monitor actions.", verification = "Run whole suite and a fake installed-bundle smoke path; update current-release/pin assertions in test_docs while keeping all historical changelog assertions; update README/tutorial release pins in both languages only. Inspect scope/private data/coauthor trailers; require three-OS CI before owner release review. Stop before web/Orca; no push/tag/release authorized.", design = "Read the relevant contract only in specs/001-central/plan.md: Delivery split and gates" }
+
+[tasks.T031]
+task = "Serve loopback HTTP snapshots with allowlisted assets in skill/crew-chief/scripts/crew_chief/central_web.py, tests/test_central_web.py; depends on T022, T030"
+type = "code"
+risk = "high"
+accept = ["FR-016", "FR-019", "FR-024", "FR-026", "SC-009", "US5/AC1", "US5/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_web.py", "tests/test_central_web.py"]
+proof = "python -m pytest tests/test_central_web.py -q"
+expect = "passed"
+depends = ["T022", "T030"]
+interfaces = { consumes = "T022 snapshot; stdlib http.server only; temporary minimal assets belong to this test, not future T032.", produces = "create_server(root: Path, assets: Path, port: int = 0) -> ThreadingHTTPServer; GET /api/snapshot and fixed static asset routes.", verification = "Bind 127.0.0.1 ephemeral port, JSON parity and read-only requests; reject traversal/oversized paths, disallowed Host, arbitrary files and non-loopback bind; release socket/threads in finally.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T032]
+task = "Build public dashboard cards charts and history in tests/test_central_web_assets.py, skill/crew-chief/web/index.html, skill/crew-chief/web/central.css, skill/crew-chief/web/central.js; depends on T031"
+type = "code"
+risk = "medium"
+accept = ["FR-016", "FR-021", "SC-009", "US5/AC1"]
+files = ["tests/test_central_web_assets.py", "skill/crew-chief/web/index.html", "skill/crew-chief/web/central.css", "skill/crew-chief/web/central.js"]
+proof = "python -m pytest tests/test_central_web_assets.py -q"
+expect = "passed"
+depends = ["T031"]
+interfaces = { consumes = "T031 routes and T022 snapshot fields; synthetic repositories only; POST controls disabled until T033 accepts actions.", produces = "Packaged index.html/central.css/central.js render the documented snapshot schema and controls without dependencies/CDNs.", verification = "Own asset-serving fixture checks packaged resources, safe text insertion, no external scripts, model/tier chart data and question/history/scoreboard states. Record browser smoke steps against fake local snapshots in docs, never a live coordinator.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T033]
+task = "Authorize web messages replies and lifecycle actions in tests/test_central_web_actions.py, skill/crew-chief/scripts/crew_chief/central_web.py, skill/crew-chief/web/central.js; depends on T031, T032"
+type = "code"
+risk = "high"
+accept = ["FR-007", "FR-008", "FR-010", "FR-016", "FR-024", "SC-009", "US5/AC2", "US5/AC3", "US5/AC4"]
+files = ["tests/test_central_web_actions.py", "skill/crew-chief/scripts/crew_chief/central_web.py", "skill/crew-chief/web/central.js"]
+proof = "python -m pytest tests/test_central_web_actions.py -q"
+expect = "passed"
+depends = ["T031", "T032"]
+interfaces = { consumes = "T031 server; T004 durable messages; T016 controls; T017 shared attach lease; active terminal bridge or copyable acc attach ID fallback.", produces = "POST /api/message,/api/answer,/api/pause,/api/resume,/api/attach with server CSRF token and strict Origin/Host checks; action IDs deduplicate retries.", verification = "Reject missing/wrong token, hostile Origin/Host, unknown coordinator, arbitrary argv/path, malformed/oversized JSON; accept one correlated reply once; attach queues intent without browser shell; enable asset controls safely.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T034]
+task = "Wire acc central --web startup and shutdown in tests/test_central_web_cli.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_screen.py; depends on T025, T033"
+type = "code"
+risk = "medium"
+accept = ["FR-016", "FR-026", "SC-009", "US5/AC1", "US5/AC4"]
+files = ["tests/test_central_web_cli.py", "skill/crew-chief/scripts/crew_chief/cli.py", "skill/crew-chief/scripts/crew_chief/central_cli.py", "skill/crew-chief/scripts/crew_chief/central_screen.py"]
+proof = "python -m pytest tests/test_central_web_cli.py -q"
+expect = "passed"
+depends = ["T025", "T033"]
+interfaces = { consumes = "T031 create_server; T033 action routing; T025 terminal bridge uses existing exclusive attach; webbrowser.open is injectable.", produces = "acc central --web [--port PORT] starts the loopback page using the same central root and supports clean Ctrl-C shutdown.", verification = "Fake browser/subprocess test verifies URL/port, browser-open failure fallback, terminal bridge action handoff, JSON/plain incompatibility errors and cleanup without stopping coordinators.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T035]
+task = "Prove terminal and web parity through HTTP actions in tests/test_central_web_flow.py; depends on T031, T032, T033, T034"
+type = "tests"
+risk = "high"
+accept = ["FR-016", "FR-026", "SC-009", "US5/AC1", "US5/AC2", "US5/AC3", "US5/AC4"]
+files = ["tests/test_central_web_flow.py"]
+proof = "python -m pytest tests/test_central_web_flow.py -q"
+expect = "passed"
+depends = ["T031", "T032", "T033", "T034"]
+interfaces = { consumes = "Accepted web handlers/assets/actions and T022 shared snapshots; no future Orca modules.", produces = "Self-contained HTTP integration fixture drives real loopback server with fake coordinator records and shared terminal snapshot.", verification = "Create message/question/reply and pause/attach intents through HTTP, compare terminal/web totals and state after refresh, exercise escaping/traversal/CSRF, copyable terminal fallback, repeated actions and full cleanup.", design = "Read the relevant contract only in specs/001-central/plan.md: Terminal and browser views" }
+
+[tasks.T036]
+task = "Define optional backend operations over accepted core in skill/crew-chief/scripts/crew_chief/central_backend.py, tests/test_central_backend.py; depends on T030, T035"
+type = "code"
+risk = "medium"
+accept = ["FR-017", "FR-018", "SC-010", "US6/AC2", "US6/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_backend.py", "tests/test_central_backend.py"]
+proof = "python -m pytest tests/test_central_backend.py -q"
+expect = "passed"
+depends = ["T030", "T035"]
+interfaces = { consumes = "Accepted core worktrees/supervisor/messages/attach/snapshot; no dependency on Orca implementation.", produces = "Backend protocol: probe() -> dict; create(repo: Path, options: dict) -> dict; start(record: dict) -> dict; send(record: dict, envelope: dict) -> str; attach(record: dict) -> dict; state(record: dict) -> dict; default_backend(root: Path) -> Backend", verification = "Run backend contract with core fakes; preserve coordinator/session/message IDs and errors; importing/using default mode never resolves or invokes Orca.", design = "Read the relevant contract only in specs/001-central/plan.md: Optional Orca backend" }
+
+[tasks.T037]
+task = "Adapt probed Orca capabilities to the backend contract in skill/crew-chief/scripts/crew_chief/central_orca.py, tests/test_central_orca.py; depends on T036"
+type = "code"
+risk = "high"
+accept = ["FR-017", "FR-020", "FR-021", "SC-010", "US6/AC3"]
+files = ["skill/crew-chief/scripts/crew_chief/central_orca.py", "tests/test_central_orca.py"]
+proof = "python -m pytest tests/test_central_orca.py -q"
+expect = "passed"
+depends = ["T036"]
+interfaces = { consumes = "T036 Backend exact signatures; fake Orca executable supplies captured supported command contract within this test file.", produces = "orca_backend(root: Path, executable: str) -> Backend matching T036; probe reads help/version and supported machine-readable operations.", verification = "Probe before use; test create/start/send/attach/state, ID/session normalization, unsupported version/missing binary, spaces/metacharacters, partial-creation diagnostics and no automatic fallback or real Orca calls.", design = "Read the relevant contract only in specs/001-central/plan.md: Optional Orca backend" }
+
+[tasks.T038]
+task = "Connect explicit backend choice to launches and controls in tests/test_central_backend_cli.py, skill/crew-chief/scripts/crew_chief/central_launch.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_controls.py; depends on T036, T037"
+type = "code"
+risk = "high"
+accept = ["FR-017", "FR-018", "SC-010", "US6/AC2", "US6/AC3"]
+files = ["tests/test_central_backend_cli.py", "skill/crew-chief/scripts/crew_chief/central_launch.py", "skill/crew-chief/scripts/crew_chief/central_cli.py", "skill/crew-chief/scripts/crew_chief/central_controls.py"]
+proof = "python -m pytest tests/test_central_backend_cli.py -q"
+expect = "passed"
+depends = ["T036", "T037"]
+interfaces = { consumes = "T036 default_backend; T037 orca_backend; T011 prepare_launch; T019 handlers and T016 controls.", produces = "Launch --backend selects immutable backend; public message/attach/control handlers route the registered backend while default behavior stays unchanged.", verification = "Public fake-CLI flow compares default/Orca contracts, rejects incompatible explicit selection, prevents backend switching mid-launch, routes messages/attach to correct backend and preserves existing JSON/errors.", design = "Read the relevant contract only in specs/001-central/plan.md: Optional Orca backend" }
+
+[tasks.T039]
+task = "Document browser and optional Orca operation in tests/test_central_web_docs.py, README.md, docs/tutorials/04-central.md; depends on T035, T038"
+type = "docs"
+risk = "medium"
+accept = ["FR-016", "FR-017", "FR-021", "SC-011", "US5/AC4", "US6/AC3"]
+files = ["tests/test_central_web_docs.py", "README.md", "docs/tutorials/04-central.md"]
+proof = "python -m pytest tests/test_central_web_docs.py -q"
+expect = "passed"
+depends = ["T035", "T038"]
+interfaces = { consumes = "Accepted v0.4.1 parser/contracts; prior synthetic core tutorial; no new runtime behavior.", produces = "README and central tutorial cover --web, local action authorization, terminal fallback, optional Orca probes and v0.4.1 limits.", verification = "Check doc commands against parser with fakes and link/assets existence; provide reproducible fake-browser smoke procedure and user-controlled integration; no personal paths/private examples.", design = "Read the relevant contract only in specs/001-central/plan.md: Optional Orca backend; Terminal and browser views" }
+
+[tasks.T040]
+task = "Gate the v0.4.1 web and Orca release in tests/test_central_web_gate.py, skill/crew-chief/scripts/crew_chief/__init__.py, CHANGELOG.md; depends on T035, T038, T039"
+type = "tests"
+risk = "high"
+accept = ["FR-016", "FR-017", "FR-018", "FR-019", "FR-021", "FR-023", "SC-008", "SC-009", "SC-010", "SC-011"]
+files = ["tests/test_central_web_gate.py", "skill/crew-chief/scripts/crew_chief/__init__.py", "CHANGELOG.md", "README.md", "README.pt-BR.md", "docs/tutorials/01-first-job.md", "docs/tutorials/01-first-job.pt-BR.md"]
+proof = "python -m pytest -q"
+expect = "passed"
+depends = ["T035", "T038", "T039"]
+interfaces = { consumes = "All earlier tasks accepted; full existing/new suite; CI matrix accepted at T028.", produces = "Version 0.4.1 and changelog; installed-bundle fake end-to-end gate includes web/default/Orca modes.", verification = "Run full suite and installed-bundle fake flow, inspect public artifacts, require three-OS CI and documented fake browser smoke evidence before release review; no push/tag/release without owner action.", design = "Read the relevant contract only in specs/001-central/plan.md: Delivery split and gates" }
