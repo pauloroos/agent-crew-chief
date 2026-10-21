@@ -219,14 +219,41 @@ If the [superpowers](https://github.com/obra/superpowers) skills are installed
 too, use them to discuss and design; use crew-chief to execute the plan. The
 installed snippet says so in one line.
 
+## Ponytail
+
+[Ponytail](https://github.com/DietrichGebert/ponytail) (MIT, by DietrichGebert)
+v5.3.2 ships inside crew-chief: the two skills `ponytail` and `ponytail-review`,
+vendored in `vendor/ponytail/`. Ponytail is the "lazy senior dev" rule set — the
+smallest change that fully solves the task, no option nobody asked for.
+
+`install.py` copies both skills into `.claude/skills/` and `.agents/skills/` and
+marks each folder with `.installed-by-agent-crew-chief`. A `ponytail` folder
+without that marker belongs to someone else: it is left alone and the installer
+says so. `--no-ponytail` skips the copy and never removes an existing folder:
+
+```bash
+python install.py /path/to/project --no-ponytail
+```
+
+How much of it reaches a brief is the `ponytail_level` preference:
+
+- `lite` — build what was asked; name a smaller option in one line.
+- `full` (default) — the smallest complete change.
+- `ultra` — also question the request and push back on what it does not justify;
+  can make a cheap model argue instead of building.
+- `off` — no Ponytail in any brief.
+
+An executor brief gets a `## Style (ponytail <level>)` section, and a review
+brief counts bloat as an `Important` finding; `off` removes both.
+
 ## Install
 
 ```bash
-git clone --branch v0.3.4 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.3.5 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.3.4.zip` from the
+No git? Download `agent-crew-chief-v0.3.5.zip` from the
 [latest release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 Pin a tag (`--branch vX.Y.Z`) so you never install code in the middle of a change;
@@ -573,6 +600,9 @@ The spec-driven flow is inspired by [spec-kit](https://github.com/github/spec-ki
 (MIT), whose `specs/` layout and `tasks.md` format it reads, and by
 [superpowers](https://github.com/obra/superpowers) (MIT), whose design and
 review habits it follows. No code or template was copied from either.
+
+[Ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 (MIT, by
+DietrichGebert) ships vendored in `vendor/ponytail/`, with its `LICENSE`.
 
 ## License
 

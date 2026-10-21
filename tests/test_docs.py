@@ -95,8 +95,29 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
-def test_version_is_0_3_4_and_changelog_has_its_section():
-    assert __version__ == "0.3.4"
+def test_version_is_0_3_5_and_changelog_has_its_section():
+    assert __version__ == "0.3.5"
+    text = _read(CHANGELOG)
+    section = text.split("## [0.3.5]", 1)[1].split("\n## [", 1)[0]
+    for needle in (
+        "ponytail_level",
+        "--no-ponytail",
+        "v5.3.2",
+        "MIT",
+        "0.3.5",
+    ):
+        assert needle in section, needle
+
+
+def test_readmes_credit_ponytail():
+    for path in (README, README_PT):
+        text = _read(path)
+        assert "DietrichGebert/ponytail" in text, path.name
+        assert "MIT" in text, path.name
+
+
+def test_changelog_keeps_the_0_3_4_section():
+    """Bumping the version must not rewrite the released section."""
     text = _read(CHANGELOG)
     section = text.split("## [0.3.4]", 1)[1].split("\n## [", 1)[0]
     for needle in (
@@ -138,8 +159,8 @@ def test_install_pins_the_current_release():
     """The install commands pin the released tag, not an older one."""
     for path in (README, README_PT, TUTORIAL_01, TUTORIAL_01_PT):
         text = _read(path)
-        assert "v0.3.4" in text, path.name
-        assert "v0.3.3" not in text, path.name
+        assert "v0.3.5" in text, path.name
+        assert "v0.3.4" not in text, path.name
 
 
 def test_changelog_keeps_the_0_3_2_section():
