@@ -26,11 +26,13 @@ FR-022, FR-024):
 - Reads are bounded: the registry file at 8 MiB, a single row at 1 MiB.
   Oversized data is reported rather than blocking the other rows.
 - The lock (:file:`registry.lock`) and the coordinator owner leases
-  (:file:`coordinators/<uuid>/supervisor.lock`) are :func:`records.file_lock`
-  files whose content records the owner nonce, PID and acquisition time.
-  Stale takeover is disabled: age or a PID alone never authorizes deleting or
-  signalling another owner's lock, so a contested or abandoned lock is
-  reported and recovered explicitly by the owner.
+  (:file:`coordinators/<uuid>/supervisor.lock`) are exclusive lock files
+  created with ``O_CREAT | O_EXCL``; their content records the owner nonce,
+  PID and acquisition time. Stale takeover is disabled: age or a PID alone
+  never authorizes deleting or signalling another owner's lock, and a
+  coordinator lease is re-entered only by the in-process thread that actually
+  acquired it, so a contested or abandoned lock is reported and recovered
+  explicitly by the owner.
 - Coordinator ids become path segments, so they must be canonical UUIDs and
   the addressed directories must sit under the root: traversal and symlink
   escapes are refused.
@@ -39,9 +41,9 @@ FR-022, FR-024):
 from __future__ import annotations
 
 import json
-import math
 import os
 import random
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -49,7 +51,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .records import _sharing_retry, file_lock, write_atomic
+from .records import _sharing_retry, write_atomic
 
 __all__ = [
     "RECORD_MAX_BYTES",
@@ -298,9 +300,6 @@ def _read_registry(path: Path) -> tuple[dict | None, _Style | None]:
     text, had_bom = _registry_text(path, REGISTRY_READ_MAX_BYTES)
     data = _parse_registry(path, text)
     return data, _Style(bom=had_bom, newline=_newline_style(text), data=data)
-
-
-_FRESH: dict = {"schema_version": SCHEMA_VERSION, "coordinators": {}}
 
 
 def _serialize(data: dict, style: _Style | None) -> str:
