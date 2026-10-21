@@ -18,6 +18,7 @@ from typing import Any
 from . import central_config, central_preflight, central_registry, central_worktrees
 from . import coordinator_claude, coordinator_codex
 from .config import PrefsError, load_prefs
+from .central_messages import MessageError, _coordinator_dir
 
 __all__ = ["adapter_for", "prepare_launch"]
 
@@ -56,8 +57,8 @@ def _failure(
 def _read_request(path: Path) -> tuple[bytes, str | None]:
     """The request bytes verbatim, or a bounded diagnostic."""
     try:
-        raw = path.read_bytes()
-    except OSError as exc:
+        raw = central_preflight._read_bounded(path)
+    except (OSError, central_preflight.PreflightError) as exc:
         return b"", f"cannot read request file: {exc}"
     if len(raw) > central_preflight.MAX_TEXT_BYTES:
         return b"", f"request exceeds {central_preflight.MAX_TEXT_BYTES} UTF-8 bytes"
@@ -219,17 +220,21 @@ def prepare_launch(
     probe = preflight.get("probe") or {}
     acc = preflight.get("acc") or {}
     cli_version = probe.get("version") or ""
-    acc_version = acc.get("installed") or acc.get("release") or ""
+    acc_version = acc.get("installed") or ""
 
     if ok:
         # Only a validated request is persisted; a refused one may hold
         # private data that never reached the checks.
-        stored_request = root_path / "coordinators" / coordinator_id / "request.md"
         try:
-            stored_request.parent.mkdir(parents=True, exist_ok=True)
-            stored_request.write_bytes(request_raw)
-        except OSError as exc:
-            return _failure(f"cannot persist the request: {exc}", coordinator_id, record)
+            directory = _coordinator_dir(root_path, coordinator_id, create=True)
+            stored_request = directory / "request.md"
+            if stored_request.is_symlink() or stored_request.resolve().parent != directory.resolve():
+                raise MessageError("request path escapes the central coordinator directory")
+            with stored_request.open("xb") as handle:
+                handle.write(request_raw)
+        except (OSError, MessageError) as exc:
+            ok, state = False, "failed"
+            last_error = f"cannot persist the request: {exc}"
 
     try:
         updated = central_registry.update_record(

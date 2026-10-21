@@ -8,6 +8,7 @@ real ``~/.config``.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -548,3 +549,60 @@ def test_adapter_for_selects_the_matching_adapter():
     assert adapter_for("codex") is coordinator_codex
     with pytest.raises(ValueError):
         adapter_for("gemini")
+
+
+def test_request_reads_are_bounded_before_allocation(
+    repo, request_file, release, root, fake_bin, monkeypatch
+):
+    _fake_claude(fake_bin, repo.parent / "cli.log")
+    original = Path.read_bytes
+    def checked(path):
+        if path == request_file:
+            raise AssertionError("request must use a bounded binary read")
+        return original(path)
+    monkeypatch.setattr(Path, "read_bytes", checked)
+    result = prepare_launch(repo, request_file, _options(release), root)
+    assert result["ok"] is True, result["error"]
+
+
+def test_request_persistence_cannot_escape_the_central_root(
+    repo, request_file, release, root, fake_bin, tmp_path
+):
+    _fake_claude(fake_bin, repo.parent / "cli.log")
+    root.mkdir(exist_ok=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = root / "coordinators"
+    if os.name == "nt":
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+                                capture_output=True, shell=False)
+        if result.returncode:
+            pytest.skip("temporary junction unavailable")
+    else:
+        link.symlink_to(outside, target_is_directory=True)
+    try:
+        result = prepare_launch(repo, request_file, _options(release), root)
+        assert result["ok"] is False
+        assert list(outside.iterdir()) == []
+        stored = central_registry.load_registry(root)["coordinators"][result["id"]]
+        assert stored["state"] == "failed"
+        assert stored["last_error"]
+    finally:
+        os.rmdir(link) if os.name == "nt" else link.unlink()
+
+
+def test_request_persistence_failure_is_durable(
+    repo, request_file, release, root, fake_bin, monkeypatch
+):
+    _fake_claude(fake_bin, repo.parent / "cli.log")
+    original = Path.open
+    def refuse(path, mode="r", *args, **kwargs):
+        if path.name == "request.md" and "coordinators" in path.parts and mode[0] in "wx":
+            raise PermissionError("synthetic write refusal")
+        return original(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", refuse)
+    result = prepare_launch(repo, request_file, _options(release), root)
+    assert result["ok"] is False
+    stored = central_registry.load_registry(root)["coordinators"][result["id"]]
+    assert stored["state"] == "failed"
+    assert "synthetic write refusal" in stored["last_error"]
