@@ -26,7 +26,7 @@ Stop after T030 for owner review. Do not start T031 merely because it becomes re
 ## Phase 1: Foundation (v0.4.0)
 
 - [X] T001 [P] [US1] Resolve central roots and coordinator settings in skill/crew-chief/scripts/crew_chief/central_config.py, tests/test_central_config.py
-- [ ] T002 [P] [US1] Expose validated central preference keys in tests/test_central_preferences.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml; depends on T001
+- [X] T002 [P] [US1] Expose validated central preference keys in tests/test_central_preferences.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml; depends on T001
 - [ ] T003 [P] [US1] Persist versioned coordinator registry records in skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_registry.py; depends on T001
 - [ ] T004 [P] [US2] Deliver durable inbox and outbox envelopes in skill/crew-chief/scripts/crew_chief/central_messages.py, tests/test_central_messages.py; depends on T003
 - [X] T005 [P] [US2] Define bounded coordinator round prompts and results in skill/crew-chief/scripts/crew_chief/coordinator_protocol.py, tests/test_coordinator_protocol.py
