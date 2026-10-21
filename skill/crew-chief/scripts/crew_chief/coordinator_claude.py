@@ -7,7 +7,8 @@ reach a shell or the argument vector. ``probe`` only runs ``--version`` and
 
 The normalized event dict carries ``session_id``, ``text``, ``tokens_in``,
 ``tokens_out``, ``tokens_total``, ``estimated``, ``model``, ``quota_family``,
-``permission_denied`` and ``error``. ``text`` is the last assistant-role answer
+``permission_denied`` and ``error``. Token fields are exact counts or ``None``
+when unknown; a CLI-reported usage dict never degrades into fabricated zeros. ``text`` is the last assistant-role answer
 (the ``result`` event's own answer field when a CLI version emits no assistant
 event); tool payloads are never selected.
 """
@@ -287,19 +288,31 @@ def _events(stdout: str) -> list[dict]:
     return events
 
 
-def _int(value: Any) -> int:
+def _int(value: Any) -> int | None:
+    """Exact primary token count, or ``None`` when absent or invalid.
+
+    Integers stay exact at any magnitude: they must never route through
+    ``float`` arithmetic because ``math.isfinite`` overflows on values like
+    ``10**400``. Invalid or missing primary usage is unknown, never a
+    fabricated measured zero.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return 0
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
     try:
-        if not math.isfinite(value):
-            return 0
-    except (TypeError, ValueError):
-        return 0
-    if value < 0:
-        return 0
-    if isinstance(value, float) and not value.is_integer():
-        return 0
+        finite = math.isfinite(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not finite or value < 0 or not value.is_integer():
+        return None
     return int(value)
+
+
+def _cache(value: Any) -> int:
+    """An optional cache counter: a valid nonnegative integer or zero."""
+    count = _int(value)
+    return 0 if count is None else count
 
 
 def _blocks_text(content: Any) -> str:
@@ -408,13 +421,19 @@ def parse_events(stdout: str, stderr: str) -> dict:
         result["text"] = text
 
     if isinstance(usage, dict):
-        result["tokens_in"] = (
-            _int(usage.get("input_tokens"))
-            + _int(usage.get("cache_creation_input_tokens"))
-            + _int(usage.get("cache_read_input_tokens"))
+        tokens_in = _int(usage.get("input_tokens"))
+        tokens_out = _int(usage.get("output_tokens"))
+        if tokens_in is not None:
+            # optional cache counters contribute zero when absent or invalid
+            tokens_in += _cache(usage.get("cache_creation_input_tokens"))
+            tokens_in += _cache(usage.get("cache_read_input_tokens"))
+        result["tokens_in"] = tokens_in
+        result["tokens_out"] = tokens_out
+        result["tokens_total"] = (
+            tokens_in + tokens_out
+            if tokens_in is not None and tokens_out is not None
+            else None
         )
-        result["tokens_out"] = _int(usage.get("output_tokens"))
-        result["tokens_total"] = result["tokens_in"] + result["tokens_out"]
     elif text:
         # shortcut: the estimate counts answer characters only; upgrade when
         # the CLI starts reporting usage for these rounds.

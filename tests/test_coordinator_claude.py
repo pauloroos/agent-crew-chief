@@ -6,6 +6,8 @@ Every CLI here is a fake Python stub: no test runs a live model CLI.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -464,9 +466,10 @@ def test_parse_events_usage_nan_does_not_raise():
 
     result = cc.parse_events(stdout, "")
 
-    assert result["tokens_in"] == 0
+    # invalid primary usage is unknown, never a fabricated measured zero
+    assert result["tokens_in"] is None
     assert result["tokens_out"] == 2
-    assert result["tokens_total"] == 2
+    assert result["tokens_total"] is None
     assert result["estimated"] is False
 
 
@@ -479,8 +482,9 @@ def test_parse_events_usage_inf_does_not_raise():
 
     result = cc.parse_events(stdout, "")
 
-    assert result["tokens_in"] == 0
-    assert result["tokens_total"] == 2
+    assert result["tokens_in"] is None
+    assert result["tokens_out"] == 2
+    assert result["tokens_total"] is None
 
 
 def test_parse_events_usage_negative_not_negative():
@@ -492,8 +496,9 @@ def test_parse_events_usage_negative_not_negative():
 
     result = cc.parse_events(stdout, "")
 
-    assert result["tokens_in"] == 0
-    assert result["tokens_total"] == 2
+    assert result["tokens_in"] is None
+    assert result["tokens_out"] == 2
+    assert result["tokens_total"] is None
 
 
 def test_parse_events_usage_bool_rejected():
@@ -505,5 +510,140 @@ def test_parse_events_usage_bool_rejected():
 
     result = cc.parse_events(stdout, "")
 
-    assert result["tokens_in"] == 0
-    assert result["tokens_total"] == 2
+    assert result["tokens_in"] is None
+    assert result["tokens_out"] == 2
+    assert result["tokens_total"] is None
+
+
+def test_parse_events_usage_huge_integer_kept_exact():
+    huge = 10 ** 400  # 400-digit JSON integer; ints must never route through float
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}",
+         "usage": {"input_tokens": huge, "output_tokens": 7}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    assert result["tokens_in"] == huge
+    assert result["tokens_out"] == 7
+    assert result["tokens_total"] == huge + 7
+    assert result["estimated"] is False
+
+
+def test_parse_events_empty_usage_is_unknown_not_zero():
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}", "usage": {}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    assert result["tokens_in"] is None
+    assert result["tokens_out"] is None
+    assert result["tokens_total"] is None
+    assert result["estimated"] is False
+
+
+def test_parse_events_absent_primary_counters_stay_unknown():
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}",
+         "usage": {"cache_read_input_tokens": 5,
+                    "cache_creation_input_tokens": 3}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    assert result["tokens_in"] is None
+    assert result["tokens_out"] is None
+    assert result["tokens_total"] is None
+    assert result["estimated"] is False
+
+
+def test_parse_events_fractional_and_string_primary_are_unknown():
+    for usage in ({"input_tokens": 2.5, "output_tokens": 1},
+                  {"input_tokens": "x", "output_tokens": 1}):
+        stdout = _stream(
+            {"type": "result", "subtype": "success", "is_error": False,
+             "session_id": SESSION, "result": "ACC_ROUND {}", "usage": usage},
+        )
+
+        result = cc.parse_events(stdout, "")
+
+        assert result["tokens_in"] is None
+        assert result["tokens_out"] == 1
+        assert result["tokens_total"] is None
+
+
+def test_parse_events_valid_primary_with_invalid_cache_counters():
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}",
+         "usage": {"input_tokens": 10, "output_tokens": 4,
+                    "cache_creation_input_tokens": "bad",
+                    "cache_read_input_tokens": True}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    # optional cache counters contribute zero; exact primaries are kept
+    assert result["tokens_in"] == 10
+    assert result["tokens_out"] == 4
+    assert result["tokens_total"] == 14
+
+
+# --- path with spaces and metacharacters -------------------------------------
+
+
+def test_probe_and_headless_from_path_with_spaces_and_metacharacters(
+        tmp_path, monkeypatch):
+    # A fake Windows shim living at a hostile path; it only ever answers
+    # --version/--help (anything else exits 2), so no model is ever launched.
+    bin_dir = tmp_path / "prog files (x86) & crew"
+    bin_dir.mkdir(parents=True)
+    log = tmp_path / "calls.log"
+    script = "\n".join([
+        "import json, sys",
+        f"HELP = {HELP_FULL!r}",
+        f"LOG = {str(log)!r}",
+        "with open(LOG, 'a', encoding='utf-8') as fh:",
+        "    fh.write(json.dumps(sys.argv[1:]) + '\\n')",
+        "if '--version' in sys.argv[1:]:",
+        "    print('1.2.3 (Claude Code)')",
+        "elif '--help' in sys.argv[1:]:",
+        "    print(HELP)",
+        "else:",
+        "    print('unexpected call')",
+        "    raise SystemExit(2)",
+        "",
+    ])
+    stub = bin_dir / "claude"
+    stub.write_text(script, encoding="utf-8")
+    if os.name == "nt":
+        shim = bin_dir / "claude.cmd"
+        shim.write_text(
+            f'@echo off\r\n"{sys.executable}" "{stub}" %*\r\n', encoding="utf-8"
+        )
+    else:
+        stub.chmod(0o755)
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")])
+    )
+
+    info = cc.probe()
+
+    assert info["available"] is True
+    assert info["version"] == "1.2.3"
+    assert _calls(log) == [["--version"], ["--help"]]
+
+    argv = cc.headless(_record(session=SESSION), "round")
+    assert argv[argv.index("--resume") + 1] == SESSION
+
+    # shell-metacharacter session ids stay rejected, even from a hostile path
+    with pytest.raises(cc.AdapterError, match="session"):
+        cc.headless(_record(session="a&b"), "round")
+    # headless builds argv only: the prompt never appears in any argument
+    prompt = 'ACC_ROUND {}"; del /q C:\\ & format C:'
+    argv = cc.headless(_record(), prompt)
+    assert all(part not in argv for part in prompt.split())
