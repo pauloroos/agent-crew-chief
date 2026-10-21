@@ -1085,6 +1085,31 @@
             "exit": 0,
             "passed": true
           }
+        },
+        {
+          "n": 10,
+          "executor": "opencode:opencode-go/muse-spark-1.2-contributor",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:10:47.015338+00:00",
+          "duration_s": 56.9,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Executor — reading your brief and running the review inside your floor only, no edits.\n\nHEAD 3b86af7bb75d3ce77d3b386908907d8150394481 — review in `E:\\DEV\\acc-v04.crew\\20261021-0722-central-3-8`, `git diff 9853381..HEAD`.\n\n**HEAD check:** `3b86af7` / `3b86af7bb75d3ce77d3b386908907d8150394481` — correct, proceeding.\n\n**Diff hygiene:** `skill/crew-chief/scripts/crew_chief/central_registry.py:315` only: `text = \"﻿\" + text` (literal U+FEFF, 3 bytes `EF BB BF`) → `text = \"\\ufeff\" + text` (6-char escape). `git diff --stat` = 1 file, 1 insertion/1 deletion. No other file touched — `tests/test_central_registry.py` unchanged. `cat -A` confirms `M-oM-;M-?` → `\\ufeff`.\n\n**Runtime equivalence:** `\"\\ufeff\" == \"﻿\"` and `ord()==65279` verified. `_serialize` at `central_registry.py:309-322` still prepends BOM when `style.bom` true, preserves newline style, blob cap check unchanged. No behavior change.\n\n**Proofs:**\n- `python -m pytest tests/test_central_registry.py -q` → 36 passed, 1 skipped `central_registry.py:309` — PASS\n- `python -m pytest tests/test_docs.py::test_no_invisible_bom_characters_in_sources -q` → 1 passed — PASS (file now has 0 literal `EF BB BF` sequences, 1 `\\ufeff` escape, 0 literal U+FEFF chars, no file-level BOM).\n\n**Spec verdict (regression-only for this correction; cumulative T003 already recorded):**\n- FR-006 done — no regression; injectable root/IDs/identity/worktree/job refs untouched.\n- FR-022 done — BOM/CRLF preserve + atomic replace identical runtime; now source-hygiene compliant.\n- FR-024 done — no regression; bound reads/traversal/corrupt isolation untouched.\n- US1/AC1 done — no regression; distinct ID/branch/worktree/session unchanged.\n- `extra`: none — diff does exactly what hygiene correction asked; no feature, no deletion out of scope.\n\n**Quality verdict:**\n- No `Critical` — single-line escape substitution, semantics proven identical.\n- No `Important` — no new branching, no error-handling change, tests cover BOM style via `_Style`.\n- `Minor` — hygiene restored, satisfies `test_no_invisible_bom_characters_in_sources`; `central_registry.py:315` now visible in review/diff tools.\n\nSkipped: full T003 re-review of `central_registry.py`/`tests/test_central_registry.py` beyond delta (per brief, cumulative review already recorded). Risk: none for this correction; literal vs escape is byte-identical after Python parse.\n\nHEAD 3b86af7bb75d3ce77d3b386908907d8150394481",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 12,
+          "tokens_in": 411215,
+          "tokens_out": 2362,
+          "tokens_total": 413577,
+          "tokens_estimated": false,
+          "cost_usd": 0.007890328,
+          "cost_known": true
         }
       ],
       "corrections": [
@@ -1144,6 +1169,17 @@
           "penalties": [],
           "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
           "graded_at": "2026-10-21T13:46:13.394278+00:00"
+        },
+        "opencode:opencode/deepseek-v4.1-flash-free": {
+          "score": 100,
+          "explain": "adherence 4/4 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 4,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "graded_at": "2026-10-21T17:12:02.852384+00:00"
         }
       },
       "ref": "T003",
@@ -1202,13 +1238,19 @@
           "reason": "unrated, no history (antigravity:gpt-oss-120b-medium); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode-go/minimax-m3.1-flash-free, opencode:opencode/deepseek-v4.1-flash-free",
           "at": "2026-10-21T13:50:15.531951+00:00",
           "role": "review"
+        },
+        {
+          "pick": "opencode:opencode-go/muse-spark-1.2-contributor",
+          "reason": "unrated, no history (opencode:opencode-go/muse-spark-1.2-contributor); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode-go/minimax-m3.1-flash-free, opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:10:28.312873+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 10,
+      "next_attempt": 11,
       "accepted": {
-        "attempt": 5,
-        "branch": "crew/20261021-0722-central-3-5",
-        "at": "2026-10-21T13:03:46.141510+00:00"
+        "attempt": 8,
+        "branch": "crew/20261021-0722-central-3-8",
+        "at": "2026-10-21T17:12:03.478638+00:00"
       }
     },
     {
@@ -2605,6 +2647,30 @@
       "n": 38,
       "text": "The T003 source-hygiene dispatch did not start: released ACC --base accepts a named branch or attempt, not literal HEAD. Retry with explicit base feat/v0.4-central; this is a coordinator invocation correction, not a model attempt or code failure. All tests/assertions and source remain unchanged while the guard is red.",
       "at": "2026-10-21T13:48:17.742744+00:00",
+      "promoted": null
+    },
+    {
+      "n": 39,
+      "text": "Resumed implementation Phase 1 from spec status and durable job records; committed pending metadata first. T001-T006 remain accepted, but T003 attempt 8 is an unapplied free source-hygiene correction. Reproduced the existing guard failure on current branch. Finish only independent review, grade, accept of this one-line correction, branch proofs, full suite and report; no later-phase dispatch. Policy: compact planning, dependency context, full verification, ACC free delegation.",
+      "at": "2026-10-21T17:10:43.392410+00:00",
+      "promoted": null
+    },
+    {
+      "n": 40,
+      "text": "T003 source-hygiene review by free Muse Spark Contributor independently confirms full HEAD 3b86af7bb75d3ce77d3b386908907d8150394481, all four criteria without regression, no extras/blockers, registry proof 36 passed/1 skipped and source guard 1 passed. Coordinator inspected the exact one-line diff: visible escape is runtime-equivalent, no existing tests/assertions deleted. Grade DeepSeek Free and accept correction only. Audited all accepted deliverables: no unwanted deletion; the sole old config line changes utf-8 to utf-8-sig as required. Other five branch proofs freshly passed. Economy alerts remain visible (attempts and elapsed time); preserve failed history and do not invent coordinator usage.",
+      "at": "2026-10-21T17:12:02.619840+00:00",
+      "promoted": null
+    },
+    {
+      "n": 41,
+      "text": "Owner addition retained for future Phase 3 only: if User Story 7 is absent, first specify coordinator quota/stall recovery (default stall_minutes=40, top-of-central stop/reset display, ask/wait/same-job handoff/stop, same-session auto-resume, durable takeover brief from spec status/pending/open attempt/rulings/messages rather than old memory, on_coordinator_quota default ask, never costlier CLI without user choice, handoff in ruling and registry). Add Given/When/Then, FRs, SCs, plan, small Phase 3/4 tasks and self-contained proofs/crew entries; spec import/status and commit before implementation. No US7/spec/phase changes are authorized during this Phase 1 completion.",
+      "at": "2026-10-21T17:12:40.208769+00:00",
+      "promoted": null
+    },
+    {
+      "n": 42,
+      "text": "PHASE 1 FINAL REPORT: T001-T006 accepted (6/6), none skipped; T007-T040 have zero attempts. This resumption completed only the pending free DeepSeek T003 source-hygiene correction through rendered review, free Muse Spark Contributor independent-family review at exact HEAD, grade 100, ACC accept and immediate branch proof. Fresh branch proofs: T001 181 passed; T002 17 passed; T003 36 passed/1 skipped; T004 25 passed/1 skipped; T005 50 passed; T006 36 passed/1 skipped; prior failing source guard 1 passed. Required full python -m pytest -q on feat/v0.4-central: 1098 passed, 4 skipped in 455.40s, exit 0, no flaky retry. Execution attempts used only free OpenCode GLM Flash, Beam, LongCat, MiniMax and DeepSeek; coordinator fallback for T003/T004/T005 followed two free failures and remains attributed in earlier rulings. Successful final task reviews: T001 Opus Low; T002 Gemini Argon Low; T003 Gemini Flash Low and correction Muse Spark Contributor; T004 Opus Low; T005 Gemini Argon Low; T006 Nemotron Ultra Free. Additional reviewer attempts and failures remain in job history. Economy: free work: 100% of pieces, 100% of recorded tokens; coordinator: not recorded; 3.7 attempts/piece; mean score 55. Alerts: attempts 3.7 above 2.5 and recorded job time 349 min above 180; no invented savings/usage. Inspected accepted diffs: no unwanted existing-code/test deletion; BOM reader change is required. Approved spec/plan/sidecar unchanged; only six task checkboxes accepted. No owner questions, no setup/global preference edits, no push/tag/main integration. Phase 2 is technically ready (T007/T008/T009/T013), awaiting explicit authorization. Keep shared job open and preserve worktree; web/Orca unapproved. Report is this durable job record.",
+      "at": "2026-10-21T17:20:29.458472+00:00",
       "promoted": null
     }
   ]
