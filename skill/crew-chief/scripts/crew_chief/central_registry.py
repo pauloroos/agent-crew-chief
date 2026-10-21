@@ -102,6 +102,10 @@ _KNOWN_FIELDS = frozenset(
 #: Fields an :func:`update_record` change must not touch.
 _IMMUTABLE_FIELDS = frozenset(("id", "schema_version", "created_at"))
 
+# Reentry is a local capability, not evidence inferred from a persisted PID.
+_LEASE_HOLDERS: dict[str, tuple[str, int, int]] = {}
+_LEASE_HOLDERS_GUARD = threading.RLock()
+
 
 class RegistryError(Exception):
     """A registry file or record cannot be loaded, stored or updated."""
@@ -524,18 +528,12 @@ def owner_lease(
 ) -> Any:
     """Hold one coordinator's exclusive supervisor lease for the ``with`` block.
 
-    The lease file ``coordinators/<uuid>/supervisor.lock`` records the owning
-    nonce, PID and acquisition time. Acquiring for the same nonce from the
-    same or another process renews nothing and simply re-enters; a different
-    nonce waits up to ``timeout_s`` and then raises
-    :class:`RegistryLockTimeout` naming the holder -- the lock file is never
-    deleted or rewritten for them, however old it looks, because age and a
-    PID alone do not prove an owner gone. Recovery is explicit: the operator
-    removes the lease file after checking :data:`_LEASE`'s payload. Yields a
-    ``{"coordinator_id", "nonce", "pid", "path"}`` snapshot.
+    Only the locally tracked owning thread may reenter its current lease.
+    A persisted nonce or PID alone never authorizes entry or stale takeover.
+    Contenders time out and leave the lock untouched for explicit recovery.
     """
     root = Path(root)
-    nonce_str = string_nonce(nonce)
+    nonce_str = _string_nonce(nonce)
     path = _coordinator_lease_path(root, coordinator_id)
     snapshot = {
         "coordinator_id": _canonical_uuid(coordinator_id),
@@ -557,8 +555,14 @@ def owner_lease(
 
     @contextmanager
     def _impl() -> Iterator[dict]:
-        existing = _read_lease(path)
-        if isinstance(existing, dict) and existing.get("nonce") == nonce_str:
+        key = os.path.normcase(str(path.resolve()))
+        identity = (nonce_str, os.getpid(), threading.get_ident())
+        with _LEASE_HOLDERS_GUARD:
+            reenter = _LEASE_HOLDERS.get(key) == identity
+        if reenter:
+            existing = _read_lease(path)
+            if not isinstance(existing, dict) or (existing.get("nonce"), existing.get("pid")) != identity[:2]:
+                raise RegistryError("lease ownership changed; explicit recovery required")
             yield snapshot
             return
 
@@ -590,18 +594,22 @@ def owner_lease(
                 raise
             break
 
+        with _LEASE_HOLDERS_GUARD:
+            _LEASE_HOLDERS[key] = identity
         try:
             yield snapshot
         finally:
-            current = _read_lease(path)
-            if isinstance(current, dict) and current.get("nonce") == nonce_str:
-                try:
-                    _sharing_retry(lambda: path.unlink(missing_ok=True))
-                except OSError:
-                    pass
+            try:
+                _release_lock(path, nonce_str, identity[1])
+            finally:
+                with _LEASE_HOLDERS_GUARD:
+                    if _LEASE_HOLDERS.get(key) == identity:
+                        del _LEASE_HOLDERS[key]
 
     return _impl()
-def string_nonce(nonce: Any) -> str:
+
+
+def _string_nonce(nonce: Any) -> str:
     """Validate the owner nonce given to :func:`owner_lease`."""
     if not isinstance(nonce, str) or not nonce.strip() or "\x00" in nonce:
         raise RegistryError(f"owner nonce must be a non-empty string, got {nonce!r}")
@@ -623,21 +631,20 @@ def _coordinator_lease_path(root: Path, coordinator_id: Any) -> Path:
                 f"{current}: coordinator path escapes the central root via a "
                 "symbolic link; explicit recovery required"
             )
+    path = current / _LEASE
+    if path.is_symlink() or not path.resolve().is_relative_to(Path(root).resolve()):
+        raise RegistryError(f"{path}: lease path escapes the central root; explicit recovery required")
     current.mkdir(parents=True, exist_ok=True)
-    return current / _LEASE
+    return path
 
 
 def _read_lease(path: Path) -> dict | None:
     """The lease payload, or ``None`` when absent/unreadable (never trusted).
 
-    A lock written by :func:`records.file_lock` briefly holds only a PID; such
-    snapshots come back ``None`` so contesting owners refuse instead of
-    guessing whose lock they are looking at.
+    Incomplete/unreadable snapshots are never evidence of ownership.
     """
     try:
         text, _ = _registry_text(path, RECORD_MAX_BYTES)
-    except (RegistriesError_t := FileNotFoundError, NotADirectoryError):
-        return None
     except (OSError, RegistryError):
         return None
     try:
@@ -647,16 +654,28 @@ def _read_lease(path: Path) -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _release_lock(path: Path, nonce: str, pid: int) -> None:
+    current = _read_lease(path)
+    if not isinstance(current, dict) or (current.get("nonce"), current.get("pid")) != (nonce, pid):
+        raise RegistryError(f"{path}: lock ownership changed; explicit recovery required")
+    try:
+        _sharing_retry(lambda: path.unlink())
+    except OSError as exc:
+        raise RegistryError(f"{path}: lock cleanup failed; explicit recovery required: {exc}") from exc
+
+
 def _registry_lock(root: Path, timeout_s: float) -> Any:
     """Hold ``registry.lock`` for one registry.json rewrite.
 
-    A bounded lock with stale takeover disabled (``math.inf`` semantics):
+    A bounded exclusive file lock with stale takeover disabled:
     the lock records the owner's nonce, PID and acquisition time inside
     itself so a hung or crashed holder is recovered explicitly, never
     broken by mtime age or an unrelated PID.
     """
     root = Path(root)
     path = root / _LOCK
+    if path.is_symlink():
+        raise RegistryError(f"{path}: symbolic lock path refused; explicit recovery required")
     path.parent.mkdir(parents=True, exist_ok=True)
     identity = {"nonce": uuid.uuid4().hex, "pid": os.getpid(), "acquired_at": _now_iso()}
 
@@ -698,13 +717,6 @@ def _registry_lock(root: Path, timeout_s: float) -> Any:
         try:
             yield path
         finally:
-            current = _read_lease(path)
-            if isinstance(current, dict) and current.get("nonce") == identity["nonce"]:
-                try:
-                    _sharing_retry(lambda: path.unlink(missing_ok=True))
-                except OSError:
-                    pass
+            _release_lock(path, identity["nonce"], identity["pid"])
 
     return _impl()
-# Keep the late alias so the name above reads exactly once.
-RegistriesError_t = FileNotFoundError

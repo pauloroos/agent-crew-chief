@@ -241,6 +241,7 @@ def test_load_registry_isolates_corrupt_rows(tmp_path):
                 good1: _record(tmp_path, id=good1),
                 bad_key: {"id": bad_key},
                 "not-an-object": ["surprise"],
+                # Deliberately invalid despite the name: its repo is relative.
                 good2: dict(_record(tmp_path, id=good2), repo="relative/repo"),
             },
         },
@@ -594,3 +595,28 @@ def test_owner_lease_rejects_traversal_and_symlink_escapes(tmp_path):
 def test_owner_lease_requires_a_nonce(tmp_path):
     with pytest.raises(RegistryError, match="nonce"):
         owner_lease(_root(tmp_path), str(uuid.uuid4()), "")
+
+
+def test_same_nonce_does_not_admit_another_thread(tmp_path):
+    root, identifier = _root(tmp_path), str(uuid.uuid4())
+
+    def contender():
+        with pytest.raises(RegistryLockTimeout):
+            with owner_lease(root, identifier, "shared-nonce", timeout_s=0.03):
+                pytest.fail("another writer entered while the owner held the lease")
+
+    with owner_lease(root, identifier, "shared-nonce"):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(contender).result(timeout=5)
+
+
+def test_persisted_same_nonce_and_pid_do_not_prove_local_ownership(tmp_path):
+    root, identifier = _root(tmp_path), str(uuid.uuid4())
+    path = root / "coordinators" / identifier / "supervisor.lock"
+    path.parent.mkdir(parents=True)
+    before = json.dumps({"nonce": "persisted", "pid": os.getpid(), "acquired_at": "2000-01-01"}).encode()
+    path.write_bytes(before)
+    with pytest.raises(RegistryLockTimeout):
+        with owner_lease(root, identifier, "persisted", timeout_s=0.03):
+            pytest.fail("a persisted PID/nonce bypassed explicit recovery")
+    assert path.read_bytes() == before
