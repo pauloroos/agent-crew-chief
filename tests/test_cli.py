@@ -15,6 +15,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from crew_chief import records
 from crew_chief.cli import main
 from crew_chief.worktree import commit_worktree, create_worktree
@@ -362,6 +364,142 @@ def test_pick_review_escalates_when_only_the_same_family_is_free(
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].strip() == "strong:s"
     assert lines[1].startswith("escalated: no free executor available")
+
+
+#: One model behind the two OpenCode routes, plus another model to review.
+_ROUTE_PREFS = """
+[[tools]]
+name = "opencode"
+kind = "opencode"
+bin = "opencode"
+models = [
+  "opencode/grok-code-free",
+  "opencode-go/grok-code-free",
+  "opencode/qwen3-coder-free",
+]
+
+[[models]]
+match = "opencode:opencode/*-free"
+cost = "free"
+
+[[models]]
+match = "opencode:opencode-go/*-free"
+cost = "free"
+"""
+
+
+@pytest.mark.parametrize(
+    "author",
+    [
+        "opencode:opencode/grok-code-free",
+        "opencode:opencode-go/grok-code-free",
+    ],
+)
+def test_pick_review_leaves_out_the_other_route_of_the_same_model(
+    git_repo, fake_bin, monkeypatch, capsys, author
+):
+    repo = git_repo
+    _write_prefs(repo, _ROUTE_PREFS)
+    fake_bin("opencode", "print('x')\n")
+    _only_bins(monkeypatch, {"opencode"})
+    job = _reviewed_job(repo, author)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--review"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    # The alias of the author's model stays out; another model is picked.
+    assert lines[0].strip() == "opencode:opencode/qwen3-coder-free"
+    assert f"reviewer outside the family of: {author}" in lines[1]
+
+
+#: The two routes of one model, each classified with its own cost. The third
+#: model matches no rule, so it falls back to the default ``paid``.
+_ROUTE_COST_PREFS = """
+[[tools]]
+name = "opencode"
+kind = "opencode"
+bin = "opencode"
+models = [
+  "opencode/grok-code-free",
+  "opencode-go/grok-code-free",
+  "opencode/qwen3-coder",
+]
+
+[[models]]
+match = "{free}"
+cost = "free"
+
+[[models]]
+match = "{included}"
+cost = "included"
+"""
+
+
+@pytest.mark.parametrize(
+    "author, free, included",
+    [
+        ("opencode:opencode/grok-code-free",
+         "opencode:opencode/grok-code-free",
+         "opencode:opencode-go/grok-code-free"),
+        ("opencode:opencode-go/grok-code-free",
+         "opencode:opencode-go/grok-code-free",
+         "opencode:opencode/grok-code-free"),
+        ("opencode:opencode/grok-code-free",
+         "opencode:opencode-go/grok-code-free",
+         "opencode:opencode/grok-code-free"),
+        ("opencode:opencode-go/grok-code-free",
+         "opencode:opencode/grok-code-free",
+         "opencode:opencode-go/grok-code-free"),
+    ],
+)
+def test_pick_review_never_takes_the_other_route_of_the_author_model(
+    git_repo, fake_bin, monkeypatch, capsys, author, free, included
+):
+    """Whichever route costs what, review never lands on the author's model."""
+    repo = git_repo
+    _write_prefs(repo, _ROUTE_COST_PREFS.format(free=free, included=included))
+    fake_bin("opencode", "print('x')\n")
+    _only_bins(monkeypatch, {"opencode"})
+    job = _reviewed_job(repo, author)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--review"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "opencode:opencode/qwen3-coder"
+    assert f"reviewer outside the family of: {author}" in lines[1]
+
+
+#: Only the alias route of the author's model is still discovered.
+_GONE_AUTHOR_PREFS = """
+[[tools]]
+name = "opencode"
+kind = "opencode"
+bin = "opencode"
+models = ["opencode-go/grok-code-free", "opencode/qwen3-coder"]
+
+[[models]]
+match = "opencode:opencode-go/grok-code-free"
+cost = "{cost}"
+"""
+
+
+@pytest.mark.parametrize("alias_cost", ["free", "included"])
+def test_pick_review_leaves_out_a_route_the_author_is_missing_from(
+    git_repo, fake_bin, monkeypatch, capsys, alias_cost
+):
+    """The author is no longer discovered: the other route still counts."""
+    repo = git_repo
+    _write_prefs(repo, _GONE_AUTHOR_PREFS.format(cost=alias_cost))
+    fake_bin("opencode", "print('x')\n")
+    _only_bins(monkeypatch, {"opencode"})
+    author = "opencode:opencode/grok-code-free"
+    job = _reviewed_job(repo, author)
+
+    assert main(["pick", "--project", str(repo), "--job", job["id"],
+                 "--piece", "1", "--review"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].strip() == "opencode:opencode/qwen3-coder"
+    assert f"reviewer outside the family of: {author}" in lines[1]
 
 
 def test_pick_excludes_an_executor_with_no_change_on_the_piece(

@@ -817,6 +817,13 @@ _EFFORT_SUFFIX = re.compile(r"-(minimal|low|medium|high|xhigh|max)$")
 #: Prefix of a subscription quota family, see :func:`quota_family`.
 _SUB_PREFIX = "sub:"
 
+#: The OpenCode route prefixes that reach the same model under one quota:
+#: the canonical route and its alias, longest first.
+_OPENCODE_ROUTES = ("opencode-go/", "opencode/")
+
+#: The canonical OpenCode route: every route of the list ends up on it.
+_OPENCODE_CANONICAL_ROUTE = "opencode/"
+
 #: Effort suffix to rank; a model without suffix counts as ``low``.
 _EFFORT_RANKS = {
     "minimal": 0, "low": 1, "medium": 2, "high": 3, "xhigh": 4, "max": 5,
@@ -830,6 +837,21 @@ _NOT_A_FAILURE = ("ok", "quota", "brief_refused")
 _EFFORT_STEPS = ("low", "medium", "high")
 
 
+def _canonical_route(tool: str, model: str) -> str:
+    """The model id with its OpenCode route prefix canonicalized.
+
+    The same model reached through the alias route (``opencode-go/``) or
+    through the canonical route (``opencode/``) draws on one quota, so both
+    end up on the canonical route. Every other route keeps its own.
+    """
+    if tool != "opencode":
+        return model
+    for route in _OPENCODE_ROUTES:
+        if model.startswith(route):
+            return _OPENCODE_CANONICAL_ROUTE + model[len(route):]
+    return model
+
+
 def quota_family(executor_id: str, cost: str = "") -> str:
     """The group of executors that share one quota with ``executor_id``.
 
@@ -839,8 +861,10 @@ def quota_family(executor_id: str, cost: str = "") -> str:
     is dropped, since every effort of a model draws on the same quota.
     Antigravity shares its quota across a whole vendor, so there the family
     is ``antigravity:<model up to the first '-'>`` (``antigravity:claude``,
-    ``antigravity:gemini``); any other tool keeps ``<tool>:<model>``. An id
-    that already is a ``sub:<tool>`` family is returned as it is.
+    ``antigravity:gemini``); any other tool keeps ``<tool>:<model>``. The two
+    OpenCode routes of one model share a family too (see
+    :func:`_canonical_route`). An id that already is a ``sub:<tool>`` family
+    is returned as it is.
     """
     if executor_id.startswith(_SUB_PREFIX):
         return executor_id
@@ -850,6 +874,7 @@ def quota_family(executor_id: str, cost: str = "") -> str:
     model = _EFFORT_SUFFIX.sub("", model)
     if tool == "antigravity":
         model = model.split("-", 1)[0]
+    model = _canonical_route(tool, model)
     return f"{tool}:{model}"
 
 
@@ -932,11 +957,12 @@ def _lowest_effort(
 ) -> list[Executor]:
     """Keep, per model, only the effort variants that suit the piece now.
 
-    Variants of one model (the same id once the effort suffix is dropped)
-    compete: the lowest :func:`effort_rank` not above the family's
-    :func:`effort_ceiling` wins, passing over variants that already failed on
-    the piece. When every variant is above the ceiling the lowest one stays,
-    so a model that only exists at high effort is not lost.
+    Variants of one model (the same id once the effort suffix and the
+    OpenCode route prefix are dropped) compete: the lowest
+    :func:`effort_rank` not above the family's :func:`effort_ceiling` wins,
+    passing over variants that already failed on the piece. When every
+    variant is above the ceiling the lowest one stays, so a model that only
+    exists at high effort is not lost.
     """
     failed: set[str] = set()
     if job and piece is not None:
@@ -947,7 +973,8 @@ def _lowest_effort(
     groups: dict[str, list[Executor]] = {}
     for executor in executors:
         tool, _, model = executor.id.partition(":")
-        key = f"{tool}:{_EFFORT_SUFFIX.sub('', model)}:{executor.cost}"
+        model = _canonical_route(tool, _EFFORT_SUFFIX.sub("", model))
+        key = f"{tool}:{model}:{executor.cost}"
         groups.setdefault(key, []).append(executor)
 
     kept: list[Executor] = []

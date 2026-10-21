@@ -98,6 +98,10 @@ from .worktree import discard as discard_branch
 #: Path of the committed scoreboard, relative to the project root.
 _SCOREBOARD_RELATIVE_PATH = Path("docs") / "crew-chief" / "scoreboard.md"
 
+#: Executor-id prefixes of the two OpenCode routes that reach one model
+#: under one quota (see :func:`crew_chief.scoring.quota_family`).
+_OPENCODE_ROUTE_IDS = ("opencode:opencode/", "opencode:opencode-go/")
+
 #: How much of the reviewer's answer (the end of the attempt note) ``dispatch
 #: --review`` prints.
 _REVIEW_ANSWER_CHARS = 3000
@@ -390,6 +394,19 @@ def _cmd_pick(args: argparse.Namespace) -> int:
             executor.id
             for executor in executors
             if quota_family(executor.id, executor.cost) in families
+        }
+        # One model behind the two OpenCode routes is one quota whatever its
+        # cost, which the family above folds into ``sub:opencode`` for
+        # ``included``: review never lands on the author's own model again.
+        same_model = {
+            quota_family(executor_id)
+            for executor_id in reviewed
+            if executor_id.startswith(_OPENCODE_ROUTE_IDS)
+        }
+        exclude |= {
+            executor.id
+            for executor in executors
+            if quota_family(executor.id) in same_model
         }
 
         escalation = ""

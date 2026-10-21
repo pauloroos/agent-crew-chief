@@ -1033,6 +1033,122 @@ def test_quota_family(executor_id, family):
     assert quota_family(executor_id) == family
 
 
+# --- OpenCode route families ------------------------------------------------
+
+
+def test_quota_family_unifies_the_two_opencode_routes():
+    # The same model behind either OpenCode route draws on one quota.
+    assert quota_family("opencode:opencode/X") == quota_family(
+        "opencode:opencode-go/X"
+    )
+    # The effort suffix is dropped on both sides, so the families still match.
+    assert quota_family("opencode:opencode/X-high") == quota_family(
+        "opencode:opencode-go/X-high"
+    )
+
+
+def test_quota_family_keeps_different_models_apart():
+    assert quota_family("opencode:opencode/X") != quota_family(
+        "opencode:opencode-go/Y"
+    )
+    assert quota_family("opencode:opencode/X") != quota_family("opencode:opencode/Y")
+
+
+def test_quota_family_keeps_the_other_opencode_routes_apart():
+    assert quota_family("opencode:openrouter/X") != quota_family(
+        "opencode:opencode/X"
+    )
+    assert quota_family("opencode:ghostcli/X") != quota_family("opencode:opencode/X")
+
+
+def test_quota_family_normalizes_only_the_opencode_tool():
+    # Another tool that carries the same model string keeps its own id.
+    assert quota_family("codex:opencode/X") == "codex:opencode/X"
+    assert quota_family("codex:opencode-go/X") == "codex:opencode-go/X"
+
+
+def test_quota_family_keeps_the_subscription_and_antigravity_rules():
+    assert quota_family("opencode:opencode/X", "included") == "sub:opencode"
+    assert quota_family("opencode:opencode-go/X", "included") == "sub:opencode"
+    assert quota_family("antigravity:claude-opus-5-5-high") == "antigravity:claude"
+
+
+def test_effort_ceiling_counts_a_failure_of_either_route():
+    job = {
+        "id": "job",
+        "pieces": [
+            {
+                "n": 1,
+                "type": "code",
+                "attempts": [_attempt("opencode:opencode-go/X", status="no_change")],
+            },
+        ],
+    }
+
+    assert effort_ceiling(job, 1, quota_family("opencode:opencode/X")) == 2
+    assert effort_ceiling(job, 1, quota_family("opencode:opencode-go/X")) == 2
+
+
+def test_pick_cools_down_both_routes_of_one_model():
+    canonical = _ex("opencode:opencode/X")
+    alias = _ex("opencode:opencode-go/X")
+    other = _ex("opencode:opencode/Y")
+
+    chosen, reason = pick(
+        [canonical, alias, other], {}, "code", "medium", _prefs(), set(),
+        _Rng(0.9), cooling={"opencode:opencode/X"},
+    )
+
+    assert chosen is other
+    skipped = reason.rsplit("; skipped for quota: ", 1)[1]
+    assert set(skipped.split(", ")) == {
+        "opencode:opencode/X",
+        "opencode:opencode-go/X",
+    }
+
+
+def test_pick_spreads_over_the_routes_of_one_model():
+    # The two routes are one family: after the canonical route ran, the alias
+    # is no spread at all, so another model wins.
+    canonical = _ex("opencode:opencode/X")
+    alias = _ex("opencode:opencode-go/X")
+    other = _ex("opencode:opencode/Y")
+    job = _job_with_picks(["opencode:opencode/X"])
+
+    chosen, _ = pick(
+        [canonical, alias, other], {}, "code", "medium", _prefs(), set(),
+        _Rng(0.9), job=job,
+    )
+
+    assert chosen is other
+
+
+def test_pick_keeps_the_effort_of_a_model_shared_by_its_routes():
+    # One model behind two routes: the effort ceiling of the family applies to
+    # both, so the low variant of the canonical route wins over the high
+    # variant of the alias route.
+    canonical = _ex("opencode:opencode/X-low")
+    alias = _ex("opencode:opencode-go/X-high")
+    job = {
+        "id": "job",
+        "pieces": [
+            {
+                "n": 1,
+                "type": "code",
+                "picks": [],
+                "attempts": [_attempt("opencode:opencode/X", status="no_change")],
+            },
+        ],
+    }
+
+    chosen, _ = pick(
+        [canonical, alias], {}, "code", "medium", _prefs(), set(), _Rng(0.9),
+        job=job, piece=1,
+    )
+
+    assert chosen is canonical
+
+
 def test_pick_skips_the_whole_antigravity_family_in_quota():
     high = _ex("antigravity:claude-opus-5-5-high")
     medium = _ex("antigravity:claude-opus-5-5-medium")
