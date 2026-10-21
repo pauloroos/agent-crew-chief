@@ -308,36 +308,82 @@ def _release(handle: Any, busy: bool) -> None:
         _close_quietly(handle)
 
 
+def _is_owned_process(child: Any) -> bool:
+    return isinstance(child, subprocess.Popen) or (
+        hasattr(child, "pid")
+        and callable(getattr(child, "poll", None))
+        and callable(getattr(child, "kill", None))
+    )
+
+
 def _terminate(child: Any) -> None:
     """Kill the owned live child tree; a persisted PID is never authority."""
-    if isinstance(child, subprocess.Popen):
-        pid = child.pid
-        if os.name == "nt":
+    if not _is_owned_process(child):
+        for name in ("terminate", "kill"):
+            method = getattr(child, name, None)
+            if callable(method):
+                try:
+                    method()
+                except (OSError, ValueError):
+                    pass
+                return
+        return
+    try:
+        if child.poll() is not None:
+            return
+    except (OSError, ValueError, AttributeError):
+        pass
+    pid = getattr(child, "pid", None)
+    if pid is None:
+        try:
+            child.kill()
+        except (OSError, ValueError):
+            pass
+        return
+    if os.name == "nt":
+        try:
             subprocess.run(
                 ["taskkill", "/T", "/F", "/PID", str(pid)],
                 capture_output=True,
+                timeout=_CLEANUP_GRACE_S,
             )
-            return
+        except (subprocess.TimeoutExpired, OSError, ValueError, subprocess.SubprocessError):
+            try:
+                if child.poll() is None:
+                    child.kill()
+            except (OSError, ValueError, AttributeError):
+                pass
+        return
+    caller_group = None
+    try:
+        caller_group = os.getpgrp()
+    except (OSError, AttributeError):
+        caller_group = None
+    try:
+        group = os.getpgid(pid)
+    except (OSError, ProcessLookupError, AttributeError):
+        group = None
+    if group is not None and group == pid and (caller_group is None or group != caller_group):
         try:
             os.killpg(pid, signal.SIGKILL)
-        except OSError:
-            child.kill()
-        return
-    for name in ("terminate", "kill"):
-        method = getattr(child, name, None)
-        if callable(method):
-            try:
-                method()
-            except (OSError, ValueError):
-                pass
             return
+        except (OSError, ProcessLookupError):
+            pass
+    try:
+        if child.poll() is None:
+            child.kill()
+    except (OSError, ValueError, AttributeError):
+        pass
 
 
 def _wait_bounded(child: Any, timeout: float = _CLEANUP_GRACE_S) -> None:
     """Wait for the owned child without waiting forever."""
+    wait = getattr(child, "wait", None)
+    if not callable(wait):
+        return
     try:
-        child.wait(timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError, ValueError):
+        wait(timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError, ValueError, AttributeError):
         pass
 
 
@@ -535,8 +581,13 @@ def run_round(record: dict, root: Path, adapter: object, spawn: object,
            for name in ("stdin", "stdout", "stderr")):
         try:
             _terminate(child)
-        except (AttributeError, OSError):
+        except (AttributeError, OSError, ValueError):
             pass
+        _wait_bounded(child)
+        for handle_name in ("stdin", "stdout", "stderr"):
+            handle = getattr(child, handle_name, None)
+            if handle is not None:
+                _release(handle, True)
         return failed("spawn must return a child with piped stdin, stdout and stderr")
 
     drains = {"stdout": _Drain(child.stdout), "stderr": _Drain(child.stderr)}
@@ -548,6 +599,11 @@ def run_round(record: dict, root: Path, adapter: object, spawn: object,
     # One deadline covers the prompt write, the child and the log drains.
     deadline = time.monotonic() + timeout
     timed_out = False
+    wait_error: str | None = None
+    fatal: BaseException | None = None
+    stdout_complete = False
+    stderr_complete = False
+    writer_complete = False
     try:
         try:
             child.wait(timeout=max(0.0, deadline - time.monotonic()))
@@ -555,14 +611,22 @@ def run_round(record: dict, root: Path, adapter: object, spawn: object,
             timed_out = True
             _terminate(child)
             _wait_bounded(child)
-        except BaseException:
+        except BaseException as exc:
             _terminate(child)
             _wait_bounded(child)
-            raise
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                fatal = exc
+            wait_error = _diag(str(exc)) or type(exc).__name__
     finally:
+        join_deadline = time.monotonic() + _JOIN_GRACE_S
         for drain in drains.values():
-            drain.join(_JOIN_GRACE_S)
-        writer.join(_JOIN_GRACE_S)
+            remaining = max(0.0, join_deadline - time.monotonic())
+            drain.join(remaining)
+        remaining = max(0.0, join_deadline - time.monotonic())
+        writer.join(remaining)
+        stdout_complete = not drains["stdout"].is_alive()
+        stderr_complete = not drains["stderr"].is_alive()
+        writer_complete = not writer.is_alive()
         _release(child.stdout, drains["stdout"].is_alive())
         _release(child.stderr, drains["stderr"].is_alive())
         _release(child.stdin, writer.is_alive())
@@ -601,6 +665,8 @@ def run_round(record: dict, root: Path, adapter: object, spawn: object,
             f"round timed out after {timeout:g}s; the owned child tree was "
             "terminated"
         )
+    elif wait_error is not None:
+        error = wait_error
     elif meta["returncode"] is None:
         error = "the coordinator CLI did not report an exit status"
     elif meta["returncode"] != 0:
@@ -610,6 +676,15 @@ def run_round(record: dict, root: Path, adapter: object, spawn: object,
             error = f"{error}: {detail}"
     elif parse_error is not None:
         error = parse_error
+
+    if writer.error is not None:
+        error = error or f"cannot write the round prompt: {writer.error}"
+    if not stdout_complete:
+        error = error or "coordinator stdout was not fully drained"
+    if not stderr_complete:
+        error = error or "coordinator stderr was not fully drained"
+    if not writer_complete:
+        error = error or "coordinator prompt was not fully written"
 
     reported = events.get("session_id")
     if reported is not None and (not isinstance(reported, str) or not reported.strip()):
@@ -658,7 +733,10 @@ def run_round(record: dict, root: Path, adapter: object, spawn: object,
             }
 
     if error is not None:
-        return failed(error)
+        outcome = failed(error)
+        if fatal is not None:
+            raise fatal
+        return outcome
 
     # The validated result is durable before anything is acknowledged.
     try:
