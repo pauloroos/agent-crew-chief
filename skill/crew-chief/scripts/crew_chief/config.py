@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import central_config
 from . import tiers
 from .records import WORK_TYPES
 
@@ -44,6 +45,16 @@ DEFAULT_QUOTA_COOLDOWN_MIN = 60
 DEFAULT_ALERT_COORDINATOR_SHARE = 0.5
 DEFAULT_ALERT_ATTEMPTS_PER_PIECE = 2.5
 DEFAULT_ALERT_JOB_MINUTES = 180
+
+#: Central coordination scalars (001-central). An empty
+#: ``coordinator_default`` falls back to the calling CLI (``CREW_CHIEF_COORDINATOR``)
+#: when a launch resolves its coordinator; the timings must be finite and
+#: positive; ``central_backend`` labels the launch in the central registry.
+DEFAULT_COORDINATOR_DEFAULT = ""
+DEFAULT_COORDINATOR_UNRESTRICTED = True
+DEFAULT_CENTRAL_POLL_S = 1.0
+DEFAULT_CENTRAL_ROUND_TIMEOUT_S = 900
+DEFAULT_CENTRAL_BACKEND = "default"
 
 #: Markers of the block ``acc setup`` manages in the global preferences file.
 SETUP_BEGIN = "# >>> acc setup >>>"
@@ -138,6 +149,14 @@ class Prefs:
     setup_models: list[dict] = field(default_factory=list)
     #: Whether :data:`tiers.BUILTIN_RULES` take part in :func:`classify`.
     builtin_tiers: bool = True
+    #: Central coordination scalars (001-central). An empty
+    #: ``coordinator_default`` falls back to the calling CLI; timings must be
+    #: finite and positive; ``central_backend`` labels the launch.
+    coordinator_default: str = DEFAULT_COORDINATOR_DEFAULT
+    coordinator_unrestricted: bool = DEFAULT_COORDINATOR_UNRESTRICTED
+    central_poll_s: float = DEFAULT_CENTRAL_POLL_S
+    central_round_timeout_s: float = DEFAULT_CENTRAL_ROUND_TIMEOUT_S
+    central_backend: str = DEFAULT_CENTRAL_BACKEND
 
 
 def tool_work_types(tool: dict) -> tuple[str, ...]:
@@ -163,7 +182,7 @@ def _read_toml(path: Path, split_setup: bool = False) -> Any:
     result is ``(data, setup_data)``; ``setup_data`` is ``{}`` without a block.
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         raise PrefsError(f"{path}: cannot read preferences file: {exc}") from exc
     if split_setup:
@@ -340,6 +359,14 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
     for rule in data.get("models", []):
         _validate_model(path, rule)
 
+    # Central coordination scalars are validated through the accepted
+    # central_config.resolve_settings interface (injected supported fallback
+    # caller, validation only).
+    try:
+        central_config.resolve_settings(data, {}, {}, "claude")
+    except central_config.CentralConfigError as exc:
+        raise PrefsError(f"{path}: {exc}") from exc
+
 
 def _merge_by_key(
     base: list[dict], override: list[dict], key: str
@@ -449,6 +476,15 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         cheap_budget_usd_job=float(pick("cheap_budget_usd_job", 0.0)),
         setup_models=list(setup_data.get("models", [])),
         builtin_tiers=pick("builtin_tiers", True),
+        coordinator_default=pick("coordinator_default", DEFAULT_COORDINATOR_DEFAULT),
+        coordinator_unrestricted=pick(
+            "coordinator_unrestricted", DEFAULT_COORDINATOR_UNRESTRICTED
+        ),
+        central_poll_s=pick("central_poll_s", DEFAULT_CENTRAL_POLL_S),
+        central_round_timeout_s=pick(
+            "central_round_timeout_s", DEFAULT_CENTRAL_ROUND_TIMEOUT_S
+        ),
+        central_backend=pick("central_backend", DEFAULT_CENTRAL_BACKEND),
         ignore_home_entries=list(
             dict.fromkeys(
                 [

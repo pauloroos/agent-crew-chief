@@ -94,6 +94,23 @@
 # lists add up.
 # ignore_home_entries = [".aider*", ".kiro"]
 
+# --- central coordination ---------------------------------------------------
+#
+# Central launches (the future public launch command, not crew-chief dispatch,
+# which remains the existing executor command) resolve their coordinator and
+# tuning from these scalars. An empty `coordinator_default` falls back to the
+# calling CLI (CREW_CHIEF_COORDINATOR); otherwise one of: claude, codex.
+# coordinator_default = ""
+# Whether the coordinator CLI gets the permission/sandbox bypass; it never
+# relaxes ACC executor tier, budget or free-first rules.
+# coordinator_unrestricted = true
+# Seconds between central registry polls.
+# central_poll_s = 1.0
+# Seconds a central round may take before timing out.
+# central_round_timeout_s = 900
+# Label for the launch in the central registry.
+# central_backend = "default"
+#
 # --- models ----------------------------------------------------------------
 #
 # `match` is an fnmatch glob tested against the executor id "<tool>:<model>".
