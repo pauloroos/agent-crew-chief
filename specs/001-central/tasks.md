@@ -76,7 +76,7 @@ Proof: `python -m pytest tests/test_command_install.py -q`.
 - [ ] T010 [P] [US1] Preflight requests and explicit worktree skill updates in skill/crew-chief/scripts/crew_chief/central_preflight.py, tests/test_central_preflight.py; depends on T005, T007, T008, T009
 - [ ] T011 [P] [US1] Prepare authorized central launches in skill/crew-chief/scripts/crew_chief/central_launch.py, tests/test_central_launch.py; depends on T002, T003, T007, T008, T009, T010
 - [ ] T012 [P] [US2] Execute one bounded headless coordinator round in skill/crew-chief/scripts/crew_chief/central_rounds.py, tests/test_central_rounds.py; depends on T003, T004, T005, T008, T009, T011
-- [ ] T013 [P] [US6] Add explicit command-only installation mode in tests/test_command_install_cli.py, install.py; depends on T006
+- [X] T013 [P] [US6] Add explicit command-only installation mode in tests/test_command_install_cli.py, install.py; depends on T006
 - [ ] T014 [P] [US4] Record idempotent coordinator usage in active jobs in skill/crew-chief/scripts/crew_chief/central_usage.py, tests/test_central_usage.py; depends on T003, T012
 
 ### T007: verification boundary
