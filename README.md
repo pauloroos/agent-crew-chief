@@ -56,7 +56,7 @@ flowchart TB
 
 1. `job new`: your request is recorded verbatim.
 2. `piece add`: it is split into pieces, each with a work type and a risk level.
-3. `pick`: an executor is chosen. Hands-on work (`code`, `tests`, `refactor`, `docs`, `data`) only goes to free models, OpenCode first; thinking work (`review`, `design`, `diagnosis`, `research`) goes to any free model and escalates to a paid one only when needed. Within that, decayed score decides, with an occasional second chance. Ties are spread over the job, and a model that just hit its quota sits out for a while.
+3. `pick`: an executor is chosen. Hands-on work (`code`, `tests`, `refactor`, `docs`, `data`) starts with free models, OpenCode first; when no free model is left, `pick` can still take an `included` one or a budget-allowed `cheap` one, and the `paid` tier needs `--strong`. Thinking work (`review`, `design`, `diagnosis`, `research`) climbs the same ladder and reaches `paid` only when needed. Within that, decayed score decides, with an occasional second chance. Ties are spread over the job, and a model that just hit its quota sits out for a while.
 4. `dispatch`: the brief runs in a fresh worktree with a hard timeout. Every attempt is recorded, whatever its status, with its duration, agent steps and tokens. An attempt that exits cleanly without changing anything is `no_change`, a failure, not `ok`. Independent pieces can be dispatched in parallel.
 5. `pick --review` + `dispatch --review`: a model outside the executor's quota family reviews the work.
 6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten. After a correction the next `dispatch` starts from the last `ok` attempt's branch, so the brief only describes the adjustment and the diff shows only that (`--fresh` starts over from `HEAD`, `--base <n|branch>` picks the starting attempt). Every executor that worked on the piece keeps its own grade.
@@ -491,17 +491,17 @@ result.
 
 Work is split between executing and thinking. The coordinator (the CLI you
 opened) is the strong model: it thinks, splits and judges. Hands-on work
-(`code`, `tests`, `refactor`, `docs`, `data`) only ever goes to free
-executors: the `exec_first` tools (OpenCode by default) first, then any other
-free one, and never to a paid model unless the coordinator passes `--strong`.
-When the free ones run out, `pick` says to split the piece or have the
-coordinator do it. Thinking work (`review`, `design`, `diagnosis`, `research`)
-goes to any free executor, OpenCode's cheap models included, and escalates to
-the paid tools in `strong_order` when no free one is left or after 2 free
-failures. A tool whose `work_types` leaves a type out is never picked for it,
-and the reason says so (`not for review: <tool>`). `pick --review` picks a
-reviewer outside the quota family of the executor that did the piece.
-`discover` ends with each tool's effective work types.
+(`code`, `tests`, `refactor`, `docs`, `data`) starts with free executors: the
+`exec_first` tools (OpenCode by default) first, then any other free one. When
+no free executor is left, `pick` can still choose an `included` executor or a
+budget-allowed `cheap` one; the `paid` tier needs `--strong`. Thinking work
+(`review`, `design`, `diagnosis`, `research`) climbs the same ladder and
+reaches the `paid` tier (`strong_order`) once the cheaper tiers are exhausted;
+2 free failures on the piece start that climb. A tool whose `work_types`
+leaves a type out is never picked for it, and the reason says so
+(`not for review: <tool>`). `pick --review` picks a reviewer outside the quota
+family of the executor that did the piece. `discover` ends with each tool's
+effective work types.
 
 Picking is free-first: the best decayed score wins. Ties (including "nobody is
 rated yet") go to the executor used least in the current job, then to a tool

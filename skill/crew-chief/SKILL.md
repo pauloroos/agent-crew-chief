@@ -6,9 +6,9 @@ description: Coordinate several executor CLIs on any non-trivial task in a proje
 # crew-chief
 
 You (the CLI the user opened) are the strong coordinator: you think, split the
-work, write the briefs and judge. The hands-on work goes to **free** executors;
-review and findings may go to any model, free ones included, and reach a more
-capable (paid) model only when that is needed. Other CLI agents ("executors")
+work, write the briefs and judge. The hands-on work starts with **free**
+executors and reaches the `paid` tier only with `--strong`; review and
+findings climb the same ladder. Other CLI agents ("executors")
 do the typing; you dispatch, judge and report. Dispatch without asking
 permission first: split the request, run the cycle, then show the result at
 the end.
@@ -16,11 +16,14 @@ the end.
 Work types come in two groups:
 
 - **Execution** - `code`, `tests`, `refactor`, `docs`, `data`: free executors
-  only. `pick` tries the tools in `exec_first` (default `["opencode"]`) first,
-  then any other free executor, and never escalates to a paid one on its own.
+  first. `pick` tries the tools in `exec_first` (default `["opencode"]`) first,
+  then any other free executor; with no free one left it can still take an
+  `included` executor or a budget-allowed `cheap` one, and reaches the `paid`
+  tier only with `--strong`.
 - **Thinking** - `review`, `design`, `diagnosis`, `research`: any free
-  executor (OpenCode's cheap models too), ranked by score; when no free one is
-  available, or after 2 free failures, `pick` escalates to a paid one.
+  executor, ranked by score; when no free one is available, or after 2 free
+  failures, `pick` climbs to `included`, then to `cheap` while the budget
+  allows, and last to `paid`.
 
 ## The CLI
 
@@ -91,10 +94,12 @@ Seven steps, in order. For a project-size request that has a spec, follow
    ```
 
    It prints `<tool>:<model>` and the one-line reason. On execution work
-   (`code`, `tests`, `refactor`, `docs`, `data`) only free executors are
-   candidates, the `exec_first` tools (OpenCode by default) ahead of the other
-   free ones; on thinking work (`review`, `design`, `diagnosis`, `research`)
-   every free executor competes on score and paid ones are the fallback.
+   (`code`, `tests`, `refactor`, `docs`, `data`) the free executors are the
+   candidates first, the `exec_first` tools (OpenCode by default) ahead of the
+   other free ones; when none is left, `included` and budget-allowed `cheap`
+   executors come next and the `paid` tier needs `--strong`. On thinking work
+   (`review`, `design`, `diagnosis`, `research`) every free executor competes
+   on score and the ladder climbs to `included`, `cheap` and then `paid`.
    Within that pool executors are ranked by their decayed score on this work
    type. A tool whose `work_types` leaves the piece's type out is never
    picked; the reason then ends with `not for <type>: <tools>`. `pick` already
@@ -484,19 +489,22 @@ a stronger model.
 **Thinking work** (`review`, `design`, `diagnosis`, `research`) escalates on its
 own. After **2 free failures** on the same piece - a non-`ok` attempt by a free
 executor, or a correction against one - or when no free executor is left,
-`pick` takes the first paid tool in `strong_order`. The escalation is recorded
-in the job, so do not force it by hand.
+`pick` climbs the ladder: `included`, then `cheap` while the budget allows, and
+last the `paid` tier in `strong_order`. The escalation is recorded in the job,
+so do not force it by hand.
 
-**Execution work** (`code`, `tests`, `refactor`, `docs`, `data`) never escalates
-on its own. After free failures `pick` keeps offering the free executors not
-yet tried on the piece; when none is left it prints
+**Execution work** (`code`, `tests`, `refactor`, `docs`, `data`) never reaches
+`paid` on its own. After free failures `pick` keeps offering the free executors
+not yet tried on the piece; when none is left it climbs to `included` and then
+to `cheap` while the budget allows, and prints
 `no executor available: no free executor left for <type>; split the piece ...`
-and exits `1`. Split the piece into smaller ones first; if it truly cannot be
-split, do it yourself.
+and exits `1` when every allowed tier is unavailable (`paid` may exist but is
+gated behind `--strong`). Split the piece into smaller ones first; if it truly
+cannot be split, do it yourself.
 
 `--strong` is the rare exception: complex work that cannot be split. It leaves
-every free executor out and is the only way execution work reaches a paid
-executor. Use it deliberately and say so in the report.
+every free executor out and is the only way execution work reaches the `paid`
+tier. Use it deliberately and say so in the report.
 
 If `pick` prints `no executor available` and exits `1`, no executor satisfied
 the rules. Follow the reason (split, do it yourself) or report it to the user
@@ -508,10 +516,10 @@ Every piece that changes files gets a review by a **different model family**
 than the executor - the same family tends to bless its own habits. Use the
 `review_default` preference as the executor id when it is set; otherwise run
 `CC pick --job <id> --piece <n> --review`, which leaves out the executor's
-quota family. Review is thinking work: any free model may do it, OpenCode's
-cheap ones included, and a paid model only when no free one is available or
-you pass `--strong`. The reviewer must not share a quota family with the
-executor that wrote the code.
+quota family. Review is thinking work: any free model may do it; when no free
+one is available `pick` climbs to `included`, then to `cheap` while the budget
+allows, and the `paid` tier comes last - or you pass `--strong`. The reviewer
+must not share a quota family with the executor that wrote the code.
 
 The reviewer sees only the review brief and the target worktree. The coordinator
 always judges: a review is input, not a verdict. Read the diff, the attempt note

@@ -56,7 +56,7 @@ flowchart TB
 
 1. `job new`: o pedido é registrado palavra por palavra.
 2. `piece add`: ele é dividido em pedaços, cada um com tipo de trabalho e nível de risco.
-3. `pick`: o executor é escolhido. O trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`) só vai para modelos grátis, OpenCode primeiro; o trabalho de pensar (`review`, `design`, `diagnosis`, `research`) vai para qualquer modelo grátis e só sobe para um pago quando é preciso. Dentro disso decide a nota com decaimento, e às vezes alguém ganha segunda chance. Empates são espalhados pelo job, e um modelo que acabou de bater cota fica de fora por um tempo.
+3. `pick`: o executor é escolhido. O trabalho braçal (`code`, `tests`, `refactor`, `docs`, `data`) começa pelos modelos grátis, OpenCode primeiro; quando não sobra nenhum, o `pick` ainda pode escolher um `included` ou um `cheap` dentro do orçamento, e o degrau `paid` exige `--strong`. O trabalho de pensar (`review`, `design`, `diagnosis`, `research`) sobe a mesma escada e só chega a `paid` quando é preciso. Dentro disso decide a nota com decaimento, e às vezes alguém ganha segunda chance. Empates são espalhados pelo job, e um modelo que acabou de bater cota fica de fora por um tempo.
 4. `dispatch`: o brief roda numa pasta nova com limite de tempo. Toda tentativa fica registrada, qualquer que seja o resultado, com duração, passos do agente e tokens. Uma tentativa que termina sem erro mas não muda nada fica `no_change`, que conta como falha, não como `ok`. Peças independentes podem ser despachadas em paralelo.
 5. `pick --review` + `dispatch --review`: um modelo fora da família de cota do executor revisa o trabalho.
 6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito. Depois de uma correção, o próximo `dispatch` parte do branch da última tentativa `ok`, então o brief descreve só o ajuste e o diff mostra só ele (`--fresh` recomeça do `HEAD`, `--base <n|branch>` escolhe a tentativa de partida). Cada executor que trabalhou na peça fica com a própria nota.
@@ -498,14 +498,13 @@ com o próprio resultado.
 
 O trabalho se divide entre executar e pensar. O coordenador (a CLI que você
 abriu) é o modelo forte: pensa, divide e julga. O braçal (`code`, `tests`,
-`refactor`, `docs`, `data`) só vai para executores grátis: primeiro as
+`refactor`, `docs`, `data`) começa pelos executores grátis: primeiro as
 ferramentas de `exec_first` (OpenCode por padrão), depois qualquer outro
-grátis, e nunca para um modelo pago a não ser que o coordenador passe
-`--strong`. Quando os grátis acabam, o `pick` manda dividir a peça ou o
-coordenador fazer ele mesmo. O trabalho de pensar (`review`, `design`,
-`diagnosis`, `research`) vai para qualquer executor grátis, inclusive os
-modelos baratos do OpenCode, e sobe para as ferramentas pagas de
-`strong_order` quando não sobra nenhum grátis ou depois de 2 falhas grátis.
+grátis. Quando não sobra executor grátis, o `pick` ainda pode escolher um
+executor `included` ou um `cheap` dentro do orçamento; o degrau `paid` exige
+`--strong`. O trabalho de pensar (`review`, `design`, `diagnosis`, `research`)
+sobe a mesma escada e chega ao degrau `paid` (`strong_order`) quando os
+degraus mais baratos acabam; 2 falhas grátis na peça já iniciam essa subida.
 Uma ferramenta cujo `work_types` deixa um tipo de fora nunca é escolhida para
 ele, e o motivo diz isso (`not for review: <ferramenta>`). `pick --review`
 escolhe um revisor fora da família de cota do executor que fez a peça. O
