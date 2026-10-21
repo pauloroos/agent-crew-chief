@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from crew_chief import records
+from crew_chief import central_registry, records
 from crew_chief.central_registry import (
     RECORD_MAX_BYTES,
     REGISTRY_READ_MAX_BYTES,
@@ -563,6 +563,28 @@ def test_owner_lease_released_when_the_body_raises(tmp_path):
     assert not host.exists()
     with owner_lease(root, coordinator_id, "nonce-b", timeout_s=5.0):
         pass
+
+
+def test_owner_lease_cleanup_failure_is_reported_and_keeps_the_lock(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    coordinator_id = str(uuid.uuid4())
+    host = root / "coordinators" / coordinator_id / "supervisor.lock"
+
+    def _failing_cleanup(*args, **kwargs):
+        raise OSError("simulated cleanup failure")
+
+    monkeypatch.setattr(central_registry, "_sharing_retry", _failing_cleanup)
+    with pytest.raises(RegistryError, match="cleanup failed"):
+        with owner_lease(root, coordinator_id, "nonce-a"):
+            assert host.is_file()
+    monkeypatch.undo()
+
+    # The failure is reported, never swallowed, and nothing claims the lease
+    # was released: the lock file is still there for explicit recovery.
+    assert host.exists(), "a failed cleanup must not claim the lease was removed"
+    payload = json.loads(host.read_text(encoding="utf-8"))
+    assert payload["nonce"] == "nonce-a"
+    assert payload["pid"] == os.getpid()
 
 
 def test_owner_lease_never_touches_the_registry_file(tmp_path):
