@@ -36,40 +36,21 @@ _DEFAULTS = {
     "central_backend": "default",
 }
 
-_COORDINATOR_OVERRIDE_KEYS = (
-    "coordinator_default",
-    "coordinator",
-    "cli",
-    "coordinator_cli",
-    "launch_cli",
-    "coordinator_override",
-    "cli_override",
-)
+#: Canonical preference keys, as documented in the plan.
+_PREF_COORDINATOR = ("coordinator_default",)
+_PREF_UNRESTRICTED = ("coordinator_unrestricted",)
+_PREF_POLL = ("central_poll_s",)
+_PREF_TIMEOUT = ("central_round_timeout_s",)
+_PREF_BACKEND = ("central_backend",)
 
-_UNRESTRICTED_OVERRIDE_KEYS = (
-    "coordinator_unrestricted",
-    "unrestricted",
-)
-
-_POLL_OVERRIDE_KEYS = (
-    "central_poll_s",
-    "central_poll_seconds",
-    "poll_s",
-    "poll",
-    "poll_seconds",
-)
-
-_TIMEOUT_OVERRIDE_KEYS = (
-    "central_round_timeout_s",
-    "central_round_timeout",
-    "round_timeout_s",
-    "round_timeout",
-)
-
-_BACKEND_OVERRIDE_KEYS = (
-    "central_backend",
-    "backend",
-)
+#: Launch override names accepted from the command line. Each tuple also keeps
+#: the canonical preference key, so a caller may pass either spelling.
+_LAUNCH_COORDINATOR = ("cli",) + _PREF_COORDINATOR
+_LAUNCH_UNRESTRICTED = ("unrestricted",) + _PREF_UNRESTRICTED
+_LAUNCH_RESTRICTED = ("restricted",)
+_LAUNCH_POLL = ("poll",) + _PREF_POLL
+_LAUNCH_TIMEOUT = ("round_timeout_s",) + _PREF_TIMEOUT
+_LAUNCH_BACKEND = ("backend",) + _PREF_BACKEND
 
 
 class CentralConfigError(ValueError):
@@ -98,39 +79,60 @@ def resolve_root(explicit: Any = None, env: dict[str, str] | None = None, home: 
     return _as_path(home) / ".config" / "agent-crew-chief" / "central"
 
 
-def _first_present(mapping: dict[str, Any] | None, keys: tuple[str, ...]) -> tuple[bool, Any]:
+def _first_present(
+    mapping: dict[str, Any] | None,
+    keys: tuple[str, ...],
+    *,
+    ignore_none: bool = False,
+) -> tuple[bool, Any, str]:
+    """Return whether a key is present, its value, and the key itself.
+
+    The key is ``""`` when nothing matches. ``ignore_none`` treats ``None``
+    like an absent value, which is what an argparse namespace looks like when
+    an optional flag was not supplied.
+    """
     if not isinstance(mapping, dict):
-        return False, None
+        return False, None, ""
     for key in keys:
         if key in mapping:
-            return True, mapping[key]
-    return False, None
+            value = mapping[key]
+            if ignore_none and value is None:
+                continue
+            return True, value, key
+    return False, None, ""
 
 
 def _resolve_scalar(
     global_data: dict[str, Any],
     project_data: dict[str, Any],
     overrides: dict[str, Any],
-    keys: tuple[str, ...],
+    launch_keys: tuple[str, ...],
+    preference_keys: tuple[str, ...],
     default: Any,
-) -> Any:
-    found, value = _first_present(overrides, keys)
+) -> tuple[Any, str]:
+    """Resolve a scalar and return it with the name used in error messages.
+
+    Launch overrides win, then project preferences, then global preferences,
+    then the built-in default. ``None`` launch values are skipped because an
+    argparse namespace reports unset flags as ``None``.
+    """
+    found, value, key = _first_present(overrides, launch_keys, ignore_none=True)
     if found:
-        return value
-    found, value = _first_present(project_data, keys)
+        return value, key
+    found, value, key = _first_present(project_data, preference_keys)
     if found:
-        return value
-    found, value = _first_present(global_data, keys)
+        return value, key
+    found, value, key = _first_present(global_data, preference_keys)
     if found:
-        return value
-    return default
+        return value, key
+    return default, preference_keys[0]
 
 
-def _normalize_coordinator(value: Any) -> str:
-    if value is None:
-        return ""
+def _normalize_coordinator(value: Any, label: str) -> str:
     if not isinstance(value, str):
-        value = str(value)
+        raise CentralConfigError(
+            f"{label} must be a string naming a coordinator CLI, got {value!r}"
+        )
     value = value.strip()
     if not value:
         return ""
@@ -138,6 +140,12 @@ def _normalize_coordinator(value: Any) -> str:
     if lowered in _COORDINATOR_ALIASES:
         return _COORDINATOR_ALIASES[lowered]
     return lowered
+
+
+def _validate_bool(label: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise CentralConfigError(f"{label} must be a boolean, got {value!r}")
+    return value
 
 
 def _validate_timing(name: str, value: Any) -> Any:
@@ -166,20 +174,26 @@ def resolve_settings(
 
     ``global_data`` and ``project_data`` are preference dictionaries;
     ``overrides`` are launch-flag values. Precedence is overrides, then
-    project, then global, then the built-in default. An empty coordinator
-    default falls back to ``caller`` (the calling CLI). Unknown coordinators
-    and non-finite or non-positive timings raise :class:`CentralConfigError`.
+    project, then global, then the built-in default. ``None`` launch values are
+    ignored, the way an argparse namespace reports an unset flag, so they never
+    mask a project or global setting. An empty coordinator default falls back
+    to ``caller`` (the calling CLI). Unknown coordinators, non-string
+    coordinator values, non-boolean permission flags and non-finite or
+    non-positive timings raise :class:`CentralConfigError`.
     """
     global_data = global_data or {}
     project_data = project_data or {}
     overrides = overrides or {}
 
-    raw_coordinator = _resolve_scalar(
-        global_data, project_data, overrides, _COORDINATOR_OVERRIDE_KEYS, _DEFAULTS["coordinator_default"]
+    raw_coordinator, coordinator_label = _resolve_scalar(
+        global_data, project_data, overrides,
+        _LAUNCH_COORDINATOR, _PREF_COORDINATOR,
+        _DEFAULTS["coordinator_default"],
     )
-    coordinator = _normalize_coordinator(raw_coordinator)
+    coordinator = _normalize_coordinator(raw_coordinator, coordinator_label)
     if not coordinator:
-        coordinator = _normalize_coordinator(caller)
+        if caller is not None:
+            coordinator = _normalize_coordinator(caller, COORDINATOR_ENV)
     if not coordinator:
         raise CentralConfigError(
             "no coordinator CLI could be resolved; set --cli, "
@@ -191,30 +205,39 @@ def resolve_settings(
             f"{', '.join(SUPPORTED_COORDINATORS)}"
         )
 
-    # unrestricted: launch flags may be expressed as restricted=True
-    unrestricted_found, unrestricted_raw = _first_present(overrides, _UNRESTRICTED_OVERRIDE_KEYS)
-    restricted_found, restricted_raw = _first_present(overrides, ("restricted",))
+    # unrestricted: launch flags may also be expressed as restricted=True.
+    unrestricted_found, unrestricted_raw, unrestricted_label = _first_present(
+        overrides, _LAUNCH_UNRESTRICTED, ignore_none=True
+    )
+    restricted_found, restricted_raw, restricted_label = _first_present(
+        overrides, _LAUNCH_RESTRICTED, ignore_none=True
+    )
     if unrestricted_found:
-        unrestricted = bool(unrestricted_raw)
+        unrestricted = _validate_bool(unrestricted_label, unrestricted_raw)
     elif restricted_found:
-        unrestricted = not bool(restricted_raw)
+        unrestricted = not _validate_bool(restricted_label, restricted_raw)
     else:
-        value = _resolve_scalar(
+        raw_unrestricted, pref_label = _resolve_scalar(
             global_data, project_data, overrides,
-            ("coordinator_unrestricted", "unrestricted"),
+            _LAUNCH_UNRESTRICTED, _PREF_UNRESTRICTED,
             _DEFAULTS["coordinator_unrestricted"],
         )
-        unrestricted = bool(value)
+        unrestricted = _validate_bool(pref_label, raw_unrestricted)
 
-    poll = _validate_timing(
-        "central_poll_s",
-        _resolve_scalar(global_data, project_data, overrides, _POLL_OVERRIDE_KEYS, _DEFAULTS["central_poll_s"]),
+    poll, _ = _resolve_scalar(
+        global_data, project_data, overrides,
+        _LAUNCH_POLL, _PREF_POLL, _DEFAULTS["central_poll_s"],
     )
-    timeout = _validate_timing(
-        "central_round_timeout_s",
-        _resolve_scalar(global_data, project_data, overrides, _TIMEOUT_OVERRIDE_KEYS, _DEFAULTS["central_round_timeout_s"]),
+    poll = _validate_timing("central_poll_s", poll)
+    timeout, _ = _resolve_scalar(
+        global_data, project_data, overrides,
+        _LAUNCH_TIMEOUT, _PREF_TIMEOUT, _DEFAULTS["central_round_timeout_s"],
     )
-    backend = _resolve_scalar(global_data, project_data, overrides, _BACKEND_OVERRIDE_KEYS, _DEFAULTS["central_backend"])
+    timeout = _validate_timing("central_round_timeout_s", timeout)
+    backend, _ = _resolve_scalar(
+        global_data, project_data, overrides,
+        _LAUNCH_BACKEND, _PREF_BACKEND, _DEFAULTS["central_backend"],
+    )
     if not isinstance(backend, str) or not backend.strip():
         raise CentralConfigError(f"central_backend must be a non-empty string, got {backend!r}")
     backend = backend.strip()
