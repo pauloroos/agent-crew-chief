@@ -190,12 +190,11 @@ def test_headless_restricted_denies_permission_prompts(fake_bin, tmp_path):
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
 
 
-def test_headless_restricted_falls_back_to_plan_mode(fake_bin, tmp_path):
+def test_headless_restricted_plan_only_is_capability_error(fake_bin, tmp_path):
     _fake_claude(fake_bin, tmp_path / "calls.log", help_text=HELP_PLAN)
 
-    argv = cc.headless(_record(settings={"coordinator_unrestricted": False}), "round")
-
-    assert argv[argv.index("--permission-mode") + 1] == "plan"
+    with pytest.raises(cc.AdapterError, match="restricted"):
+        cc.headless(_record(settings={"coordinator_unrestricted": False}), "round")
 
 
 def test_headless_restricted_without_deny_mode_refuses(fake_bin, tmp_path):
@@ -248,6 +247,9 @@ def test_headless_rejects_control_characters_in_session(fake_bin, tmp_path):
         cc.headless(_record(session="bad\nsession"), "round")
     with pytest.raises(cc.AdapterError, match="session"):
         cc.headless(_record(session=1234), "round")
+    for bad in ("--evil", "a;b", "a|b", "a&b", "`id`", "a$(x)", "a b"):
+        with pytest.raises(cc.AdapterError, match="session"):
+            cc.headless(_record(session=bad), "round")
 
 
 # --- interactive ------------------------------------------------------------
@@ -451,3 +453,57 @@ def test_parse_events_bounds_output(monkeypatch):
 
     assert result["text"] == ""
     assert "exceeds" in result["error"]
+
+
+def test_parse_events_usage_nan_does_not_raise():
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}",
+         "usage": {"input_tokens": float("nan"), "output_tokens": 2}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    assert result["tokens_in"] == 0
+    assert result["tokens_out"] == 2
+    assert result["tokens_total"] == 2
+    assert result["estimated"] is False
+
+
+def test_parse_events_usage_inf_does_not_raise():
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}",
+         "usage": {"input_tokens": float("inf"), "output_tokens": 2}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    assert result["tokens_in"] == 0
+    assert result["tokens_total"] == 2
+
+
+def test_parse_events_usage_negative_not_negative():
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}",
+         "usage": {"input_tokens": -5, "output_tokens": 2}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    assert result["tokens_in"] == 0
+    assert result["tokens_total"] == 2
+
+
+def test_parse_events_usage_bool_rejected():
+    stdout = _stream(
+        {"type": "result", "subtype": "success", "is_error": False,
+         "session_id": SESSION, "result": "ACC_ROUND {}",
+         "usage": {"input_tokens": True, "output_tokens": 2}},
+    )
+
+    result = cc.parse_events(stdout, "")
+
+    assert result["tokens_in"] == 0
+    assert result["tokens_total"] == 2

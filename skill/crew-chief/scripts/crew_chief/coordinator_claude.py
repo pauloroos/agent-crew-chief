@@ -15,6 +15,7 @@ event); tool payloads are never selected.
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -144,7 +145,7 @@ def _probe(exe: str) -> dict:
         return result
     capabilities = _capabilities_from(help_text)
     result["capabilities"] = capabilities
-    result["restricted_headless"] = capabilities["dontAsk"] or capabilities["plan"]
+    result["restricted_headless"] = capabilities["dontAsk"]
     return result
 
 
@@ -172,8 +173,8 @@ def _session(record: dict) -> str | None:
     session = value.strip()
     if not session:
         return None
-    if len(session) > _MAX_SESSION_CHARS or any(
-        character.isspace() or ord(character) < 32 for character in session
+    if len(session) > _MAX_SESSION_CHARS or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:-]*", session
     ):
         raise AdapterError("session_id contains whitespace or control characters")
     return session
@@ -190,8 +191,6 @@ def _restricted_flags() -> list[str]:
     capabilities = info["capabilities"]
     if capabilities.get("dontAsk"):
         return ["--permission-mode", "dontAsk"]
-    if capabilities.get("plan"):
-        return ["--permission-mode", "plan"]
     raise AdapterError(
         "restricted claude headless rounds are unsupported: no non-prompt "
         "deny permission mode was reported; use unrestricted or attach interactively"
@@ -211,11 +210,27 @@ def headless(record: dict, prompt: str) -> list[str]:
     if size > MAX_PROMPT_BYTES:
         raise AdapterError(f"round prompt exceeds {MAX_PROMPT_BYTES} UTF-8 bytes")
 
-    argv = [_exe(), "-p", "--output-format", "stream-json", "--verbose"]
+    unrestricted = _unrestricted(record)
     session = _session(record)
+    info = probe()
+    if not info["available"]:
+        raise AdapterError(
+            "claude headless round needs a capability probe: "
+            + (info["error"] or f"{CLI} is not available")
+        )
+    capabilities = info["capabilities"]
+    if not capabilities.get("stream_json"):
+        raise AdapterError("claude headless round requires stream-json output support")
+    if not capabilities.get("verbose"):
+        raise AdapterError("claude headless round requires verbose output support")
+    if session is not None and not capabilities.get("resume"):
+        raise AdapterError("claude headless round requires resume support")
+    if unrestricted and not capabilities.get("bypass_permissions"):
+        raise AdapterError("claude headless round requires bypass permission support")
+    argv = [_exe(), "-p", "--output-format", "stream-json", "--verbose"]
     if session is not None:
         argv += ["--resume", session]
-    if _unrestricted(record):
+    if unrestricted:
         argv.append("--dangerously-skip-permissions")
     else:
         argv += _restricted_flags()
@@ -226,11 +241,23 @@ def interactive(record: dict) -> list[str]:
     """argv that resumes the persisted session in the caller's terminal."""
     if not isinstance(record, dict):
         raise AdapterError("record must be an object")
+    unrestricted = _unrestricted(record)
     session = _session(record)
     if session is None:
         raise AdapterError("interactive attach requires a persisted session_id")
+    info = probe()
+    if not info["available"]:
+        raise AdapterError(
+            "claude interactive attach needs a capability probe: "
+            + (info["error"] or f"{CLI} is not available")
+        )
+    capabilities = info["capabilities"]
+    if not capabilities.get("resume"):
+        raise AdapterError("claude interactive attach requires resume support")
+    if unrestricted and not capabilities.get("bypass_permissions"):
+        raise AdapterError("claude interactive attach requires bypass permission support")
     argv = [_exe(), "--resume", session]
-    if _unrestricted(record):
+    if unrestricted:
         argv.append("--dangerously-skip-permissions")
     return argv
 
@@ -262,6 +289,15 @@ def _events(stdout: str) -> list[dict]:
 
 def _int(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    try:
+        if not math.isfinite(value):
+            return 0
+    except (TypeError, ValueError):
+        return 0
+    if value < 0:
+        return 0
+    if isinstance(value, float) and not value.is_integer():
         return 0
     return int(value)
 
