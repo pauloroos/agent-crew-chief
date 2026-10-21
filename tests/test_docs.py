@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 from pathlib import Path
 
@@ -14,6 +15,8 @@ SKILL_MD = ROOT / "skill" / "crew-chief" / "SKILL.md"
 README = ROOT / "README.md"
 README_PT = ROOT / "README.pt-BR.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
+TUTORIAL_01 = ROOT / "docs" / "tutorials" / "01-first-job.md"
+TUTORIAL_01_PT = ROOT / "docs" / "tutorials" / "01-first-job.pt-BR.md"
 
 
 def _read(path: Path) -> str:
@@ -92,8 +95,27 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
-def test_version_is_0_3_3_and_changelog_has_its_section():
-    assert __version__ == "0.3.3"
+def test_version_is_0_3_4_and_changelog_has_its_section():
+    assert __version__ == "0.3.4"
+    text = _read(CHANGELOG)
+    section = text.split("## [0.3.4]", 1)[1].split("\n## [", 1)[0]
+    for needle in (
+        "--exclude",
+        "opencode-go",
+        ".docker",
+        "cost-and-safety",
+        "ladder",
+        "--strong",
+        "budget",
+        "setup",
+        "SKILL.md",
+        "0.3.4",
+    ):
+        assert needle in section, needle
+
+
+def test_changelog_keeps_the_0_3_3_section():
+    """Bumping the version must not rewrite the released section."""
     text = _read(CHANGELOG)
     section = text.split("## [0.3.3]", 1)[1].split("\n## [", 1)[0]
     for needle in (
@@ -106,6 +128,18 @@ def test_version_is_0_3_3_and_changelog_has_its_section():
         "0.3.3",
     ):
         assert needle in section, needle
+    # The exact bytes of the released section, so a rewrite of it is caught
+    # even when it keeps every word the needles above look for.
+    digest = hashlib.sha256(section.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+    assert digest == "76e1bfa0dba33de5c44831f06bbae2ee6314431ec28e4e6d5a7094583c5b61d1"
+
+
+def test_install_pins_the_current_release():
+    """The install commands pin the released tag, not an older one."""
+    for path in (README, README_PT, TUTORIAL_01, TUTORIAL_01_PT):
+        text = _read(path)
+        assert "v0.3.4" in text, path.name
+        assert "v0.3.3" not in text, path.name
 
 
 def test_changelog_keeps_the_0_3_2_section():

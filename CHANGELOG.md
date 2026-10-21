@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [0.3.4] - 2026-10-20
+
+### Fixed
+- **Repeated exclusions accumulate:** `pick --exclude` adds its ids instead of replacing the ones before it, so `--exclude ID_1 --exclude ID_2` leaves out both. One option with several ids (`--exclude ID_1 ID_2`) works as before.
+- **One OpenCode model, one family:** the two OpenCode routes to the same model — `opencode:opencode/MODEL` and `opencode:opencode-go/MODEL` — draw on one quota, so they are one family now. A review of work by one of them leaves the other out by itself, and the effort variants of one model still compete as one model.
+- **Docker Desktop no longer trips the outside-write check:** `.docker` in the home folder joins the entries the check ignores, like the other agent-CLI folders. Other home writes are still reported.
+
+### Changed
+- **The cost-and-safety tutorial runs end to end:** the third tutorial (English and Brazilian Portuguese) shows every command it describes — the lab preferences path, the request files, the job and the piece, the picks, the dispatches and the PowerShell equivalents — and marks which outputs are recorded and which are illustrative.
+- **The tutorial says what the ladder really does:** `free` first, then `included`, then `cheap` while the budget allows, and `paid` last. Only hands-on work needs `--strong` to reach `paid`; thinking work climbs on its own. The setup block, the budget keys and the training flag are shown in place, with the rule that a scalar setting above the first table keeps its own scope.
+- **The READMEs and the skill say the same thing:** both READMEs and `SKILL.md` describe the same ladder, the same `setup` answers and the same budget rules, instead of claiming that only free executors are ever picked.
+- `__version__` is `0.3.4`.
+
 ## [0.3.3] - 2026-10-20
 
 ### Added
