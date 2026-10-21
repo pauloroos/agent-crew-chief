@@ -9,7 +9,6 @@ tables are merged by ``name``/``match`` with the project winning.
 from __future__ import annotations
 
 import fnmatch
-import math
 import os
 import tomllib
 from dataclasses import dataclass, field

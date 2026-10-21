@@ -96,11 +96,13 @@
 
 # --- central coordination ---------------------------------------------------
 #
-# Central launches (crew-chief dispatch) resolve their coordinator and tuning
-# from these scalars. An empty `coordinator_default` falls back to the calling
-# CLI (CREW_CHIEF_COORDINATOR); otherwise one of: claude, codex.
+# Central launches (the future public launch command, not crew-chief dispatch,
+# which remains the existing executor command) resolve their coordinator and
+# tuning from these scalars. An empty `coordinator_default` falls back to the
+# calling CLI (CREW_CHIEF_COORDINATOR); otherwise one of: claude, codex.
 # coordinator_default = ""
-# Whether the coordinator may dispatch without restriction.
+# Whether the coordinator CLI gets the permission/sandbox bypass; it never
+# relaxes ACC executor tier, budget or free-first rules.
 # coordinator_unrestricted = true
 # Seconds between central registry polls.
 # central_poll_s = 1.0
