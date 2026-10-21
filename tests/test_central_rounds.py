@@ -770,3 +770,138 @@ def test_estimated_usage_is_marked_and_unknown_counts_stay_none(tmp_path):
     assert usage["tokens_in"] is None
     assert usage["tokens_out"] is None
     assert usage["tokens_total"] is None
+
+
+class LifecycleChild:
+    """In-memory pipes and an owned-child protocol; never signals a real PID."""
+
+    def __init__(self, wait_error=None, broken_stdin=False):
+        import io
+
+        class BrokenInput(io.BytesIO):
+            def write(self, data):
+                raise BrokenPipeError("fake prompt pipe closed")
+
+        self.stdin = BrokenInput() if broken_stdin else io.BytesIO()
+        self.stdout = io.BytesIO(b"available output\n")
+        self.stderr = io.BytesIO(b"diagnostic\n")
+        self.returncode = None
+        self.wait_error = wait_error
+        self.cleaned = False
+
+    def wait(self, timeout=None):
+        if self.wait_error is not None:
+            error, self.wait_error = self.wait_error, None
+            raise error
+        self.returncode = -9 if self.cleaned else 0
+        return self.returncode
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.cleaned = True
+        self.returncode = -9
+
+
+def test_wait_oserror_preserves_failed_usage_logs_and_unconsumed_message(tmp_path):
+    root, record, coord = prepared(tmp_path, job_ids=["job-0"], active_job_id="job-0")
+    message = send_in(root, record)
+    child = LifecycleChild(wait_error=OSError("fake wait failure"))
+    adapter = FakeAdapter(events(), ["fake-cli"])
+
+    outcome = run_round(record, root, adapter, FakeChildSpawn(child), timeout_s=1)
+
+    assert not outcome["ok"]
+    assert "fake wait failure" in outcome["error"]
+    assert child.cleaned
+    meta = round_file(coord, outcome["round_id"])
+    assert meta["state"] == "failed"
+    assert meta["usage"]["tokens_total"] == 18
+    assert meta["active_job_id"] == "job-0"
+    assert (coord / meta["logs"]["stdout"]).read_text() == "available output\n"
+    assert not ack_file(coord, message["id"]).exists()
+
+
+def test_exited_child_with_held_output_cannot_succeed(tmp_path, monkeypatch):
+    from crew_chief import central_rounds
+
+    root, record, coord = prepared(tmp_path)
+    message = send_in(root, record)
+    child = HeldPipeChild()
+
+    def exited(timeout=None):
+        child.returncode = 0
+        return 0
+
+    child.wait = exited
+    monkeypatch.setattr(central_rounds, "_JOIN_GRACE_S", 0.1)
+    adapter = FakeAdapter(events(frame(consumed_message_ids=[message["id"]])), ["fake-cli"])
+    began = time.monotonic()
+    try:
+        outcome = run_round(record, root, adapter, FakeChildSpawn(child), timeout_s=1)
+        assert time.monotonic() - began < 3
+        assert not outcome["ok"]
+        assert "stdout" in outcome["error"]
+        assert round_file(coord, outcome["round_id"])["state"] == "failed"
+        assert not ack_file(coord, message["id"]).exists()
+    finally:
+        child.release()
+
+
+def test_broken_prompt_pipe_cannot_succeed(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    child = LifecycleChild(broken_stdin=True)
+    adapter = FakeAdapter(events(), ["fake-cli"])
+
+    outcome = run_round(record, root, adapter, FakeChildSpawn(child), timeout_s=1)
+
+    assert not outcome["ok"]
+    assert "prompt" in outcome["error"]
+    assert round_file(coord, outcome["round_id"])["state"] == "failed"
+
+
+@pytest.mark.parametrize("failure", ["timeout", "exit"])
+def test_windows_tree_cleanup_is_bounded_and_falls_back_only_for_live_child(monkeypatch, failure):
+    from types import SimpleNamespace
+    from crew_chief import central_rounds
+
+    calls = []
+    killed = []
+    child = SimpleNamespace(pid=123456789, poll=lambda: None, kill=lambda: killed.append(True))
+
+    def fake_taskkill(argv, **kwargs):
+        calls.append((argv, kwargs))
+        assert kwargs.get("timeout", 0) > 0
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        return subprocess.CompletedProcess(argv, 1)
+
+    monkeypatch.setattr(central_rounds, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(central_rounds.subprocess, "run", fake_taskkill)
+    central_rounds._terminate(child)
+    assert len(calls) == 1
+    assert killed == [True]
+
+    child.poll = lambda: 0
+    calls.clear()
+    killed.clear()
+    central_rounds._terminate(child)
+    assert calls == []
+    assert killed == []
+
+
+def test_uncertain_child_identity_never_signals_a_pid(monkeypatch):
+    from types import SimpleNamespace
+    from crew_chief import central_rounds
+
+    calls = []
+
+    def unknown():
+        raise OSError("cannot verify live child")
+
+    child = SimpleNamespace(pid=123456789, poll=unknown, kill=lambda: calls.append("kill"))
+    monkeypatch.setattr(central_rounds, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(central_rounds.subprocess, "run", lambda *a, **k: calls.append("taskkill"))
+    central_rounds._terminate(child)
+    assert calls == []

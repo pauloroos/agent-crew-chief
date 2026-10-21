@@ -332,7 +332,7 @@ def _terminate(child: Any) -> None:
         if child.poll() is not None:
             return
     except (OSError, ValueError, AttributeError):
-        pass
+        return
     pid = getattr(child, "pid", None)
     if pid is None:
         try:
@@ -342,17 +342,20 @@ def _terminate(child: Any) -> None:
         return
     if os.name == "nt":
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["taskkill", "/T", "/F", "/PID", str(pid)],
                 capture_output=True,
                 timeout=_CLEANUP_GRACE_S,
             )
+            if result.returncode == 0:
+                return
         except (subprocess.TimeoutExpired, OSError, ValueError, subprocess.SubprocessError):
-            try:
-                if child.poll() is None:
-                    child.kill()
-            except (OSError, ValueError, AttributeError):
-                pass
+            pass
+        try:
+            if child.poll() is None:
+                child.kill()
+        except (OSError, ValueError, AttributeError):
+            pass
         return
     caller_group = None
     try:
