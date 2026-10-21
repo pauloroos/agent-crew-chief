@@ -2873,10 +2873,127 @@
       "title": "T010 Preflight requests and explicit worktree skill updates in skill/crew-chief/scripts/crew_chief/central_preflight.py, tests/test_central_preflight.py; depends on T005, T007, T008, T009",
       "type": "code",
       "risk": "high",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:54:13.832450+00:00",
+          "duration_s": 456.1,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief and inspect the working directory first.\n\nNow I'll write the focused failing test first.\n\nNow add codex coverage (the site says presence alone isn't success):\n\n## T010 report\n\n**Files (only these two):**\n- `skill/crew-chief/scripts/crew_chief/central_preflight.py` (new, public `preflight(record, request, spec_dir, consent, release_root) -> dict`)\n- `tests/test_central_preflight.py` (new)\n\n**Red first:** `python -m pytest tests/test_central_preflight.py -q` → `ImportError: cannot import name 'central_preflight'` (1 collection error, 0 tests).\n\n**Green proof:** `python -m pytest tests/test_central_preflight.py -q` → **24 passed, 1 skipped**.\n\n**Immediate regressions:** `python -m pytest tests/test_coordinator_claude.py tests/test_coordinator_codex.py tests/test_coordinator_protocol.py tests/test_briefcheck.py tests/test_central_worktrees.py tests/test_central_config.py -q` → **323 passed**.\n\n**What the module does**\n- Mode prerequisites: `approved-spec` needs `authorization.approved is True`; `raw-request` needs `authorize_raw is True`; `direct-spec` needs neither. Unapproved/raw modes fail before any CLI probe or process.\n- Request and each of `spec.md`, `plan.md`, `tasks.md`, `crew.toml` run through existing `briefcheck` secret/sensitive-path validation; recorded `request_digest`/`spec_digest` are re-verified, so an edited selected file returns a bounded \"changed since it was authorized\" diagnostic.\n- CLI: reuses `coordinator_claude.probe()` / `coordinator_codex.probe(record)`; requires stream-json/verbose/resume/bypass (or `dontAsk` when restricted) for Claude and `supported` + `resume_json` for Codex — executable presence alone fails.\n- Worktree ACC version from `<wt>/.claude|.agents/skills/crew-chief/.../__init__.py` vs `release_root/skill/.../__init__.py`. Mismatch/missing with `consent=False` returns `acc.action = missing|mismatch` and copies/installs nothing; with consent, only `<release_root>/install.py` runs, argv `[install.py, worktree]`, cwd/worktree-locked, then the version is re-read. Global prefs are never touched (asserted).\n- Spec transport: only the four files, byte-for-byte (BOM/CRLF preserved), into `<worktree>/specs/<dir-name>/`, returned as `spec_dir`; neighbours, symlinks, resolved-parent escapes and destination collisions are refused before writing.\n\n**Concerns**\n- The symlink-escape test skips on this Windows box (no symlink privilege); the guard itself runs wherever symlinks can be created.\n- Because existing `briefcheck` defaults include `.env`/`cookie`, a legitimate request or spec that merely mentions those tokens is refused — that is the declared \"existing sensitive-path checks\" behaviour, not an inference.\n- Destination convention `<worktree>/specs/<name>` is my contract choice for T011's declared `spec_dir` key; no T011 code exists yet to confirm it.\n\nNot committed, per coordinator constraints. Not run: full suite.\n\nDONE_WITH_CONCERNS",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_preflight.py",
+              "added": 483,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_preflight.py",
+              "added": 573,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-10-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-10-1",
+          "base": null,
+          "steps": 41,
+          "tokens_in": 2839126,
+          "tokens_out": 33382,
+          "tokens_total": 2872508,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "4a634d91905b6b2b413773e988b4c613a40af940",
+          "end_sha": "11a2261249b47375ea0c1398b1e2168eea309e5b",
+          "proof": {
+            "cmd": "python -m pytest tests/test_central_preflight.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 2,
+          "executor": "antigravity:gemini-4-argon-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T18:02:43.068503+00:00",
+          "duration_s": 98.4,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "HEAD: 11a2261249b47375ea0c1398b1e2168eea309e5b\n\n## Spec verdict\n- FR-004: done\n- FR-005: done\n- FR-021: misunderstood — `central_preflight.py` hardcodes `sensitive_paths=[]` in `briefcheck.check_brief(...)`, ignoring configured project/global `sensitive_paths` when checking requests and spec files.\n- US1/AC2: done\n- US1/AC4: done\n- extra: none (`skill/crew-chief/scripts/crew_chief/central_preflight.py` and `tests/test_central_preflight.py` only; no deletions of existing code/tests).\n\n## Quality verdict\n- **Critical** (`skill/crew-chief/scripts/crew_chief/central_preflight.py:301-309`): `_copy_spec` verifies containment of `specs` (`worktree / \"specs\"`), not `destination = specs / source.name`. If `destination` is a pre-existing symlink or Windows junction pointing to an empty external directory (`destination.is_dir()` is True and none of `SPEC_FILES` exist inside it), the collision check passes, `destination.mkdir(exist_ok=True)` succeeds, and `(destination / name).write_bytes(data)` writes the 4 files outside `worktree_root`. Check `destination.is_symlink()` and `_is_within(destination.resolve(), worktree_root)`.\n- **Important** (`skill/crew-chief/scripts/crew_chief/central_preflight.py:194,270`): `_request_digest` and `_select_spec` call `briefcheck.check_brief(..., [])` with an empty list instead of loading/passing configured `sensitive_paths` (e.g., from `config.load_prefs` for the repo/worktree or record settings). Only `DEFAULT_SENSITIVE_PATHS` (`.env`, `cookie`) are enforced, bypassing user-configured private paths and client names.\n- **Important** (`skill/crew-chief/scripts/crew_chief/central_preflight.py:259,264,412`): File reads are unbounded before memory allocation. Line 259 calls `path.read_bytes()` before checking `len(data) > MAX_TEXT_BYTES`, and line 412 calls `init.read_bytes()[:MAX_TEXT_BYTES]`, reading the entire file into memory before slicing. Read at most `MAX_TEXT_BYTES + 1` bytes via an opened file handle (or check `stat().st_size` + bounded `read(MAX_TEXT_BYTES + 1)`).\n- **Minor** (`tests/test_central_preflight.py:262-276,522-548`): Add tests covering: (1) configured `sensitive_paths` rejection in request and spec files, (2) pre-existing symlink/escape on `worktree/specs/<name>` itself, and (3) bounded file reads without full-file allocation.\n\nHEAD: 11a2261249b47375ea0c1398b1e2168eea309e5b\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 470246,
+          "tokens_out": 2104,
+          "tokens_total": 72311,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 3,
+          "executor": "opencode:opencode/glm-5.3-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T18:04:04.866491+00:00",
+          "duration_s": 601.6,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Baseline: 24 passed, 1 skipped. Now let me check the config validation rules and Python version details.\n\nThe conftest already isolates global prefs. Let me check for any external imports of the private helpers, then look at the junction behavior on this Python version quickly.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-10-3",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-10-3",
+          "base": {
+            "attempt": 1,
+            "branch": "crew/20261021-0722-central-10-1"
+          },
+          "steps": 21,
+          "tokens_in": 1021253,
+          "tokens_out": 21353,
+          "tokens_total": 1042606,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "11a2261249b47375ea0c1398b1e2168eea309e5b",
+          "end_sha": "11a2261249b47375ea0c1398b1e2168eea309e5b"
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Coordinator temp-junction executable reproducer proves _copy_spec writes all four files outside worktree through destination junction; unbounded read_bytes precedes size checks, and request/spec filtering ignores configured sensitive_paths. Add red regressions and fix these scoped preflight guards; no architecture expansion.",
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T18:03:53.132167+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode/deepseek-v4.1-flash-free": {
+          "score": 45,
+          "explain": "adherence 3/5 → 60; 1 correction −15; 0 extra; penalties none → 45",
+          "corrections": 1,
+          "done": 3,
+          "missing": 2,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "graded_at": "2026-10-21T18:03:53.365972+00:00"
+        }
+      },
       "ref": "T010",
       "task_text": "Preflight requests and explicit worktree skill updates in skill/crew-chief/scripts/crew_chief/central_preflight.py, tests/test_central_preflight.py; depends on T005, T007, T008, T009",
       "picks": [
@@ -2884,8 +3001,25 @@
           "pick": "opencode:opencode/deepseek-v4.1-flash-free",
           "reason": "best score 65 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
           "at": "2026-10-21T17:54:09.877192+00:00"
+        },
+        {
+          "pick": "antigravity:gemini-4-argon-low",
+          "reason": "unrated, no history (antigravity:gemini-4-argon-low); tier free; reviewer outside the family of: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T18:02:38.750836+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode/glm-5.3-flash-free",
+          "reason": "best score 60.8 (opencode:opencode/glm-5.3-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-21T18:04:01.562856+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 60.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-21T18:18:36.979173+00:00"
         }
-      ]
+      ],
+      "next_attempt": 5
     },
     {
       "n": 11,
@@ -3660,6 +3794,30 @@
       "n": 52,
       "text": "T008 final Sonnet Low cumulative review confirms exact full HEAD c72864422bb1d7e050a702b320a91484fdc039a6, all seven scoped criteria met and no Critical/Important findings. Numeric unknowns, huge integers and actual Windows probe/shim execution covered; POSIX shebang corrected by MiniMax. Coordinator inspected full cumulative two-new-file diff: no baseline deletion. Output cap and session mismatch checks are explicit plan/verification requirements; probe memoization is internal implementation, no extra deliverable/files to grade. Accept after free contribution grade, then immediate proof.",
       "at": "2026-10-21T17:53:43.111949+00:00",
+      "promoted": null
+    },
+    {
+      "n": 53,
+      "text": "T010 independent Gemini Argon Low review confirms pinned HEAD 11a2261249b47375ea0c1398b1e2168eea309e5b and three coordinator findings: Critical destination symlink/junction escape, Important configured-sensitive-path bypass and unbounded read-before-cap. Temp-only native junction reproducer wrote synthetic four files outside worktree. All remain unaccepted; correction already dispatched to GLM Free with red regressions for these exact guards. No architecture/scope owner question is needed for enforcing the approved containment/privacy contract.",
+      "at": "2026-10-21T18:04:33.319961+00:00",
+      "promoted": null
+    },
+    {
+      "n": 54,
+      "text": "Invoke owner fallback for T010 after two failed free contributions: DeepSeek attempt 1 rejected for reproduced containment/privacy/read-bound defects; GLM attempt 3 timed out after 601.6s with no diff. Read retained note: baseline 24 passed/1 skipped, reconnaissance only. Coordinator will add red regressions and minimal fixes only in isolated T010 fallback, then free validation contribution and cumulative independent review/grade/accept/branch proof. Never reuse unaccepted vulnerable code as accepted evidence.",
+      "at": "2026-10-21T18:15:10.937028+00:00",
+      "promoted": null
+    },
+    {
+      "n": 55,
+      "text": "T010 fallback red: 6 failed/24 passed/1 skipped prove destination live/broken junction, external installer skill-root redirect, configured private request/spec text and unbounded reads. Fixed canonical containment before writes/installer, exclusive spec destination creation, bounded read(cap+1) and configured filtering. Additional red test proves explicit update could not reconcile disagreeing installed versions; scoped fix permits only consented released-installer reconciliation, rechecks versions. Green declared proof: 31 passed/1 skipped in 7.93s. Production corrections are coordinator authored after two free failures, no acceptance yet; obtain free selected-private-path validation and independent cumulative review.",
+      "at": "2026-10-21T18:18:26.187739+00:00",
+      "promoted": null
+    },
+    {
+      "n": 56,
+      "text": "Phase 2 checkpoint: T007/T008/T009/T013 accepted with post-accept proofs 11/38/29/17 passed. T010 coordinator fallback af40a88 has 31 passed/1 skipped and awaits free validation attempt 4 based on fallback/phase2-t010; the active free attempt currently has a temporary out-of-scope test file, which cannot be accepted if retained. T011/T012/T014 not dispatched before T010 accepts. No owner questions or skipped tasks, no later-phase work. Keep job open; metadata checkpoint protects resumability. Narrow future briefs explicitly state Windows PowerShell to prevent Unix-heredoc artifacts.",
+      "at": "2026-10-21T18:26:36.662979+00:00",
       "promoted": null
     }
   ]
