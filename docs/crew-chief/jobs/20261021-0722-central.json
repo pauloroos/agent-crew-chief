@@ -4362,6 +4362,33 @@
           "cost_known": false,
           "start_sha": "11217c03aee2346438344dd6c9d10b3b22bf093f",
           "end_sha": "11217c03aee2346438344dd6c9d10b3b22bf093f"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode-go/longcat-2.5-preview-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T23:32:47.361047+00:00",
+          "duration_s": 6.4,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Upstream request failed: Endpoint is unavailable. (HTTP 402)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-14-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-14-2",
+          "base": null,
+          "steps": 1,
+          "tokens_in": 1346,
+          "tokens_out": 19,
+          "tokens_total": 1365,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false,
+          "start_sha": "33850670d1982faaccbf1bd8be3b8530dc5642ae",
+          "end_sha": "33850670d1982faaccbf1bd8be3b8530dc5642ae"
         }
       ],
       "corrections": [],
@@ -4374,9 +4401,14 @@
           "pick": "opencode:opencode/deepseek-v4.1-flash-free",
           "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/beam-free, opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode-go/minimax-m3.1-flash-free, opencode:opencode/beam-free, opencode:opencode/flint-40b-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/longcat-2.5-preview-free, opencode:opencode/mimo-v2.6-flash-free, opencode:opencode/minimax-m3.1-flash-free, opencode:opencode/nemotron-3-ultra-free, opencode:opencode/nemotron-3.5-lightning-free, opencode:opencode/nemotron-3.5-super-vl-free",
           "at": "2026-10-21T22:45:24.454942+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/longcat-2.5-preview-free",
+          "reason": "best score 60 (opencode:opencode-go/longcat-2.5-preview-free); tier free; skipped for quota: opencode:opencode-go/beam-free, opencode:opencode-go/minimax-m3.1-flash-free, opencode:opencode/beam-free, opencode:opencode/flint-40b-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free, opencode:opencode/minimax-m3.1-flash-free, opencode:opencode/nemotron-3-ultra-free, opencode:opencode/nemotron-3.5-lightning-free, opencode:opencode/nemotron-3.5-super-vl-free",
+          "at": "2026-10-21T23:32:35.416425+00:00"
         }
       ],
-      "next_attempt": 2
+      "next_attempt": 3
     },
     {
       "n": 15,
@@ -5159,6 +5191,18 @@
       "n": 78,
       "text": "Quota wait/retry 2 of 4 completed: second full 15-minute wait from 23:02:10 UTC, strict-allowlist pick at 23:17:18 UTC still reports no executor for T014 (quota cooldown). No code changes, no disallowed dispatch, full suite remains 1279 passed/5 skipped. Begin third full 15-minute wait; earliest next retry 23:32:30 UTC.",
       "at": "2026-10-21T23:17:36.271111+00:00",
+      "promoted": null
+    },
+    {
+      "n": 79,
+      "text": "Quota wait/retry 3 of 4: after third full 15-minute wait, at 23:32:31 UTC strict-allowlist pick selects free OpenCode-Go LongCat 2.5 preview again (cooldown expired). Dispatch only T014 with previously rendered bounded test-first brief. All other phases untouched; full suite 1279 passed/5 skipped applies to current accepted source before this attempt.",
+      "at": "2026-10-21T23:32:43.394811+00:00",
+      "promoted": null
+    },
+    {
+      "n": 80,
+      "text": "Retry 3 selected LongCat but T014 attempt 2 again returned provider quota HTTP 402 in 6.4s, no changes/outside writes. Strict-allowlist pick again has no available free executor. Begin fourth and final owner-required 15-minute wait. If still blocked after retry 4, stop Phase 2 and report T014 pending; never start next phase or use paid execution.",
+      "at": "2026-10-21T23:33:17.107861+00:00",
       "promoted": null
     }
   ]
