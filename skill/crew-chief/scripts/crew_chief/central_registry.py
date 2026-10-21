@@ -312,7 +312,7 @@ def _serialize(data: dict, style: _Style | None) -> str:
     newline = style.newline if style is not None else "\n"
     text = body.replace("\n", newline) + newline
     if style is not None and style.bom:
-        text = "﻿" + text
+        text = "\ufeff" + text
     blob_size = len(text.encode("utf-8"))
     if blob_size > REGISTRY_READ_MAX_BYTES:
         raise RegistryError(
