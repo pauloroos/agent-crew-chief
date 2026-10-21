@@ -6,7 +6,6 @@ Every CLI is a local stub installed by ``fake_bin``; no model is ever called.
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 import pytest
@@ -50,8 +49,14 @@ if args[:2] == ["exec", "--help"]:
         "FAKE_CODEX_EXEC_HELP",
         "--json  Print events as JSONL\n"
         "  resume  Resume a previous session\n"
-        "  --dangerously-bypass-approvals-and-sandbox  Skip approvals",
+        "  --dangerously-bypass-approvals-and-sandbox  Skip approvals\n"
+        "  --sandbox  Select sandbox policy\n"
+        "  workspace-write  Allow workspace writes\n"
+        "  read-only  Read only",
     ))
+    raise SystemExit(0)
+if args[:3] == ["exec", "resume", "--help"]:
+    print(os.environ.get("FAKE_CODEX_EXEC_RESUME_HELP", "resume  Resume a previous session"))
     raise SystemExit(0)
 
 for event in json.loads(os.environ.get("FAKE_CODEX_EVENTS", "[]")):
@@ -122,64 +127,43 @@ NORMALIZED = {
 }
 
 
-def test_first_round_runs_exec_json_with_the_prompt_on_stdin(tmp_path, codex):
-    codex.script(SESSION, ANSWER, USAGE)
-    prompt = "Do the round $(touch pwned)"
+def test_first_round_returns_exec_json_argv_with_prompt_on_stdin(tmp_path, codex):
+    argv = headless(record(tmp_path), "Do the round $(touch pwned)")
 
-    lines = headless(record(tmp_path), prompt)
-
-    call = codex.calls()[-1]
-    assert call["argv"][-4:] == ["exec", "--json", BYPASS, "-"]
-    assert call["stdin"] == prompt
-    assert prompt not in call["argv"]
-    assert Path(call["cwd"]).resolve() == tmp_path.resolve()
+    assert argv[-4:] == ["exec", "--json", BYPASS, "-"]
+    assert "Do the round $(touch pwned)" not in argv
     assert not (tmp_path / "pwned").exists()
-    assert any("thread.started" in line for line in lines)
 
 
 def test_resume_round_targets_the_persisted_session(tmp_path, codex):
-    codex.script(SESSION, ANSWER, USAGE)
+    argv = headless(record(tmp_path, session_id="thread-1"), "continue")
 
-    headless(record(tmp_path, session_id="thread-1"), "continue")
-
-    call = codex.calls()[-1]
-    assert call["argv"][-6:] == [
-        "exec", "resume", "--json", BYPASS, "thread-1", "-",
-    ]
+    assert argv[-6:] == ["exec", "resume", "--json", BYPASS, "thread-1", "-"]
 
 
 def test_interactive_resume_uses_the_exact_session(tmp_path, codex):
     argv = interactive(record(tmp_path, session_id="thread-1"))
 
     assert "resume" in argv
-    assert argv[-2:] == [BYPASS, "thread-1"]
-    assert codex.calls() == []
+    assert argv[-1] == "thread-1"
+    assert BYPASS in argv
 
 
 def test_restricted_round_omits_bypass_flags(tmp_path, codex):
-    codex.script(SESSION, ANSWER, USAGE)
     settings = {"coordinator_unrestricted": False, "central_round_timeout_s": 5}
 
-    headless(record(tmp_path, authorization={"settings": settings}), "work")
+    argv = headless(record(tmp_path, authorization={"settings": settings}), "work")
 
-    argv = codex.calls()[-1]["argv"]
     assert BYPASS not in argv
+    assert "--sandbox" in argv
     assert not any("approval" in arg or "dangerously" in arg for arg in argv)
 
 
-def test_restricted_round_times_out_instead_of_waiting_for_approval(
-    tmp_path, codex, monkeypatch
-):
-    monkeypatch.setenv("FAKE_CODEX_HANG", "1")
-    monkeypatch.setenv("FAKE_CODEX_HANG_S", "30")
-    settings = {"coordinator_unrestricted": False, "central_round_timeout_s": 1}
-
-    started = time.monotonic()
-    with pytest.raises(CodexError, match="timed out"):
-        headless(record(tmp_path, authorization={"settings": settings}), "work")
-
-    assert time.monotonic() - started < 10
-    assert BYPASS not in codex.calls()[-1]["argv"]
+def test_restricted_interactive_uses_no_prompt_policy(tmp_path, codex):
+    settings = {"coordinator_unrestricted": False}
+    argv = interactive(record(tmp_path, session_id="thread-1", authorization={"settings": settings}))
+    assert BYPASS not in argv
+    assert "-a" in argv or "--sandbox" in argv
 
 
 def test_parse_events_normalizes_reported_usage_and_session():
@@ -232,32 +216,38 @@ def test_quota_failure_is_attributed_to_the_codex_subscription():
     assert "usage limit reached" in parsed["error"]
 
 
-def test_session_mismatch_is_rejected_without_a_second_run(tmp_path, codex):
-    codex.script(
-        {"type": "thread.started", "thread_id": "someone-else"}, ANSWER, USAGE
-    )
-
-    with pytest.raises(SessionMismatchError) as caught:
-        headless(record(tmp_path, session_id="thread-1"), "continue")
-
-    assert "thread-1" in str(caught.value)
-    assert "someone-else" in str(caught.value)
-    assert len(codex.calls()) == 1
+def test_conflicting_sessions_are_an_error():
+    stdout = "\n".join(json.dumps(event) for event in (
+        {"type": "thread.started", "thread_id": "thread-1"},
+        {"type": "thread.started", "thread_id": "thread-2"},
+    ))
+    parsed = parse_events(stdout, "")
+    assert "conflicting" in parsed["error"]
 
 
-def test_nonzero_exit_retains_bounded_diagnostics(tmp_path, codex):
-    codex.script(stderr="boom: " + "y" * 10000, exit_code=3)
+def test_numeric_usage_rejects_invalid_values():
+    stdout = json.dumps({
+        "type": "turn.completed",
+        "usage": {
+            "input_tokens": True,
+            "output_tokens": float("nan"),
+            "total_tokens": -5,
+        },
+    })
+    parsed = parse_events(stdout, "")
+    # All invalid reported usage falls back to an estimate only if text exists.
+    assert parsed["tokens_in"] is None
+    assert parsed["tokens_out"] is None or parsed["estimated"] is True
 
-    with pytest.raises(CodexError) as caught:
-        headless(record(tmp_path), "work")
 
-    error = caught.value
-    assert error.returncode == 3
-    assert "exit code 3" in str(error)
-    assert "boom" in str(error)
-    assert error.stderr.startswith("boom")
-    assert len(error.stderr) < 3000
-    assert isinstance(error.stdout, list)
+def test_usage_zero_is_not_invented_estimate():
+    stdout = json.dumps({
+        "type": "turn.completed",
+        "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    })
+    parsed = parse_events(stdout, "")
+    assert parsed["estimated"] is False
+    assert parsed["tokens_total"] == 0
 
 
 def test_interactive_requires_a_persisted_session(tmp_path):
@@ -266,10 +256,23 @@ def test_interactive_requires_a_persisted_session(tmp_path):
 
 
 def test_headless_requires_a_worktree(codex, tmp_path):
-    codex.script(SESSION, ANSWER, USAGE)
-
     with pytest.raises(CodexError, match="worktree"):
         headless(record(tmp_path, worktree=""), "work")
+
+
+def test_headless_requires_a_prompt(codex, tmp_path):
+    with pytest.raises(CodexError, match="prompt"):
+        headless(record(tmp_path), "")
+
+
+def test_headless_validates_session_id(tmp_path):
+    with pytest.raises(CodexError, match="session"):
+        headless(record(tmp_path, session_id="--evil"), "work")
+
+
+def test_interactive_validates_session_id(tmp_path):
+    with pytest.raises(CodexError, match="session"):
+        interactive(record(tmp_path, session_id="--evil"))
 
 
 def test_probe_reports_the_installed_capabilities(codex):
@@ -292,9 +295,11 @@ def test_probe_reports_a_missing_resume_capability(codex, monkeypatch):
 
 
 def test_probe_does_not_require_bypass_in_restricted_mode(codex, monkeypatch, tmp_path):
-    monkeypatch.setenv("FAKE_CODEX_EXEC_HELP", "--json\n  resume  Resume a session")
+    monkeypatch.setenv(
+        "FAKE_CODEX_EXEC_HELP",
+        "--json\n  resume  Resume a session\n  --sandbox  Select sandbox",
+    )
     settings = {"coordinator_unrestricted": False}
-
     result = probe(record(tmp_path, authorization={"settings": settings}))
 
     assert result["supported"] is True
@@ -311,3 +316,15 @@ def test_probe_reports_a_missing_executable(tmp_path, monkeypatch):
     assert result["available"] is False
     assert result["supported"] is False
     assert "codex" in result["error"]
+
+
+def test_headless_capability_error_when_probe_missing(tmp_path, codex, monkeypatch):
+    monkeypatch.setenv("FAKE_CODEX_EXEC_HELP", "no json here")
+    with pytest.raises(CodexError, match="capabilities"):
+        headless(record(tmp_path), "work")
+
+
+def test_interactive_capability_error_when_probe_missing(tmp_path, codex, monkeypatch):
+    monkeypatch.setenv("FAKE_CODEX_EXEC_HELP", "no json here")
+    with pytest.raises(CodexError, match="capabilities"):
+        interactive(record(tmp_path, session_id="thread-1"))

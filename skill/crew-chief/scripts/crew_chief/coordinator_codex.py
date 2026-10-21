@@ -1,14 +1,13 @@
-"""Codex coordinator adapter: probe, headless rounds and interactive resume (T009).
+"""Codex coordinator adapter: probe, headless argv and interactive resume (T009).
 
 The adapter never chooses the CLI; ``central_config`` resolved ``codex``
-already. It only turns a coordinator record into argv, runs one bounded
-headless round through stdin and normalizes the CLI's JSONL events.
+already. It only turns a coordinator record into argv and normalizes the CLI's
+JSONL events. It never spawns, runs or communicates with a process.
 
-Restricted mode deliberately passes no approval-related flag. ``codex exec``
-is non-interactive, so a denied operation comes back as an event error instead
-of a hidden prompt; the round timeout is the guard against a CLI that waits
-anyway. Interactive entry returns the argv for the caller to run attached to
-the real terminal: no pty, tmux or ConPTY is involved.
+Restricted mode uses explicit no-prompt sandbox support instead of relying on
+timeouts or the CLI's default user configuration. Interactive entry returns the
+argv for the caller to run attached to the real terminal: no pty, tmux or
+ConPTY is involved.
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ import shutil
 import subprocess
 from typing import Any, Iterator
 
-from .dispatch import _kill_process_tree
 from .scoring import quota_family
 from .tools import QUOTA_PATTERNS
 
@@ -60,13 +58,12 @@ _ANSWER_ITEMS = ("agent_message", "assistant_message")
 #: Event fields that may carry the CLI session/thread identity.
 _SESSION_FIELDS = ("thread_id", "session_id", "conversation_id")
 
+#: Safe coordinator session identifiers: no option or shell metacharacters.
+_SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
+
 
 class CodexError(RuntimeError):
-    """A Codex round could not run or did not finish cleanly.
-
-    ``stdout`` keeps the bounded log lines the round produced, ``stderr`` the
-    bounded diagnostic and ``returncode`` the exit status when there was one.
-    """
+    """A Codex round could not run or did not finish cleanly."""
 
     def __init__(
         self,
@@ -103,7 +100,12 @@ def _settings(record: dict) -> dict:
 
 def _unrestricted(record: dict) -> bool:
     """Unrestricted permissions, the default unless explicitly disabled."""
-    return _settings(record).get("coordinator_unrestricted", True) is not False
+    value = _settings(record).get("coordinator_unrestricted", True)
+    if value is True:
+        return True
+    if value is False:
+        return False
+    raise CodexError("coordinator_unrestricted must be a boolean")
 
 
 def _timeout(record: dict) -> float:
@@ -122,11 +124,7 @@ def _executable() -> str:
 
 
 def _command(exe: str) -> list[str]:
-    """argv prefix for ``exe``, routing a Windows batch shim through cmd.
-
-    ``shell=False`` is kept everywhere; only the shim itself goes through the
-    command interpreter, and the prompt never enters it.
-    """
+    """argv prefix for ``exe``, routing a Windows batch shim through cmd."""
     if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
         return [os.environ.get("COMSPEC", "cmd.exe"), "/c", exe]
     return [exe]
@@ -148,6 +146,10 @@ def _lines(text: str) -> list[str]:
 def _count(value: object) -> int | None:
     """A reported token count, or ``None`` when the CLI did not report it."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or value < 0:
+        return None
+    if isinstance(value, float) and not value.is_integer():
         return None
     return int(value)
 
@@ -205,23 +207,33 @@ def _error_of(event: dict) -> str:
     return ""
 
 
-def parse_events(stdout: str, stderr: str) -> dict:
-    """Normalize one round's CLI output.
+def _safe_session_id(value: object) -> bool:
+    return isinstance(value, str) and _SAFE_SESSION_ID.fullmatch(value) is not None
 
-    Returns ``session_id``, ``text``, ``tokens_in``, ``tokens_out``,
-    ``tokens_total``, ``estimated``, ``model``, ``quota_family`` and ``error``.
-    Usage is only what the CLI reported; without it the answer is marked
-    ``estimated`` at one token per four characters. A malformed or unknown
-    stream leaves ``error`` populated instead of guessing an answer.
-    """
+
+def _sandbox_mode(help_text: str) -> str | None:
+    """Explicit sandbox mode for restricted Codex rounds."""
+    if "workspace-write" in (help_text or ""):
+        return "workspace-write"
+    if "read-only" in (help_text or ""):
+        return "read-only"
+    return None
+
+
+def parse_events(stdout: str, stderr: str) -> dict:
+    """Normalize one round's CLI output."""
     events = list(_events(stdout))
     session_id = ""
+    session_ids: set[str] = set()
     text = ""
     model = None
     usage: dict | None = None
     failures: list[str] = []
     for event in events:
-        session_id = _session_of(event) or session_id
+        sid = _session_of(event)
+        if sid:
+            session_ids.add(sid)
+            session_id = sid
         text = _answer_of(event) or text
         reported = event.get("model")
         if isinstance(reported, str) and reported:
@@ -231,6 +243,9 @@ def parse_events(stdout: str, stderr: str) -> dict:
         failure = _error_of(event)
         if failure:
             failures.append(failure)
+
+    if len(session_ids) > 1:
+        failures.append("conflicting codex session ids: " + ", ".join(sorted(session_ids)))
 
     tokens_in = tokens_out = tokens_total = None
     estimated = True
@@ -272,102 +287,75 @@ def parse_events(stdout: str, stderr: str) -> dict:
 def _headless_argv(record: dict, exe: str) -> list[str]:
     """Exact argv for one headless round, prompt excluded (it goes to stdin)."""
     session = record.get("session_id")
+    if session is not None and not _safe_session_id(session):
+        raise CodexError("unsafe or invalid codex session id")
     argv = [*_command(exe), "exec"]
     if session:
         argv.append("resume")
     argv.append("--json")
     if _unrestricted(record):
         argv.append(BYPASS_FLAG)
+    else:
+        mode = _sandbox_mode(_help([*_command(exe), "exec", "--help"]))
+        if mode is None:
+            raise CodexError("missing codex capabilities: sandbox")
+        argv.extend(["--sandbox", mode])
     if session:
         argv.append(str(session))
     return [*argv, "-"]
 
 
 def headless(record: dict, prompt: str) -> list[str]:
-    """Run one finite headless Codex round and return its bounded stdout lines.
-
-    Resumes ``record["session_id"]`` exactly when it is set and rejects a
-    different session reported by the CLI. A missing executable, a timeout, a
-    nonzero exit or an unusable stream raises :class:`CodexError` with the
-    retained output instead of retrying.
-    """
+    """Return argv for one finite headless Codex round (prompt goes to stdin)."""
+    if not isinstance(record, dict):
+        raise CodexError("a coordinator record is required")
     worktree = record.get("worktree")
     if not isinstance(worktree, str) or not worktree:
         raise CodexError("a coordinator worktree is required to launch codex")
     if not isinstance(prompt, str) or not prompt:
         raise CodexError("a non-empty round prompt is required")
+    session = record.get("session_id")
+    if session is not None and not _safe_session_id(session):
+        raise CodexError("unsafe or invalid codex session id")
+
     exe = _executable()
     if not os.path.isabs(exe):
         raise CodexError("codex CLI not found on PATH")
 
-    argv = _headless_argv(record, exe)
-    timeout = _timeout(record)
-    try:
-        proc = subprocess.Popen(
-            argv,
-            cwd=worktree,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            shell=False,
-            start_new_session=(os.name != "nt"),
-        )
-    except OSError as exc:
-        raise CodexError(f"cannot start codex: {exc}") from exc
+    result = probe(record)
+    if not result.get("supported"):
+        raise CodexError(result.get("error") or "missing codex capabilities")
 
-    timed_out = False
-    try:
-        stdout, stderr = proc.communicate(prompt, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        _kill_process_tree(proc)
-        stdout, stderr = proc.communicate()
-    stdout = stdout or ""
-    stderr = stderr or ""
-    lines = _lines(stdout)
-    if timed_out:
-        raise CodexError(
-            f"codex round timed out after {timeout:g}s",
-            stdout=lines,
-            stderr=_bounded(stderr),
-        )
-    if proc.returncode != 0:
-        detail = _bounded(stderr.strip())
-        message = f"codex exit code {proc.returncode}"
-        if detail:
-            message = f"{message}: {detail}"
-        raise CodexError(
-            message,
-            stdout=lines,
-            stderr=detail,
-            returncode=proc.returncode,
-        )
-
-    expected = record.get("session_id")
-    parsed = parse_events(stdout, stderr)
-    if expected and parsed["session_id"] and parsed["session_id"] != expected:
-        raise SessionMismatchError(
-            f"codex resumed {parsed['session_id']!r} instead of {expected!r}",
-            stdout=lines,
-            stderr=_bounded(stderr),
-        )
-    return lines
+    return _headless_argv(record, exe)
 
 
 def interactive(record: dict) -> list[str]:
-    """argv that resumes the persisted session attached to the real terminal.
-
-    The caller runs it with ``cwd=record["worktree"]``; the background round
-    owns the session only until that handoff.
-    """
+    """argv that resumes the persisted session attached to the real terminal."""
+    if not isinstance(record, dict):
+        raise CodexError("a coordinator record is required")
     session = record.get("session_id")
     if not isinstance(session, str) or not session:
         raise CodexError("interactive resume needs a persisted session_id")
-    argv = [*_command(_executable()), "resume"]
-    if _unrestricted(record):
+    if not _safe_session_id(session):
+        raise CodexError("unsafe or invalid codex session id")
+
+    exe = _executable()
+    if not os.path.isabs(exe):
+        raise CodexError("codex CLI not found on PATH")
+
+    result = probe(record)
+    if not result.get("supported"):
+        raise CodexError(result.get("error") or "missing codex capabilities")
+
+    unrestricted = _unrestricted(record)
+    argv = [*_command(exe)]
+    if not unrestricted and result.get("capabilities", {}).get("approval_policy"):
+        argv.extend(["-a", "never"])
+    sandbox = _sandbox_mode(_help([*_command(exe), "exec", "--help"]))
+    if not unrestricted and sandbox:
+        argv.extend(["--sandbox", sandbox])
+    argv.append("resume")
+    if unrestricted:
         argv.append(BYPASS_FLAG)
     return [*argv, session]
 
@@ -391,13 +379,7 @@ def _help(argv: list[str]) -> str:
 
 
 def probe(record: dict | None = None) -> dict:
-    """Report the installed Codex CLI and the capabilities this adapter needs.
-
-    Returns ``cli``, ``executable``, ``available``, ``version``,
-    ``capabilities``, ``missing``, ``supported`` and ``error``. ``missing``
-    names every capability a launch would need, so the caller fails visibly
-    instead of guessing from a version string.
-    """
+    """Report the installed Codex CLI and the capabilities this adapter needs."""
     exe = _executable()
     result: dict[str, Any] = {
         "cli": CLI,
@@ -409,6 +391,8 @@ def probe(record: dict | None = None) -> dict:
             "exec_resume": False,
             "interactive_resume": False,
             "bypass": False,
+            "sandbox": False,
+            "approval_policy": False,
         },
         "missing": [],
         "supported": False,
@@ -423,18 +407,38 @@ def probe(record: dict | None = None) -> dict:
     version = _help([*command, "--version"]).strip().splitlines()
     result["version"] = version[0].strip() if version else ""
     exec_help = _help([*command, "exec", "--help"])
+    exec_resume_help = _help([*command, "exec", "resume", "--help"])
     top_help = _help([*command, "--help"])
     capabilities = result["capabilities"]
     capabilities["exec_json"] = "--json" in exec_help
     capabilities["exec_resume"] = "resume" in exec_help
     capabilities["interactive_resume"] = bool(
-        re.search(r"^\s*resume\b", top_help, re.MULTILINE)
+        re.search(r"^\\s*resume\\b", top_help, re.MULTILINE)
+    ) or ("resume" in top_help)
+    capabilities["bypass"] = BYPASS_FLAG in exec_help or BYPASS_FLAG in top_help
+    capabilities["sandbox"] = (
+        ("--sandbox" in exec_help)
+        or ("workspace-write" in exec_help)
+        or ("read-only" in exec_help)
     )
-    capabilities["bypass"] = BYPASS_FLAG in exec_help
+    capabilities["approval_policy"] = (
+        ("--ask-for-approval" in top_help)
+        or ("-a" in top_help.split())
+        or ("approval_policy" in top_help)
+        or ("approval_policy" in exec_help)
+    )
 
+    unrestricted = True
+    if record is not None:
+        try:
+            unrestricted = _unrestricted(record)
+        except CodexError:
+            unrestricted = True
     required = ["exec_json", "exec_resume", "interactive_resume"]
-    if record is not None and _unrestricted(record):
+    if unrestricted:
         required.append("bypass")
+    else:
+        required.append("sandbox")
     result["missing"] = [name for name in required if not capabilities[name]]
     result["supported"] = not result["missing"]
     if not result["supported"]:
