@@ -75,6 +75,12 @@ def test_round_result_preserves_question_answer_and_consumption_ids():
     assert parse_round("\ufeff" + wire(value).replace("\n", "\r\n")) == value
 
 
+@pytest.mark.parametrize("state", ["created", "starting"])
+def test_empty_first_round_result_parses(state):
+    value = result(state=state, active_job_id=None, job_ids=[])
+    assert parse_round(wire(value)) == value
+
+
 @pytest.mark.parametrize("key", list(result()))
 def test_every_result_field_is_required(key):
     value = result()
@@ -97,6 +103,34 @@ def test_every_result_field_is_required(key):
 def test_invalid_result_fields_are_rejected(changes):
     with pytest.raises(ProtocolError):
         parse_round(wire(result(**changes)))
+
+
+def wire_with_constant(field, constant):
+    value = result()
+    original = json.dumps(value, ensure_ascii=False)
+    serialized = f'"{field}": {json.dumps(value[field], ensure_ascii=False)}'
+    assert serialized in original
+    return "ACC_ROUND\n" + original.replace(serialized, f'"{field}": {constant}')
+
+
+@pytest.mark.parametrize("field,constant", [
+    ("state", "NaN"), ("active_job_id", "Infinity"), ("job_ids", "-Infinity"),
+    ("blocked_task_refs", "NaN"), ("questions", "Infinity"),
+    ("answers", "-Infinity"), ("consumed_message_ids", "NaN"),
+])
+def test_non_finite_constants_are_rejected_in_any_result_field(field, constant):
+    with pytest.raises(ProtocolError, match="non-finite JSON constant"):
+        parse_round(wire_with_constant(field, constant))
+
+
+def test_nested_and_top_level_non_finite_constants_are_rejected():
+    text = json.dumps(result(), ensure_ascii=False)
+    nested = f'"job_ids": {json.dumps(result()["job_ids"])}'
+    with pytest.raises(ProtocolError, match="non-finite JSON constant"):
+        parse_round("ACC_ROUND\n" + text.replace(nested, '"job_ids": [Infinity]'))
+    for constant in ("NaN", "-Infinity"):
+        with pytest.raises(ProtocolError, match="non-finite JSON constant"):
+            parse_round("ACC_ROUND\n" + constant)
 
 
 def test_duplicate_effect_ids_and_duplicate_json_keys_are_rejected():
