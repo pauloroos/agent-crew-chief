@@ -94,6 +94,21 @@
 # lists add up.
 # ignore_home_entries = [".aider*", ".kiro"]
 
+# --- central coordination ---------------------------------------------------
+#
+# Central launches (crew-chief dispatch) resolve their coordinator and tuning
+# from these scalars. An empty `coordinator_default` falls back to the calling
+# CLI (CREW_CHIEF_COORDINATOR); otherwise one of: claude, codex.
+# coordinator_default = ""
+# Whether the coordinator may dispatch without restriction.
+# coordinator_unrestricted = true
+# Seconds between central registry polls.
+# central_poll_s = 1.0
+# Seconds a central round may take before timing out.
+# central_round_timeout_s = 900
+# Label for the launch in the central registry.
+# central_backend = "default"
+#
 # --- models ----------------------------------------------------------------
 #
 # `match` is an fnmatch glob tested against the executor id "<tool>:<model>".
