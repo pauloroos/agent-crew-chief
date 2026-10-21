@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -30,7 +31,9 @@ capture = {
     "argv": sys.argv[1:],
     "cwd": os.getcwd(),
     "sentinel": os.environ.get("FAKE_SENTINEL"),
-    "stdin": sys.stdin.read(),
+    "central_dir": os.environ.get("AGENT_CREW_CHIEF_CENTRAL_DIR"),
+    "coordinator": os.environ.get("CREW_CHIEF_COORDINATOR"),
+    "stdin": sys.stdin.read() if directive.get("read_stdin", True) else "",
 }
 with open(os.environ["FAKE_CAPTURE"], "w", encoding="utf-8") as handle:
     json.dump(capture, handle)
@@ -85,7 +88,8 @@ class FakeSpawn:
         self.calls: list[dict] = []
         self.child: subprocess.Popen | None = None
 
-    def __call__(self, argv, *, cwd, env, stdin_text):
+    def __call__(self, argv, *, cwd, env, stdin=subprocess.PIPE,
+                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin_text=None):
         self.calls.append(
             {"argv": list(argv), "cwd": Path(cwd), "env": dict(env), "stdin": stdin_text}
         )
@@ -100,21 +104,79 @@ class FakeSpawn:
             [sys.executable, str(self.script), *argv],
             cwd=cwd,
             env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
             start_new_session=(os.name != "nt"),
         )
-        try:
-            child.stdin.write(stdin_text.encode("utf-8"))
-            child.stdin.close()
-        except OSError:
-            pass
+        if stdin_text is not None:
+            # the retired synchronous contract, kept only while the red proof runs
+            try:
+                child.stdin.write(stdin_text.encode("utf-8"))
+                child.stdin.close()
+            except OSError:
+                pass
         self.child = child
         return child
 
     def capture(self) -> dict:
         return json.loads(Path(os.environ["FAKE_CAPTURE"]).read_text(encoding="utf-8"))
+
+
+class HeldPipeChild:
+    """A fake child whose stdout pipe is held open by another writer."""
+
+    def __init__(self) -> None:
+        read_fd, write_fd = os.pipe()
+        self.stdout = os.fdopen(read_fd, "rb")
+        self._held = write_fd
+        err_read, err_write = os.pipe()
+        os.close(err_write)
+        self.stderr = os.fdopen(err_read, "rb")
+        in_read, in_write = os.pipe()
+        self._in_read = in_read
+        self.stdin = os.fdopen(in_write, "wb")
+        self.returncode = None
+        self.terminated = False
+        threading.Thread(target=self._drain_stdin, daemon=True).start()
+
+    def _drain_stdin(self) -> None:
+        try:
+            with os.fdopen(self._in_read, "rb") as handle:
+                while handle.read(4096):
+                    pass
+        except OSError:
+            pass
+
+    def wait(self, timeout=None):
+        if self.terminated:
+            return self.returncode
+        time.sleep(timeout if timeout is not None else 0.1)
+        raise subprocess.TimeoutExpired("fake-cli", timeout)
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -9
+
+    def release(self):
+        """Close the held write end so the abandoned drain can finish."""
+        os.close(self._held)
+
+
+class FakeChildSpawn:
+    """Return one pre-built fake child instead of starting a process."""
+
+    def __init__(self, child) -> None:
+        self.child = child
+        self.calls: list[dict] = []
+
+    def __call__(self, argv, *, cwd, env, stdin=subprocess.PIPE,
+                 stdout=subprocess.PIPE, stderr=subprocess.PIPE):
+        self.calls.append({"argv": list(argv), "cwd": Path(cwd), "env": dict(env)})
+        return self.child
 
 
 # --- helpers ----------------------------------------------------------------
@@ -184,9 +246,10 @@ def record_for(tmp_path: Path, session_id: str | None = None) -> dict:
     }
 
 
-def prepared(tmp_path: Path, session_id: str | None = None):
+def prepared(tmp_path: Path, session_id: str | None = None, **overrides):
     root = tmp_path / "central"
     record = record_for(tmp_path, session_id)
+    record.update(overrides)
     central_registry.register(root, record)
     coord = central_messages._coordinator_dir(root, record["id"], create=True)
     (coord / "request.md").write_bytes(
@@ -531,3 +594,177 @@ def test_missing_request_is_a_bounded_failure(tmp_path):
     assert len(outcome["error"]) <= 500
     assert spawn.calls == []
     assert round_file(coord, outcome["round_id"])["state"] == "failed"
+
+
+def test_a_child_that_never_reads_the_prompt_cannot_hang_the_round(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    # two large inbox bodies push the prompt past any pipe buffer
+    send_in(root, record, body="x" * 50000)
+    send_in(root, record, body="y" * 50000)
+    adapter = FakeAdapter(events(), ["fake-cli"])
+    spawn = FakeSpawn(
+        tmp_path,
+        {"stdout": "{}", "read_stdin": False, "sleep": 15},
+        Path(record["worktree"]),
+        adapter.argv,
+    )
+
+    began = time.monotonic()
+    outcome = run_round(record, root, adapter, spawn, timeout_s=1.0)
+    elapsed = time.monotonic() - began
+
+    assert elapsed < 10
+    assert outcome["ok"] is False
+    assert "timed out" in outcome["error"]
+    assert spawn.child is not None and spawn.child.poll() is not None
+    meta = round_file(coord, outcome["round_id"])
+    assert meta["timed_out"] is True
+    assert meta["state"] == "failed"
+
+
+def test_an_output_pipe_held_open_is_bounded_and_the_owned_child_is_cleaned(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    adapter = FakeAdapter(events(), ["fake-cli"])
+    child = HeldPipeChild()
+    spawn = FakeChildSpawn(child)
+
+    began = time.monotonic()
+    outcome = run_round(record, root, adapter, spawn, timeout_s=0.5)
+    elapsed = time.monotonic() - began
+
+    try:
+        assert elapsed < 20
+        assert outcome["ok"] is False
+        assert "timed out" in outcome["error"]
+        assert child.terminated is True
+        assert round_file(coord, outcome["round_id"])["timed_out"] is True
+    finally:
+        child.release()
+
+
+def test_the_checkpoint_uses_the_newest_round_and_reports_unreadable_metadata(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    rounds = coord / "rounds"
+    rounds.mkdir()
+    base = 1_700_000_000
+    for index in range(300):
+        path = rounds / f"{uuid.uuid4()}.json"
+        path.write_text(
+            json.dumps({"checkpoint": {"state": "idle", "round_id": f"round-{index}"}}),
+            encoding="utf-8",
+        )
+        os.utime(path, (base + index, base + index))
+    malformed = rounds / f"{uuid.uuid4()}.json"
+    malformed.write_text("{not json", encoding="utf-8")
+    os.utime(malformed, (base + 400, base + 400))
+    oversized = rounds / f"{uuid.uuid4()}.json"
+    oversized.write_bytes(b"x" * (1024 * 1024 + 10))
+    os.utime(oversized, (base + 300, base + 300))
+    adapter = FakeAdapter(events(), ["fake-cli"])
+    spawn = FakeSpawn(tmp_path, {"stdout": "{}"}, Path(record["worktree"]), adapter.argv)
+
+    outcome = run_round(record, root, adapter, spawn, timeout_s=30)
+
+    assert outcome["ok"] is True, outcome["error"]
+    meta = round_file(coord, outcome["round_id"])
+    assert meta["checkpoint"]["round_id"] == "round-299"
+    diagnostics = meta["checkpoint_diagnostics"]
+    assert any(malformed.name in item for item in diagnostics)
+    assert any(oversized.name in item for item in diagnostics)
+
+
+def test_a_failed_round_keeps_the_reported_usage_and_quota_family(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    pending = send_in(root, record)
+    adapter = FakeAdapter(
+        events(session_id="sess-1", quota_family="claude-pro"), ["fake-cli"]
+    )
+    spawn = FakeSpawn(
+        tmp_path,
+        {"stdout": "{}", "stderr": "boom", "exit": 3},
+        Path(record["worktree"]),
+        adapter.argv,
+    )
+
+    outcome = run_round(record, root, adapter, spawn, timeout_s=30)
+
+    assert outcome["ok"] is False
+    assert "exited 3" in outcome["error"]
+    assert not ack_file(coord, pending["id"]).exists()
+    meta = round_file(coord, outcome["round_id"])
+    assert meta["state"] == "failed"
+    assert meta["usage"]["tokens_in"] == 11
+    assert meta["usage"]["tokens_out"] == 7
+    assert meta["usage"]["tokens_total"] == 18
+    assert meta["usage"]["quota_family"] == "claude-pro"
+
+
+def test_a_failed_round_keeps_the_starting_job_binding(tmp_path):
+    root, record, coord = prepared(tmp_path, job_ids=["job-0"], active_job_id="job-0")
+    adapter = FakeAdapter(events(), ["fake-cli"])
+    spawn = FakeSpawn(
+        tmp_path,
+        {"stdout": "{}", "exit": 3},
+        Path(record["worktree"]),
+        adapter.argv,
+    )
+
+    outcome = run_round(record, root, adapter, spawn, timeout_s=30)
+
+    assert outcome["ok"] is False
+    meta = round_file(coord, outcome["round_id"])
+    assert meta["active_job_id"] == "job-0"
+    assert meta["job_ids"] == ["job-0"]
+
+
+def test_the_child_runs_in_the_injected_root_with_the_selected_coordinator(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    adapter = FakeAdapter(events(), ["fake-cli"])
+    spawn = FakeSpawn(tmp_path, {"stdout": "{}"}, Path(record["worktree"]), adapter.argv)
+
+    outcome = run_round(record, root, adapter, spawn, timeout_s=30)
+
+    assert outcome["ok"] is True, outcome["error"]
+    capture = spawn.capture()
+    assert capture["central_dir"] == str(root)
+    assert capture["coordinator"] == "claude"
+
+
+def test_the_first_round_captures_the_session_for_the_next_round(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    adapter = FakeAdapter(events(session_id="sess-first"), ["fake-cli"])
+    spawn = FakeSpawn(tmp_path, {"stdout": "{}"}, Path(record["worktree"]), adapter.argv)
+
+    outcome = run_round(record, root, adapter, spawn, timeout_s=30)
+
+    assert outcome["ok"] is True, outcome["error"]
+    assert outcome["record"]["session_id"] == "sess-first"
+
+    resumed = FakeAdapter(events(session_id="sess-first"), ["fake-cli", "--resume", "sess-first"])
+    again = FakeSpawn(tmp_path, {"stdout": "{}"}, Path(record["worktree"]), resumed.argv)
+
+    second = run_round(outcome["record"], root, resumed, again, timeout_s=30)
+
+    assert second["ok"] is True, second["error"]
+    assert resumed.records[0]["session_id"] == "sess-first"
+    meta = round_file(coord, second["round_id"])
+    assert meta["session_requested"] == "sess-first"
+    assert meta["session_id"] == "sess-first"
+
+
+def test_estimated_usage_is_marked_and_unknown_counts_stay_none(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    adapter = FakeAdapter(
+        events(tokens_in=None, tokens_out=None, tokens_total=None, estimated=True),
+        ["fake-cli"],
+    )
+    spawn = FakeSpawn(tmp_path, {"stdout": "{}"}, Path(record["worktree"]), adapter.argv)
+
+    outcome = run_round(record, root, adapter, spawn, timeout_s=30)
+
+    assert outcome["ok"] is True, outcome["error"]
+    usage = round_file(coord, outcome["round_id"])["usage"]
+    assert usage["estimated"] is True
+    assert usage["tokens_in"] is None
+    assert usage["tokens_out"] is None
+    assert usage["tokens_total"] is None
