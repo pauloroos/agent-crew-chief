@@ -5154,6 +5154,12 @@
       "text": "Quota wait/retry 1 of 4 completed: waited at least 15 minutes from 22:46:46 UTC; at 23:01:58 UTC refreshed discover (no model changes) and strict-allowlist pick still reports no free executor for T014, all allowed families in quota cooldown. No setup/preferences changes or disallowed executor. Begin second 15-minute wait; requested full suite already passed 1279/5 skipped on unchanged implementation.",
       "at": "2026-10-21T23:02:10.564206+00:00",
       "promoted": null
+    },
+    {
+      "n": 78,
+      "text": "Quota wait/retry 2 of 4 completed: second full 15-minute wait from 23:02:10 UTC, strict-allowlist pick at 23:17:18 UTC still reports no executor for T014 (quota cooldown). No code changes, no disallowed dispatch, full suite remains 1279 passed/5 skipped. Begin third full 15-minute wait; earliest next retry 23:32:30 UTC.",
+      "at": "2026-10-21T23:17:36.271111+00:00",
+      "promoted": null
     }
   ]
 }
