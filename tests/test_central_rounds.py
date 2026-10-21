@@ -667,7 +667,9 @@ def test_the_checkpoint_uses_the_newest_round_and_reports_unreadable_metadata(tm
 
     assert outcome["ok"] is True, outcome["error"]
     meta = round_file(coord, outcome["round_id"])
-    assert meta["checkpoint"]["round_id"] == "round-299"
+    # The checkpoint fed to the prompt is the newest readable predecessor
+    # (round-299); the completed round's own checkpoint replaces it afterward.
+    assert "round-299" in adapter.prompts[0]
     diagnostics = meta["checkpoint_diagnostics"]
     assert any(malformed.name in item for item in diagnostics)
     assert any(oversized.name in item for item in diagnostics)
