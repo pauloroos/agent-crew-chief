@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from . import briefcheck, coordinator_claude, coordinator_codex
+from .config import load_prefs, PrefsError
 
 __all__ = ["MODES", "SPEC_FILES", "PreflightError", "preflight"]
 
@@ -64,6 +65,10 @@ _MAX_ERROR_CHARS = 500
 
 class PreflightError(ValueError):
     """A launch cannot proceed; the message is the bounded diagnostic."""
+
+
+class _InstalledMismatch(PreflightError):
+    """An explicit update can reconcile installed copies."""
 
 
 def preflight(
@@ -92,7 +97,7 @@ def preflight(
     }
     try:
         _check(record, request, spec_dir, consent, release_root, result)
-    except PreflightError as error:
+    except (PreflightError, OSError, PrefsError) as error:
         result["error"] = _bounded(error)
         return result
     result["ok"] = True
@@ -119,14 +124,16 @@ def _check(
     if not isinstance(consent, bool):
         raise PreflightError("consent must be a boolean")
 
-    request_digest = _request_digest(request, mode)
     _require_evidence(mode, authorization)
+    worktree = _worktree(record)
+    sensitive = load_prefs(Path(record.get("repo") or worktree)).sensitive_paths
+    request_digest = _request_digest(request, mode, sensitive)
     _compare(authorization, "request_digest", request_digest, "request")
 
     spec_digest: str | None = None
     selected: tuple[Path, dict[str, bytes]] | None = None
     if mode in ("approved-spec", "direct-spec"):
-        selected = _select_spec(spec_dir, mode)
+        selected = _select_spec(spec_dir, mode, sensitive)
         spec_digest = _digest(selected[1])
         _compare(authorization, "spec_digest", spec_digest, "selected spec")
 
@@ -182,7 +189,7 @@ def _unrestricted(authorization: dict) -> bool:
     return value
 
 
-def _request_digest(request: Any, mode: str) -> str:
+def _request_digest(request: Any, mode: str, sensitive: list[str]) -> str:
     if not isinstance(request, str) or not request.strip():
         raise PreflightError(f"{mode} requires a non-empty request")
     try:
@@ -191,7 +198,7 @@ def _request_digest(request: Any, mode: str) -> str:
         raise PreflightError("request is not valid UTF-8 text") from exc
     if len(data) > MAX_TEXT_BYTES:
         raise PreflightError(f"request exceeds {MAX_TEXT_BYTES} UTF-8 bytes")
-    findings = briefcheck.check_brief(request, [])
+    findings = briefcheck.check_brief(request, sensitive)
     if findings:
         raise PreflightError(
             "request contains private data: " + "; ".join(findings[:_MAX_FINDINGS])
@@ -233,11 +240,13 @@ def _authorized_at(authorization: dict) -> str:
 # --- selected spec ----------------------------------------------------------
 
 
-def _select_spec(spec_dir: Path | None, mode: str) -> tuple[Path, dict[str, bytes]]:
+def _select_spec(spec_dir: Path | None, mode: str, sensitive: list[str]) -> tuple[Path, dict[str, bytes]]:
     """The resolved selected directory and the four validated file payloads."""
     if spec_dir is None:
         raise PreflightError(f"{mode} requires a selected spec directory")
     source = Path(spec_dir)
+    if briefcheck.path_is_sensitive(str(source), sensitive):
+        raise PreflightError("selected spec is in a configured sensitive path")
     try:
         if source.is_symlink():
             raise PreflightError(f"selected spec directory is a symbolic link: {source}")
@@ -256,7 +265,7 @@ def _select_spec(spec_dir: Path | None, mode: str) -> tuple[Path, dict[str, byte
             raise PreflightError(f"selected spec is missing {name}")
         try:
             resolved = path.resolve(strict=True)
-            data = path.read_bytes()
+            data = _read_bounded(path)
         except OSError as exc:
             raise PreflightError(f"cannot read spec file {name}: {exc}")
         if resolved.parent != root:
@@ -267,7 +276,7 @@ def _select_spec(spec_dir: Path | None, mode: str) -> tuple[Path, dict[str, byte
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise PreflightError(f"spec file {name} is not valid UTF-8 text") from exc
-        findings = briefcheck.check_brief(text, [])
+        findings = briefcheck.check_brief(text, sensitive)
         if findings:
             raise PreflightError(
                 f"spec file {name} contains private data: "
@@ -296,18 +305,30 @@ def _copy_spec(worktree: Path, source: Path, files: dict[str, bytes]) -> str:
     if source.name in ("", ".", ".."):
         raise PreflightError(f"selected spec directory has no usable name: {source}")
     specs = worktree / "specs"
-    if specs.exists() and not _is_within(specs.resolve(), worktree_root):
-        raise PreflightError("spec destination escapes the coordinator worktree")
     destination = specs / source.name
-    if destination.exists() and (
-        not destination.is_dir()
-        or any((destination / name).exists() for name in SPEC_FILES)
-    ):
+    _contained(destination, worktree_root)
+    if destination.exists() or destination.is_symlink():
         raise PreflightError(f"spec copy destination already exists: {destination}")
-    destination.mkdir(parents=True, exist_ok=True)
+    destination.mkdir(parents=True)
     for name, data in files.items():
-        (destination / name).write_bytes(data)
+        with (destination / name).open("xb") as handle:
+            handle.write(data)
     return str(destination)
+
+
+def _contained(path: Path, root: Path) -> None:
+    """Refuse redirected parents, including dangling Windows junctions."""
+    root = root.resolve(strict=True)
+    if path.resolve(strict=False) != root / path.relative_to(root):
+        raise PreflightError("destination escapes the coordinator worktree through a link")
+
+
+def _read_bounded(path: Path) -> bytes:
+    with path.open("rb") as handle:
+        data = handle.read(MAX_TEXT_BYTES + 1)
+    if len(data) > MAX_TEXT_BYTES:
+        raise PreflightError(f"{path.name} exceeds {MAX_TEXT_BYTES} bytes")
+    return data
 
 
 def _is_within(child: Path, parent: Path) -> bool:
@@ -373,7 +394,7 @@ def _worktree(record: dict) -> Path:
     path = Path(value)
     if not path.is_absolute() or not path.is_dir():
         raise PreflightError(f"coordinator worktree is not an existing directory: {value}")
-    return path
+    return path.resolve(strict=True)
 
 
 def _release_version(release_root: Path) -> str:
@@ -397,7 +418,7 @@ def _installed_version(worktree: Path) -> str | None:
         return None
     versions = set(found.values())
     if len(versions) > 1:
-        raise PreflightError(
+        raise _InstalledMismatch(
             "installed worktree ACC copies disagree: "
             + ", ".join(sorted(versions))
         )
@@ -409,7 +430,7 @@ def _read_version(init: Path) -> str | None:
     try:
         if init.is_symlink() or not init.is_file():
             return None
-        text = init.read_bytes()[:MAX_TEXT_BYTES].decode("utf-8-sig")
+        text = _read_bounded(init).decode("utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return None
     match = _VERSION.search(text)
@@ -419,8 +440,19 @@ def _read_version(init: Path) -> str | None:
 def _ensure_acc(
     worktree: Path, release_root: Path, consent: bool, result: dict
 ) -> None:
+    root = worktree.resolve(strict=True)
+    # The selected installer writes instructions, preferences and both skills.
+    for name in (".claude/skills/crew-chief", ".agents/skills/crew-chief",
+                 "docs/crew-chief", "AGENTS.md", "CLAUDE.md", "GEMINI.md",
+                 ".cursor/rules/agent-crew-chief.mdc"):
+        _contained(root / name, root)
     release = _release_version(release_root)
-    installed = _installed_version(worktree)
+    try:
+        installed = _installed_version(worktree)
+    except _InstalledMismatch:
+        if not consent:
+            raise
+        installed = "inconsistent copies"
     result["acc"] = {"installed": installed, "release": release, "action": "none"}
     if installed == release:
         return

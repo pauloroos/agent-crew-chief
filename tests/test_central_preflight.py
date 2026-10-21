@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -571,3 +573,90 @@ def test_spec_copy_destination_collision_is_refused(tmp_path, fake_bin):
     assert result["ok"] is False
     assert "exists" in result["error"]
     assert (destination / "spec.md").read_text(encoding="utf-8") == "# existing\n"
+
+
+@contextmanager
+def _directory_link(link, target):
+    if os.name == "nt":
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                                capture_output=True, shell=False)
+        if result.returncode:
+            pytest.skip("temporary junction unavailable")
+    else:
+        link.symlink_to(target, target_is_directory=True)
+    try:
+        yield
+    finally:
+        if os.name == "nt":
+            os.rmdir(link)
+        else:
+            link.unlink()
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_destination_link_cannot_write_outside_worktree(tmp_path, fake_bin, broken):
+    _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree = _worktree(tmp_path)
+    spec = _spec_dir(tmp_path)
+    (worktree / "specs").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    with _directory_link(worktree / "specs" / spec.name, outside):
+        if broken:
+            outside.rmdir()
+        result = preflight(_record(worktree), "synthetic", spec, False, _release(tmp_path))
+        assert result["ok"] is False
+        assert not outside.exists() if broken else list(outside.iterdir()) == []
+
+
+def test_worktree_install_never_follows_external_skill_root(tmp_path, fake_bin):
+    _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree = _worktree(tmp_path, version=None)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    with _directory_link(worktree / ".claude", outside):
+        result = preflight(_record(worktree, "raw-request", authorize_raw=True),
+                           "synthetic", None, True, _release(tmp_path))
+        assert result["ok"] is False
+        assert list(outside.iterdir()) == []
+        assert not _install_log(tmp_path).exists()
+
+
+@pytest.mark.parametrize("private_in_spec", [False, True])
+def test_configured_private_paths_are_enforced(tmp_path, fake_bin, private_in_spec):
+    _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree = _worktree(tmp_path)
+    prefs = worktree / "docs/crew-chief/preferences.toml"
+    prefs.parent.mkdir(parents=True)
+    prefs.write_text('sensitive_paths = ["private-material"]\n', encoding="utf-8")
+    before = prefs.read_bytes()
+    spec = _spec_dir(tmp_path)
+    request = "read private-material/source" if not private_in_spec else "synthetic"
+    if private_in_spec:
+        (spec / "plan.md").write_text("read private-material/source", encoding="utf-8")
+    result = preflight(_record(worktree), request, spec, False, _release(tmp_path))
+    assert result["ok"] is False
+    assert "sensitive" in result["error"]
+    assert prefs.read_bytes() == before
+
+
+def test_preflight_never_uses_unbounded_read_bytes(tmp_path, fake_bin, monkeypatch):
+    _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree, spec, release = _worktree(tmp_path), _spec_dir(tmp_path), _release(tmp_path)
+    def unbounded(*args, **kwargs):
+        raise AssertionError("preflight must open and read at most cap + 1")
+    monkeypatch.setattr(Path, "read_bytes", unbounded)
+    result = preflight(_record(worktree), "synthetic", spec, False, release)
+    assert result["ok"] is True
+
+
+def test_explicit_update_repairs_disagreeing_installed_versions(tmp_path, fake_bin):
+    _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree = _worktree(tmp_path, OLD_VERSION)
+    other = worktree / ".agents/skills/crew-chief/scripts/crew_chief/__init__.py"
+    other.parent.mkdir(parents=True)
+    other.write_text(f'__version__ = "{RELEASE_VERSION}"\n', encoding="utf-8")
+    result = preflight(_record(worktree, "raw-request", authorize_raw=True),
+                       "synthetic", None, True, _release(tmp_path))
+    assert result["ok"] is True
+    assert result["acc"]["action"] == "updated"
