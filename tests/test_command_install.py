@@ -469,6 +469,60 @@ def test_the_posix_wrapper_runs_with_unicode_paths(tmp_path):
     assert "fake-entry:ação" in result.stdout
 
 
+def test_the_native_wrapper_runs_from_another_working_directory(tmp_path, monkeypatch):
+    """A relative source must not leak into the wrapper's runtime cwd."""
+    release = _release(tmp_path, "fake release")
+    bin_dir = tmp_path / "binários do usuário"
+    elsewhere = tmp_path / "elsewhere dir"
+    elsewhere.mkdir()
+
+    monkeypatch.chdir(tmp_path)
+    target = install_command(
+        Path("fake release"), bin_dir, Path(sys.executable), _native_platform()
+    )
+    monkeypatch.setenv("FAKE_ENTRY_EXIT", "0")
+
+    result = subprocess.run(
+        [str(target), "one", "two words"],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "fake-entry:one|two words" in result.stdout
+
+
+def test_the_native_wrapper_runs_with_a_relative_interpreter(tmp_path, monkeypatch):
+    """A relative interpreter must also be bound to its install-time path."""
+    _release(tmp_path, "release")
+    bin_dir = tmp_path / "bin"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    relative_python = Path(os.path.relpath(sys.executable, tmp_path))
+
+    monkeypatch.chdir(tmp_path)
+    target = install_command(
+        Path("release"), bin_dir, relative_python, _native_platform()
+    )
+    monkeypatch.setenv("FAKE_ENTRY_EXIT", "7")
+
+    result = subprocess.run(
+        [str(target), "rel"],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert result.returncode == 7, result.stderr
+    assert "fake-entry:rel" in result.stdout
+
+
 # --- the documented user bin directory --------------------------------------
 
 

@@ -270,6 +270,11 @@ def install_command(
     if not interpreter.is_file():
         raise CommandInstallError(f"{interpreter}: no such interpreter")
 
+    # Bind both paths to their install-time location so the wrapper keeps
+    # working no matter what the caller's current directory is later.
+    entry = Path(entry).resolve()
+    interpreter = interpreter.resolve()
+
     bin_dir = Path(bin_dir)
     target = wrapper_path(bin_dir, family)
     content = render_wrapper(entry, interpreter, family)
