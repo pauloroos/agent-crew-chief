@@ -70,7 +70,7 @@ Proof: `python -m pytest tests/test_command_install.py -q`.
 
 ## Phase 2: Launch and adapters (v0.4.0)
 
-- [ ] T007 [P] [US1] Create isolated long-lived coordinator worktrees in skill/crew-chief/scripts/crew_chief/central_worktrees.py, tests/test_central_worktrees.py; depends on T003
+- [X] T007 [P] [US1] Create isolated long-lived coordinator worktrees in skill/crew-chief/scripts/crew_chief/central_worktrees.py, tests/test_central_worktrees.py; depends on T003
 - [ ] T008 [P] [US1] Adapt Claude Code session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_claude.py, tests/test_coordinator_claude.py; depends on T001, T005
 - [ ] T009 [P] [US1] Adapt Codex session launch and resume in skill/crew-chief/scripts/crew_chief/coordinator_codex.py, tests/test_coordinator_codex.py; depends on T001, T005
 - [ ] T010 [P] [US1] Preflight requests and explicit worktree skill updates in skill/crew-chief/scripts/crew_chief/central_preflight.py, tests/test_central_preflight.py; depends on T005, T007, T008, T009
