@@ -9,6 +9,7 @@ tables are merged by ``name``/``match`` with the project winning.
 from __future__ import annotations
 
 import fnmatch
+import math
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -44,6 +45,16 @@ DEFAULT_QUOTA_COOLDOWN_MIN = 60
 DEFAULT_ALERT_COORDINATOR_SHARE = 0.5
 DEFAULT_ALERT_ATTEMPTS_PER_PIECE = 2.5
 DEFAULT_ALERT_JOB_MINUTES = 180
+
+#: Central coordination scalars (001-central). An empty
+#: ``coordinator_default`` falls back to the calling CLI (``CREW_CHIEF_COORDINATOR``)
+#: when a launch resolves its coordinator; the timings must be finite and
+#: positive; ``central_backend`` labels the launch in the central registry.
+DEFAULT_COORDINATOR_DEFAULT = ""
+DEFAULT_COORDINATOR_UNRESTRICTED = True
+DEFAULT_CENTRAL_POLL_S = 1.0
+DEFAULT_CENTRAL_ROUND_TIMEOUT_S = 900
+DEFAULT_CENTRAL_BACKEND = "default"
 
 #: Markers of the block ``acc setup`` manages in the global preferences file.
 SETUP_BEGIN = "# >>> acc setup >>>"
