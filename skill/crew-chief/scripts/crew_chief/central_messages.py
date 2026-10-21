@@ -12,31 +12,21 @@ no setting is read here.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
-import time
 import uuid
+import warnings
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
 from .records import write_atomic
+from .central_registry import RegistryError, _registry_lock
 
 __all__ = [
     "BODY_MAX_BYTES",
     "ENVELOPE_MAX_BYTES",
     "ENVELOPE_READ_MAX_BYTES",
-    "MAX_BODY_BYTES",
-    "MAX_ENVELOPE_BYTES",
-    "MAX_MESSAGE_BYTES",
-    "MESSAGE_BODY_MAX_BYTES",
-    "MESSAGE_MAX_BYTES",
-    "MESSAGE_READ_MAX_BYTES",
     "MessageError",
-    "MessagesError",
-    "CentralMessageError",
-    "CentralMessagesError",
-    "EnvelopeError",
     "acknowledge",
     "pending",
     "questions",
@@ -51,14 +41,6 @@ BODY_MAX_BYTES = 64 * 1024
 ENVELOPE_MAX_BYTES = 80 * 1024
 #: Bounded read cap for a single stored envelope (plan: 1 MiB per record).
 ENVELOPE_READ_MAX_BYTES = 1 * 1024 * 1024
-
-# Aliases kept for callers/tests that spell the caps differently.
-MESSAGE_BODY_MAX_BYTES = BODY_MAX_BYTES
-MAX_BODY_BYTES = BODY_MAX_BYTES
-MESSAGE_MAX_BYTES = ENVELOPE_MAX_BYTES
-MAX_ENVELOPE_BYTES = ENVELOPE_MAX_BYTES
-MAX_MESSAGE_BYTES = ENVELOPE_MAX_BYTES
-MESSAGE_READ_MAX_BYTES = ENVELOPE_READ_MAX_BYTES
 
 _VALID_DIRECTIONS = ("in", "out")
 _VALID_KINDS = ("message", "question", "answer", "status", "control")
@@ -81,13 +63,6 @@ _COORDINATORS_DIR = "coordinators"
 
 class MessageError(Exception):
     """A message envelope cannot be validated, stored, read or acknowledged."""
-
-
-# Aliases for callers that use a different spelling.
-MessagesError = MessageError
-CentralMessageError = MessageError
-CentralMessagesError = MessageError
-EnvelopeError = MessageError
 
 
 SCHEMA_VERSION = 1
@@ -140,25 +115,25 @@ def _coordinator_dir(root: Path, coordinator_id: Any, *, create: bool = False) -
                 f"{current}: coordinator path escapes the central root via a "
                 "symbolic link; explicit recovery required"
             )
-        if create:
-            current.mkdir(parents=True, exist_ok=True)
         if not current.resolve(strict=False).is_relative_to(root_resolved):
             raise MessageError(
                 f"{current}: coordinator path escapes the central root; explicit recovery required"
             )
-    if create:
-        for sub in _SUBDIRS:
-            subpath = current / sub
-            if subpath.is_symlink():
-                raise MessageError(
-                    f"{subpath}: coordinator path escapes the central root via a "
-                    "symbolic link; explicit recovery required"
-                )
+        if create:
+            current.mkdir(parents=True, exist_ok=True)
+    for sub in _SUBDIRS:
+        subpath = current / sub
+        if subpath.is_symlink():
+            raise MessageError(
+                f"{subpath}: coordinator path escapes the central root via a "
+                "symbolic link; explicit recovery required"
+            )
+        if not subpath.resolve(strict=False).is_relative_to(root_resolved):
+            raise MessageError(
+                f"{subpath}: coordinator path escapes the central root; explicit recovery required"
+            )
+        if create:
             subpath.mkdir(parents=True, exist_ok=True)
-            if not subpath.resolve(strict=False).is_relative_to(root_resolved):
-                raise MessageError(
-                    f"{subpath}: coordinator path escapes the central root; explicit recovery required"
-                )
     return current
 
 
@@ -241,9 +216,9 @@ def _validate_input(envelope: Any, coordinator_id: str) -> dict:
     task_refs = envelope.get("task_refs", [])
     task_refs = _validate_task_refs(task_refs)
 
-    body = envelope.get("body", _MISSING := object())
-    if body is _MISSING:
+    if "body" not in envelope:
         raise MessageError("body is required")
+    body = envelope["body"]
     if not isinstance(body, str):
         raise MessageError(f"body must be text, got {type(body).__name__}")
     if _utf8_size(body) > BODY_MAX_BYTES:
@@ -381,236 +356,184 @@ def _read_envelope(path: Path, root: Path) -> dict:
         raise MessageError(f"{path}: invalid UTF-8: {exc}") from exc
     try:
         obj = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise MessageError(
-            f"{path}: invalid JSON at line {exc.lineno}: {exc.msg}"
-        ) from exc
-    return _validate_stored(obj)
+    except (ValueError, RecursionError) as exc:
+        raise MessageError(f"{path}: invalid JSON: {exc}") from exc
+    envelope = _validate_stored(obj)
+    expected_direction = {"inbox": "in", "outbox": "out"}.get(path.parent.name)
+    if (envelope["id"] != path.stem
+            or envelope["coordinator_id"] != path.parent.parent.name
+            or envelope["direction"] != expected_direction):
+        raise MessageError(f"{path}: envelope does not match its filename/coordinator/direction")
+    return envelope
+
+
+def _warn(path: Path, error: object) -> None:
+    warnings.warn(f"{path}: {error}", UserWarning, stacklevel=2)
 
 
 def _safe_glob(directory: Path) -> Iterator[Path]:
-    if not directory.is_dir():
+    if not directory.exists():
         return
+    if directory.is_symlink():
+        raise MessageError(f"{directory}: symbolic link refused")
     try:
-        entries = sorted(directory.iterdir())
-    except OSError:
-        return
-    for entry in entries:
-        if entry.is_symlink():
-            raise MessageError(
-                f"{entry}: symbolic link refused; explicit recovery required"
-            )
-        yield entry
+        yield from directory.iterdir()
+    except OSError as exc:
+        _warn(directory, exc)
+
+
+def _envelopes(root: Path, coordinator_id: str) -> Iterator[dict]:
+    coord = _coordinator_dir(root, coordinator_id)
+    for box in ("inbox", "outbox"):
+        for path in _safe_glob(coord / box):
+            if path.suffix != ".json":
+                continue
+            try:
+                yield _read_envelope(path, root)
+            except (MessageError, OSError) as exc:
+                _warn(path, exc)
+
+
+@contextmanager
+def _message_lock(root: Path):
+    # Registry's bounded, nonce-owned mutex protects check-and-create as well
+    # as the atomic replacement. A supervisor's owner_lease is never borrowed.
+    try:
+        with _registry_lock(root, 60.0):
+            yield
+    except RegistryError as exc:
+        raise MessageError(str(exc)) from exc
+
+
+def _find(root: Path, coordinator_id: str, identifier: str) -> dict | None:
+    coord = _coordinator_dir(root, coordinator_id)
+    found = []
+    for box in ("inbox", "outbox"):
+        path = coord / box / f"{identifier}.json"
+        if path.is_symlink() or path.exists():
+            found.append(_read_envelope(path, root))
+    if len(found) > 1:
+        raise MessageError(f"message {identifier}: duplicate ID across inbox/outbox")
+    return found[0] if found else None
+
+
+def _ack(path: Path) -> dict:
+    if path.is_symlink():
+        raise MessageError(f"{path}: symbolic ack refused")
+    try:
+        value = json.loads(_read_bounded(path, ENVELOPE_READ_MAX_BYTES).decode("utf-8-sig"))
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
+        raise MessageError(f"{path}: invalid ack: {exc}") from exc
+    if not isinstance(value, dict) or set(value) != {"message_id", "round_id", "consumed_at"}:
+        raise MessageError(f"{path}: invalid ack fields")
+    if value["message_id"] != path.stem or _canonical_uuid(value["message_id"]) is None:
+        raise MessageError(f"{path}: invalid ack message ID")
+    if _canonical_uuid(value["round_id"]) is None:
+        raise MessageError(f"{path}: invalid ack round ID")
+    try:
+        when = datetime.fromisoformat(value["consumed_at"].replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            raise ValueError("missing timezone")
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise MessageError(f"{path}: invalid ack time") from exc
+    return value
 
 
 def send(root: Path, coordinator_id: str, envelope: dict) -> str:
-    """Validate and durably store one envelope; return its message id."""
+    """Persist once by ID; equivalent correlated answer retries reuse one ID."""
     root = Path(root)
     normalized = _validate_input(envelope, coordinator_id)
-
-    coord_dir = _coordinator_dir(root, coordinator_id, create=True)
-    direction = normalized["direction"]
-    subdir = coord_dir / ("inbox" if direction == "in" else "outbox")
-    subdir.mkdir(parents=True, exist_ok=True)
-    if subdir.is_symlink():
-        raise MessageError(f"{subdir}: symbolic link refused")
-
-    message_id = normalized["id"]
-    path = subdir / f"{message_id}.json"
-    root_resolved = root.resolve(strict=False)
-    if path.is_symlink():
-        raise MessageError(f"{path}: symbolic link refused")
-    try:
-        if not path.resolve(strict=False).is_relative_to(root_resolved):
-            raise MessageError(f"{path}: path escapes the central root")
-    except (OSError, ValueError) as exc:
-        raise MessageError(f"{path}: cannot resolve path: {exc}") from exc
-
-    # Idempotent redelivery: a matching envelope already on disk wins.
-    if path.exists():
-        try:
-            existing = _read_envelope(path, root)
-        except MessageError:
-            raise
-        if existing == normalized:
-            return message_id
-        raise MessageError(
-            f"message {message_id!r} already exists with a different envelope"
-        )
-
-    payload = json.dumps(normalized, indent=2, ensure_ascii=False) + "\n"
-    write_atomic(path, payload)
-    return message_id
+    with _message_lock(root):
+        coord = _coordinator_dir(root, coordinator_id, create=True)
+        existing = _find(root, coordinator_id, normalized["id"])
+        if existing is not None:
+            if envelope.get("created_at") is None:
+                normalized["created_at"] = existing["created_at"]
+            if existing == normalized:
+                return existing["id"]
+            raise MessageError("message ID already exists with a different envelope")
+        if normalized["kind"] == "answer":
+            reply = normalized["reply_to"]
+            question = _find(root, coordinator_id, reply) if reply else None
+            if question is None or question["kind"] != "question":
+                raise MessageError("answer reply_to must identify a stored question")
+            for previous in _envelopes(root, coordinator_id):
+                if previous["kind"] == "answer" and previous["reply_to"] == reply:
+                    fields = ("coordinator_id", "direction", "kind", "reply_to", "task_refs", "body")
+                    if all(previous[key] == normalized[key] for key in fields):
+                        return previous["id"]
+                    raise MessageError("question already has a different answer")
+        box = "inbox" if normalized["direction"] == "in" else "outbox"
+        path = coord / box / f'{normalized["id"]}.json'
+        write_atomic(path, json.dumps(normalized, ensure_ascii=False, indent=2) + "\n")
+    return normalized["id"]
 
 
 def pending(root: Path, coordinator_id: str, direction: str) -> list[dict]:
-    """Return unacknowledged envelopes for one coordinator and direction."""
+    """Read unconsumed messages; invalid acks warn and cannot hide delivery."""
     if direction not in _VALID_DIRECTIONS:
-        raise MessageError(
-            f"direction must be one of {_VALID_DIRECTIONS}, got {direction!r}"
-        )
+        raise MessageError("invalid direction")
     root = Path(root)
-    coord_dir = _coordinator_dir(root, coordinator_id, create=False)
-    subdir = coord_dir / ("inbox" if direction == "in" else "outbox")
-    ack_dir = coord_dir / "acknowledgments"
-
-    results: list[dict] = []
-    if not subdir.exists():
-        return results
-
-    acked: set[str] = set()
-    if ack_dir.exists() and ack_dir.is_dir() and not ack_dir.is_symlink():
-        for ack_path in _safe_glob(ack_dir):
-            if not ack_path.is_file() or ack_path.suffix != ".json":
-                continue
-            stem = ack_path.stem
-            if _canonical_uuid(stem) is None:
-                continue
+    coord = _coordinator_dir(root, coordinator_id)
+    result = []
+    for item in _envelopes(root, coordinator_id):
+        if item["direction"] != direction:
+            continue
+        path = coord / "acknowledgments" / f'{item["id"]}.json'
+        if path.exists() or path.is_symlink():
             try:
-                data = _read_bounded(ack_path, ENVELOPE_READ_MAX_BYTES)
-                obj = json.loads(data.decode("utf-8-sig"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError, MessageError):
-                # A corrupt ack never hides a message; redeliver it.
+                _ack(path)
+            except MessageError as exc:
+                _warn(path, exc)
+            else:
                 continue
-            if isinstance(obj, dict):
-                acked.add(stem)
-
-    for path in _safe_glob(subdir):
-        if not path.is_file() or path.suffix != ".json":
-            continue
-        if path.is_symlink():
-            continue
-        stem = path.stem
-        if _canonical_uuid(stem) is None:
-            continue
-        try:
-            envelope = _read_envelope(path, root)
-        except MessageError:
-            # Isolate corrupt/stale/incompatible records; keep them on disk.
-            continue
-        if envelope["id"] != stem:
-            continue
-        if envelope["coordinator_id"] != _canonical_uuid(coordinator_id):
-            continue
-        if envelope["direction"] != direction:
-            continue
-        if stem in acked:
-            continue
-        results.append(dict(envelope))
-
-    results.sort(key=lambda item: (item.get("created_at", ""), item.get("id", "")))
-    return results
+        result.append(item)
+    return sorted(result, key=lambda item: (item["created_at"], item["id"]))
 
 
 def acknowledge(root: Path, coordinator_id: str, message_id: str, round_id: str) -> None:
-    """Record that ``message_id`` was consumed in ``round_id``."""
+    """Preserve the first valid consumption, never overwrite a corrupt history."""
     root = Path(root)
-    message_uuid = _canonical_uuid(message_id)
-    if message_uuid is None:
-        raise MessageError(f"message id must be a canonical UUID string, got {message_id!r}")
-    round_uuid = _canonical_uuid(round_id)
-    if round_uuid is None:
-        raise MessageError(f"round id must be a canonical UUID string, got {round_id!r}")
-
-    coord_dir = _coordinator_dir(root, coordinator_id, create=False)
-    # The message must exist in either box before it can be acknowledged.
-    found = False
-    for sub in ("inbox", "outbox"):
-        candidate = coord_dir / sub / f"{message_uuid}.json"
-        if candidate.is_file() and not candidate.is_symlink():
-            try:
-                _read_envelope(candidate, root)
-                found = True
-                break
-            except MessageError:
-                continue
-    if not found:
-        raise MessageError(
-            f"message {message_uuid!r} does not exist for coordinator {coordinator_id!r}"
-        )
-
-    ack_dir = coord_dir / "acknowledgments"
-    ack_dir.mkdir(parents=True, exist_ok=True)
-    if ack_dir.is_symlink():
-        raise MessageError(f"{ack_dir}: symbolic link refused")
-    ack_path = ack_dir / f"{message_uuid}.json"
-    if ack_path.is_symlink():
-        raise MessageError(f"{ack_path}: symbolic link refused")
-
-    now = _now_iso()
-    payload = {
-        "message_id": message_uuid,
-        "id": message_uuid,
-        "round_id": round_uuid,
-        "consumed_round_id": round_uuid,
-        "round": round_uuid,
-        "acknowledged_at": now,
-        "consumed_at": now,
-        "time": now,
-    }
-    write_atomic(ack_path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+    if _canonical_uuid(message_id) is None or _canonical_uuid(round_id) is None:
+        raise MessageError("message and round IDs must be canonical UUIDs")
+    coord = _coordinator_dir(root, coordinator_id)
+    with _message_lock(root):
+        if _find(root, coordinator_id, message_id) is None:
+            raise MessageError("message does not exist for this coordinator")
+        path = coord / "acknowledgments" / f"{message_id}.json"
+        if path.exists() or path.is_symlink():
+            _ack(path)  # Corrupt acknowledgments require explicit recovery.
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"message_id": message_id, "round_id": round_id, "consumed_at": _now_iso()}
+        write_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
 def questions(root: Path) -> list[dict]:
-    """Return open (unanswered) question envelopes across all coordinators."""
+    """Read open correlated questions, reporting bad rows without losing others."""
     root = Path(root)
-    root_resolved = root.resolve(strict=False)
-    coordinators_dir = root / _COORDINATORS_DIR
-    results: list[dict] = []
-
-    if not coordinators_dir.exists() or not coordinators_dir.is_dir():
-        return results
-    if coordinators_dir.is_symlink():
-        raise MessageError(f"{coordinators_dir}: symbolic link refused")
-
-    for coord_entry in _safe_glob(coordinators_dir):
-        if not coord_entry.is_dir():
-            continue
-        coordinator_id = coord_entry.name
-        if _canonical_uuid(coordinator_id) is None:
+    coordinators = root / _COORDINATORS_DIR
+    if coordinators.is_symlink():
+        raise MessageError(f"{coordinators}: symbolic link refused")
+    result = []
+    for entry in _safe_glob(coordinators):
+        if _canonical_uuid(entry.name) is None:
+            _warn(entry, "invalid coordinator UUID")
             continue
         try:
-            coord_dir = _coordinator_dir(root, coordinator_id, create=False)
-        except MessageError:
+            rows = list(_envelopes(root, entry.name))
+        except MessageError as exc:
+            _warn(entry, exc)
             continue
-        if not coord_dir.resolve(strict=False).is_relative_to(root_resolved):
-            continue
-
-        inbox_dir = coord_dir / "inbox"
-        outbox_dir = coord_dir / "outbox"
-
-        # Correlate answers to questions by reply_to.
-        answered: set[str] = set()
-        for directory in (inbox_dir, outbox_dir):
-            if not directory.exists() or not directory.is_dir() or directory.is_symlink():
-                continue
-            for path in _safe_glob(directory):
-                if not path.is_file() or path.suffix != ".json":
-                    continue
-                try:
-                    envelope = _read_envelope(path, root)
-                except MessageError:
-                    continue
-                if envelope.get("kind") == "answer" and envelope.get("reply_to") is not None:
-                    answered.add(str(envelope["reply_to"]))
-
-        if not outbox_dir.exists() or not outbox_dir.is_dir() or outbox_dir.is_symlink():
-            continue
-        for path in _safe_glob(outbox_dir):
-            if not path.is_file() or path.suffix != ".json":
-                continue
-            try:
-                envelope = _read_envelope(path, root)
-            except MessageError:
-                continue
-            if envelope.get("kind") != "question":
-                continue
-            if envelope.get("id") in answered:
-                continue
-            results.append(dict(envelope))
-
-    results.sort(key=lambda item: (item.get("created_at", ""), item.get("id", "")))
-    return results
-
-
-# Module-level imports retained for callers and tests that reference them.
+        by_id = {item["id"]: item for item in rows}
+        answered = set()
+        for answer in rows:
+            if answer["kind"] == "answer":
+                question = by_id.get(answer["reply_to"])
+                if question is not None and question["kind"] == "question":
+                    answered.add(question["id"])
+                else:
+                    _warn(entry, "answer has invalid question correlation")
+        result.extend(item for item in rows
+                      if item["kind"] == "question" and item["id"] not in answered)
+    return sorted(result, key=lambda item: (item["created_at"], item["id"]))
