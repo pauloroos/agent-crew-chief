@@ -470,14 +470,14 @@ $CC close --project . --job JOB --type feat
 O comando mostra `changelog: CHANGELOG.md (Added)`, uma mensagem de commit de funcionalidade, as notas de cada tarefa/executor e esta linha de economia (ilustrativo — seus números dependem da sua execução):
 
 ```text
-free work: 100% of pieces, 100% of tokens · coordinator: 0% · 1.0 attempts/piece · mean score 100
+free work: 100% of pieces, 100% of recorded tokens · coordinator: not recorded · 1.0 attempts/piece · mean score 100
 ```
 
 Leia a linha antes de comemorar:
 
 - `attempts/piece` conta apenas tentativas de execução. Tentativas que não fizeram trabalho — `quota` e `brief_refused` — ficam fora da contagem, e os dispatches de revisão também não são contados. Quando cada uma das três peças precisou de uma tentativa de execução, o número é 1.0.
 - Reporte os dispatches totais separadamente quando descrever novas tentativas. Para as três peças acima isso daria seis dispatches: três execuções e três revisões.
-- `coordinator: 0%` significa que nenhum uso do coordenador foi registrado no registro do job. Isso não prova que a coordenação foi grátis: você ainda gastou seus próprios tokens para decidir o que pedir e conferir as revisões.
+- coordinator: not recorded significa que não há uso do coordenador registrado. A porcentagem grátis cobre apenas os tokens registrados; o custo real da coordenação permanece desconhecido até você registrá-lo com usage add. Uma entrada explícita de zero tokens é diferente de nenhuma entrada: ela mostra coordinator: 0% quando há tokens de execução.
 - `mean score 100` é a média das três notas do passo 7 quando as três forem 100. Não diz nada sobre o custo da execução.
 
 O `close` adiciona o job ao `CHANGELOG.md` e mostra a mensagem de commit. Faça o commit do trabalho aceito, do ADR e da entrada no changelog conforme o fluxo do seu projeto.

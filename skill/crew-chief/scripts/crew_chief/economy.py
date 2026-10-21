@@ -17,6 +17,9 @@ Definitions (a division by zero gives ``None``, never an exception):
   false.
 * ``coordinator_tokens``: the job's ``usage`` entries (``coordinator`` and
   ``central`` roles, see ``records.add_usage``).
+* ``usage_recorded``: whether the job has at least one valid ``usage``
+  entry. Without one the coordinator's share is unknown, not zero: the
+  summary says ``not recorded`` instead of a measured ``0%``.
 * ``free_piece_share``: accepted pieces whose last ``ok`` exec attempt ran on
   a free executor, over accepted pieces.
 * ``free_token_share`` / ``coordinator_share``: ``free`` / ``coordinator``
@@ -73,6 +76,9 @@ class Economy:
     paid_usd: float = 0.0
     cost_unknown: bool = False
     alerts: list[str] = field(default_factory=list)
+    #: Whether the job holds a valid ``usage`` entry. It comes last so the
+    #: positional construction of older callers keeps working.
+    usage_recorded: bool = False
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -211,9 +217,10 @@ def job_economy(
         )
 
     usage = [u for u in job.get("usage") or [] if isinstance(u, dict)]
-    coordinator = sum(
-        u["tokens_total"] for u in usage if _number(u.get("tokens_total"))
-    )
+    # a valid entry carries a token count; the sum and the flag read the
+    # same entries, so the flag never disagrees with the numbers
+    recorded = [u for u in usage if _number(u.get("tokens_total"))]
+    coordinator = sum(u["tokens_total"] for u in recorded)
     free = tier_tokens["free"]
     paid = tier_tokens["paid"]
     total = sum(tier_tokens.values()) + coordinator
@@ -222,7 +229,7 @@ def job_economy(
         free_tokens=free,
         paid_exec_tokens=paid,
         coordinator_tokens=coordinator,
-        coordinator_estimated=any(u.get("estimated") for u in usage),
+        coordinator_estimated=any(u.get("estimated") for u in recorded),
         free_piece_share=_ratio(accepted_free, accepted),
         free_token_share=_ratio(free, total),
         coordinator_share=_ratio(coordinator, total),
@@ -233,6 +240,7 @@ def job_economy(
         cheap_usd=cheap_usd,
         paid_usd=paid_usd,
         cost_unknown=cost_unknown,
+        usage_recorded=bool(recorded),
     )
     if prefs is not None:
         economy.alerts = _alerts(economy, prefs, spent_today)
@@ -272,12 +280,24 @@ def _fmt(value: float | None, spec: str) -> str:
 
 
 def summary_line(e: Economy) -> str:
-    """The one-line summary printed by ``economy`` and ``close``."""
-    estimated = " (estimated)" if e.coordinator_estimated else ""
+    """The one-line summary printed by ``economy`` and ``close``.
+
+    Without a recorded usage entry the coordinator's share is unknown, not
+    zero: the line says ``not recorded`` and the free share is over the
+    recorded tokens only.
+    """
+    if e.usage_recorded:
+        estimated = " (estimated)" if e.coordinator_estimated else ""
+        coordinator = _fmt(e.coordinator_share, ".0%")
+        scope = "of tokens"
+    else:
+        estimated = ""
+        coordinator = "not recorded"
+        scope = "of recorded tokens"
     line = (
         f"free work: {_fmt(e.free_piece_share, '.0%')} of pieces, "
-        f"{_fmt(e.free_token_share, '.0%')} of tokens · "
-        f"coordinator: {_fmt(e.coordinator_share, '.0%')}{estimated} · "
+        f"{_fmt(e.free_token_share, '.0%')} {scope} · "
+        f"coordinator: {coordinator}{estimated} · "
         f"{_fmt(e.attempts_per_piece, '.1f')} attempts/piece · "
         f"mean score {_fmt(e.mean_score, '.0f')}"
     )

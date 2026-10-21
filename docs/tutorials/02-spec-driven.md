@@ -470,14 +470,14 @@ $CC close --project . --job JOB --type feat
 The command prints `changelog: CHANGELOG.md (Added)`, a feature commit message, the task/executor scores, and this economy line (illustrative — your numbers depend on your run):
 
 ```text
-free work: 100% of pieces, 100% of tokens · coordinator: 0% · 1.0 attempts/piece · mean score 100
+free work: 100% of pieces, 100% of recorded tokens · coordinator: not recorded · 1.0 attempts/piece · mean score 100
 ```
 
 Read the line before you celebrate it:
 
 - `attempts/piece` counts execution attempts only. Attempts that did no work — `quota` and `brief_refused` — are left out of the count, and review dispatches are not counted either. When each of the three pieces needed one execution attempt, the number is 1.0.
 - Report the total dispatches separately when you describe retries. For the three pieces above that would be six dispatches: three executions and three reviews.
-- `coordinator: 0%` means no coordinator usage was recorded in the job record. It does not establish that coordination was free: you still spent your own tokens deciding what to ask for and checking the reviews.
+- coordinator: not recorded means no coordinator usage was recorded. The free percentage covers recorded tokens only; the actual coordination cost is unknown until you record it with usage add. An explicit zero-token entry differs from no entry: it shows coordinator: 0% when there are execution tokens.
 - `mean score 100` is the mean of the three grades of step 7 when all three are 100. It says nothing about what the run cost.
 
 `close` adds the job to `CHANGELOG.md` and prints the commit message. Commit the accepted work, the ADR, and the changelog entry as your project workflow requires.

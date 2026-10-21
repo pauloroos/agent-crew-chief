@@ -10,7 +10,7 @@ import pytest
 from crew_chief import records
 from crew_chief.cli import main
 from crew_chief.config import Prefs, PrefsError, load_prefs
-from crew_chief.economy import job_economy, summary_line
+from crew_chief.economy import Economy, job_economy, summary_line
 
 NOW = datetime(2026, 10, 19, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -145,8 +145,71 @@ def test_summary_line_with_all_values():
 def test_summary_line_with_missing_values_uses_dash():
     job = {"id": "j", "created": NOW.isoformat(), "pieces": []}
     line = summary_line(job_economy(job, _prefs(), now=NOW))
-    assert line == ("free work: — of pieces, — of tokens · coordinator: — · "
-                    "— attempts/piece · mean score —")
+    assert line == ("free work: — of pieces, — of recorded tokens · "
+                    "coordinator: not recorded · — attempts/piece · mean score —")
+
+
+def test_summary_line_without_usage_says_coordinator_not_recorded():
+    """No usage entry: the coordinator's share is unknown, not zero."""
+    job = _job_with(attempts=[("opencode:a", "free", "ok", 9000)],
+                    accepted_executor="opencode:a")
+    e = job_economy(job, _prefs(), now=NOW)
+    # the figures do not move: only the wording changes
+    assert e.coordinator_tokens == 0 and e.coordinator_share == 0.0
+    assert e.free_token_share == 1.0 and e.free_piece_share == 1.0
+    assert e.usage_recorded is False
+    line = summary_line(e)
+    assert "coordinator: not recorded" in line
+    assert "coordinator: 0%" not in line
+    # the free share is over the recorded tokens only
+    assert "100% of recorded tokens" in line
+
+
+def test_summary_line_with_recorded_zero_usage_shows_zero_percent():
+    """A usage entry of zero tokens is a measured zero, not a missing one."""
+    job = _job_with(attempts=[("opencode:a", "free", "ok", 9000)],
+                    accepted_executor="opencode:a",
+                    usage=[("coordinator", 0, 0, False)])
+    e = job_economy(job, _prefs(), now=NOW)
+    assert e.usage_recorded is True
+    assert e.coordinator_tokens == 0 and e.coordinator_share == 0.0
+    line = summary_line(e)
+    assert "coordinator: 0%" in line
+    assert "coordinator: not recorded" not in line
+    assert "100% of tokens" in line
+
+
+def test_summary_line_with_recorded_usage_keeps_percent_and_estimated():
+    """Recorded usage keeps the share, the estimate mark and the wording."""
+    job = _job_with(attempts=[("opencode:a", "free", "ok", 9000)],
+                    accepted_executor="opencode:a",
+                    usage=[("central", 500, 500, True)])
+    e = job_economy(job, _prefs(), now=NOW)
+    assert e.usage_recorded is True
+    assert e.coordinator_tokens == 1000
+    assert round(e.coordinator_share, 3) == 0.1
+    assert round(e.free_token_share, 3) == 0.9
+    line = summary_line(e)
+    assert "coordinator: 10% (estimated)" in line
+    assert "90% of tokens" in line
+    assert "not recorded" not in line
+
+
+def test_empty_job_has_no_recorded_usage():
+    job = {"id": "j", "created": NOW.isoformat(), "pieces": []}
+    records.add_piece(job, "One", "code", "low")
+    e = job_economy(job, _prefs(), now=NOW)
+    assert e.usage_recorded is False
+    assert e.coordinator_share is None
+    assert "coordinator: not recorded" in summary_line(e)
+
+
+def test_economy_keeps_positional_construction():
+    """The usage flag comes last, so older positional calls still work."""
+    e = Economy(1, 1, 1, False, 1, 1, 1, 1, 1, 90.0)
+    assert e.usage_recorded is False
+    assert e.coordinator_tokens == 1 and e.coordinator_share == 1
+    assert "coordinator: not recorded" in summary_line(e)
 
 
 def test_zero_disables_alert():

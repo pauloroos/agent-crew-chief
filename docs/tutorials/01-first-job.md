@@ -180,8 +180,10 @@ $CC close --project . --job JOB --type feat
 You should see a commit message, the executor and score, the record path, and an economy block. The economy line looks like this:
 
 ```text
-free work: 100% of pieces, 100% of tokens · coordinator: 0% · 2.0 attempts/piece · mean score 100
+free work: 100% of pieces, 100% of recorded tokens · coordinator: not recorded · 2.0 attempts/piece · mean score 100
 ```
+
+With no usage entries, the summary shows coordinator: not recorded; this is not a measured zero. The free percentage covers recorded tokens only and does not establish the total session cost. Use usage add to record coordinator usage; an explicit zero-token entry retains coordinator: 0% when there are execution tokens.
 
 The exact numbers depend on your run. Read it as a health check: how much work stayed free, how much coordinator usage was recorded, how much retrying happened, and the average score.
 

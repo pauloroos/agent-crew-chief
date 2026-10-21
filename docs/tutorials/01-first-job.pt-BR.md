@@ -180,8 +180,10 @@ $CC close --project . --job JOB --type feat
 Você deve ver uma mensagem de commit, o executor e a nota, o caminho do registro e um bloco de economia. A linha de economia se parece com esta:
 
 ```text
-free work: 100% of pieces, 100% of tokens · coordinator: 0% · 2.0 attempts/piece · mean score 100
+free work: 100% of pieces, 100% of recorded tokens · coordinator: not recorded · 2.0 attempts/piece · mean score 100
 ```
+
+Sem entradas de usage, o resumo mostra coordinator: not recorded: isso não é um zero medido. A porcentagem grátis cobre apenas os tokens registrados e não comprova o custo total da sessão. Use usage add para registrar o uso do coordenador; uma entrada explícita de zero tokens mantém coordinator: 0% quando há tokens de execução.
 
 Os números exatos dependem da sua execução. Leia a linha como uma verificação de saúde: quanto trabalho ficou grátis, quanto uso do coordenador foi registrado, quantas tentativas foram necessárias e qual foi a nota média.
 
