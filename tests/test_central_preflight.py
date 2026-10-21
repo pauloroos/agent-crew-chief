@@ -660,3 +660,23 @@ def test_explicit_update_repairs_disagreeing_installed_versions(tmp_path, fake_b
                        "synthetic", None, True, _release(tmp_path))
     assert result["ok"] is True
     assert result["acc"]["action"] == "updated"
+
+def test_selected_spec_dir_matching_configured_sensitive_path_is_refused(
+    tmp_path, fake_bin
+):
+    log = _fake_claude(fake_bin, tmp_path / "cli.log")
+    worktree = _worktree(tmp_path)
+    prefs = worktree / "docs" / "crew-chief" / "preferences.toml"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_text('sensitive_paths = ["external-spec"]' + chr(10), encoding="utf-8")
+    before_prefs = prefs.read_bytes()
+    spec = _spec_dir(tmp_path)
+    before_spec = {p.name: p.read_bytes() for p in spec.iterdir()}
+    result = preflight(_record(worktree), "synthetic", spec, False, _release(tmp_path))
+    assert result["ok"] is False
+    assert "sensitive" in result["error"]
+    assert not (worktree / "specs").exists()
+    assert _calls(log) == []
+    assert prefs.read_bytes() == before_prefs
+    for path in spec.iterdir():
+        assert path.read_bytes() == before_spec[path.name]
