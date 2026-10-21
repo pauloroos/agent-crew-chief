@@ -606,3 +606,17 @@ def test_request_persistence_failure_is_durable(
     stored = central_registry.load_registry(root)["coordinators"][result["id"]]
     assert stored["state"] == "failed"
     assert "synthetic write refusal" in stored["last_error"]
+
+
+def test_request_bom_crlf_bytes_and_digest_survive_preparation(repo, request_file, release, root, fake_bin):
+    import hashlib
+    _fake_claude(fake_bin, repo.parent / "cli.log")
+    payload = b"\xef\xbb\xbfsynthetic request\r\nsecond line\r\n"
+    request_file.write_bytes(payload)
+    result = prepare_launch(repo, request_file, _options(release), root)
+    assert result["ok"] is True, result["error"]
+    stored = root / "coordinators" / result["id"] / "request.md"
+    assert stored.read_bytes() == payload
+    assert request_file.read_bytes() == payload
+    expected = hashlib.sha256(payload.decode("utf-8-sig").encode("utf-8")).hexdigest()
+    assert result["record"]["authorization"]["request_digest"] == expected
