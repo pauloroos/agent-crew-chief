@@ -253,6 +253,21 @@ def test_usage_zero_is_not_invented_estimate():
     assert parsed["tokens_total"] == 0
 
 
+def test_bom_crlf_event_stream_keeps_text_and_measured_zero_usage():
+    events = (ANSWER, SESSION, {
+        "type": "turn.completed",
+        "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    })
+    stdout = "\ufeff" + "\r\n".join(json.dumps(event) for event in events) + "\r\n"
+
+    parsed = parse_events(stdout, "")
+
+    assert parsed["text"] == ANSWER["item"]["text"]
+    assert parsed["session_id"] == "thread-1"
+    assert parsed["estimated"] is False
+    assert (parsed["tokens_in"], parsed["tokens_out"], parsed["tokens_total"]) == (0, 0, 0)
+
+
 def test_interactive_requires_a_persisted_session(tmp_path):
     with pytest.raises(CodexError, match="session"):
         interactive(record(tmp_path))
