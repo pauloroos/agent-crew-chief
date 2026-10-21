@@ -6,13 +6,15 @@ Every CLI is a local stub installed by ``fake_bin``; no model is ever called.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from crew_chief.coordinator_codex import (
     CodexError,
-    SessionMismatchError,
     headless,
     interactive,
     parse_events,
@@ -41,7 +43,8 @@ if args == ["--version"]:
 if args == ["--help"]:
     print(os.environ.get(
         "FAKE_CODEX_TOP_HELP",
-        "Commands:\n  exec    Run Codex non-interactively\n  resume  Resume a previous session",
+        "Commands:\n  exec    Run Codex non-interactively\n  resume  Resume a previous session\n"
+        "--ask-for-approval never\n--sandbox read-only workspace-write",
     ))
     raise SystemExit(0)
 if args[:2] == ["exec", "--help"]:
@@ -56,7 +59,7 @@ if args[:2] == ["exec", "--help"]:
     ))
     raise SystemExit(0)
 if args[:3] == ["exec", "resume", "--help"]:
-    print(os.environ.get("FAKE_CODEX_EXEC_RESUME_HELP", "resume  Resume a previous session"))
+    print(os.environ.get("FAKE_CODEX_EXEC_RESUME_HELP", "--json --dangerously-bypass-approvals-and-sandbox"))
     raise SystemExit(0)
 
 for event in json.loads(os.environ.get("FAKE_CODEX_EVENTS", "[]")):
@@ -328,3 +331,50 @@ def test_interactive_capability_error_when_probe_missing(tmp_path, codex, monkey
     monkeypatch.setenv("FAKE_CODEX_EXEC_HELP", "no json here")
     with pytest.raises(CodexError, match="capabilities"):
         interactive(record(tmp_path, session_id="thread-1"))
+
+
+def test_restricted_headless_explicitly_denies_approvals(tmp_path, codex):
+    argv = headless(record(tmp_path, authorization={"settings": {
+        "coordinator_unrestricted": False}}), "synthetic")
+    assert argv[argv.index("-a") + 1] == "never"
+    assert argv.index("-a") < argv.index("exec")
+
+
+def test_restricted_missing_no_prompt_capability_refuses(tmp_path, codex, monkeypatch):
+    monkeypatch.setenv("FAKE_CODEX_TOP_HELP", "resume\n--sandbox read-only")
+    with pytest.raises(CodexError, match="capabilit"):
+        headless(record(tmp_path, authorization={"settings": {
+            "coordinator_unrestricted": False}}), "synthetic")
+
+
+def test_resume_requires_its_own_json_capability(tmp_path, codex, monkeypatch):
+    monkeypatch.setenv("FAKE_CODEX_EXEC_RESUME_HELP", "resume without structured output")
+    with pytest.raises(CodexError, match="capabilit"):
+        headless(record(tmp_path, session_id="thread-1"), "synthetic")
+
+
+def test_huge_integer_usage_is_exact_and_bounded_input_is_visible():
+    huge = 10 ** 400
+    parsed = parse_events(json.dumps({"type": "turn.completed", "usage": {
+        "input_tokens": huge, "output_tokens": 2}}), "")
+    assert parsed["tokens_total"] == huge + 2
+    assert parsed["estimated"] is False
+    assert parse_events("x" * (11 * 1024 * 1024), "")["error"]
+
+
+def test_fake_shim_execution_preserves_stdin_and_exact_session(tmp_path, codex, monkeypatch):
+    from crew_chief import coordinator_codex as adapter
+    # An actual fake executable/shim in a path containing spaces and '&'.
+    found = Path(adapter._executable())
+    special = tmp_path / "fake cli & tools"
+    shutil.copytree(found.parent, special)
+    monkeypatch.setenv("PATH", str(special) + os.pathsep + os.environ.get("PATH", ""))
+    prompt = 'synthetic & echo BAD | %PATH% ^ "quoted" $(unused)'
+    argv = headless(record(tmp_path, session_id="thread-1"), prompt)
+    result = subprocess.run(argv, input=prompt, cwd=tmp_path, shell=False,
+                            capture_output=True, text=True, encoding="utf-8", timeout=10)
+    assert result.returncode == 0, result.stderr
+    call = codex.calls()[-1]
+    assert call["stdin"] == prompt
+    assert call["argv"][-2:] == ["thread-1", "-"]
+    assert call["cwd"] == str(tmp_path)

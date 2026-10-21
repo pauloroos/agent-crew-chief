@@ -18,7 +18,7 @@ import os
 import re
 import shutil
 import subprocess
-from typing import Any, Iterator
+from typing import Iterator
 
 from .scoring import quota_family
 from .tools import QUOTA_PATTERNS
@@ -27,7 +27,6 @@ __all__ = [
     "BYPASS_FLAG",
     "CLI",
     "CodexError",
-    "SessionMismatchError",
     "headless",
     "interactive",
     "parse_events",
@@ -40,17 +39,13 @@ CLI = "codex"
 #: Permission bypass accepted by ``codex exec`` and ``codex resume``.
 BYPASS_FLAG = "--dangerously-bypass-approvals-and-sandbox"
 
-#: Cap on one raw log stream (plan: 10 MiB per stream).
-LOG_MAX_BYTES = 10 * 1024 * 1024
+MAX_EVENT_BYTES = 10 * 1024 * 1024
 
 #: Cap on a retained error diagnostic.
 ERROR_MAX_CHARS = 2048
 
 #: Bounded probe call, so a wedged CLI cannot hold the preflight.
 PROBE_TIMEOUT_S = 10
-
-#: Round timeout when the resolved settings carry none (T001 default).
-DEFAULT_TIMEOUT_S = 900
 
 #: Item kinds whose text is the coordinator's assistant answer.
 _ANSWER_ITEMS = ("agent_message", "assistant_message")
@@ -64,23 +59,6 @@ _SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 
 class CodexError(RuntimeError):
     """A Codex round could not run or did not finish cleanly."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        stdout: list[str] | None = None,
-        stderr: str = "",
-        returncode: int | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.stdout = stdout or []
-        self.stderr = stderr or ""
-        self.returncode = returncode
-
-
-class SessionMismatchError(CodexError):
-    """The CLI answered with a session other than the one being resumed."""
 
 
 def _bounded(text: str) -> str:
@@ -108,46 +86,22 @@ def _unrestricted(record: dict) -> bool:
     raise CodexError("coordinator_unrestricted must be a boolean")
 
 
-def _timeout(record: dict) -> float:
-    """Positive round timeout from the resolved settings."""
-    value = _settings(record).get("central_round_timeout_s", DEFAULT_TIMEOUT_S)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return DEFAULT_TIMEOUT_S
-    if not math.isfinite(value) or value <= 0:
-        return DEFAULT_TIMEOUT_S
-    return float(value)
-
-
 def _executable() -> str:
     """Absolute path of the codex CLI on PATH, else the bare name."""
     return shutil.which(CLI) or CLI
 
 
 def _command(exe: str) -> list[str]:
-    """argv prefix for ``exe``, routing a Windows batch shim through cmd."""
-    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
-        return [os.environ.get("COMSPEC", "cmd.exe"), "/c", exe]
+    # Popen quotes the executable path; adding cmd /c breaks paths with spaces.
+    # Dynamic arguments are restricted to validated session IDs, prompt is stdin.
     return [exe]
-
-
-def _lines(text: str) -> list[str]:
-    """Bounded log lines: the stream cut at :data:`LOG_MAX_BYTES`."""
-    out: list[str] = []
-    size = 0
-    for line in (text or "").splitlines():
-        size += len(line.encode("utf-8", errors="replace")) + 1
-        if size > LOG_MAX_BYTES:
-            out.append("[truncated]")
-            break
-        out.append(line)
-    return out
 
 
 def _count(value: object) -> int | None:
     """A reported token count, or ``None`` when the CLI did not report it."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    if not math.isfinite(value) or value < 0:
+    if value < 0 or (isinstance(value, float) and not math.isfinite(value)):
         return None
     if isinstance(value, float) and not value.is_integer():
         return None
@@ -156,7 +110,7 @@ def _count(value: object) -> int | None:
 
 def _events(stdout: str) -> Iterator[dict]:
     """Every JSONL event in ``stdout``; non-JSON progress lines are skipped."""
-    for line in (stdout or "").splitlines():
+    for line in (stdout or "").removeprefix("\ufeff").splitlines():
         line = line.strip()
         if not line.startswith("{"):
             continue
@@ -222,6 +176,10 @@ def _sandbox_mode(help_text: str) -> str | None:
 
 def parse_events(stdout: str, stderr: str) -> dict:
     """Normalize one round's CLI output."""
+    if len((stdout or "").encode("utf-8", errors="replace")) > MAX_EVENT_BYTES:
+        return dict(session_id=None, text="", tokens_in=None, tokens_out=None,
+                    tokens_total=None, estimated=False, model=None,
+                    quota_family=None, error="codex events exceed read cap")
     events = list(_events(stdout))
     session_id = ""
     session_ids: set[str] = set()
@@ -289,17 +247,19 @@ def _headless_argv(record: dict, exe: str) -> list[str]:
     session = record.get("session_id")
     if session is not None and not _safe_session_id(session):
         raise CodexError("unsafe or invalid codex session id")
-    argv = [*_command(exe), "exec"]
+    argv = _command(exe)
+    if not _unrestricted(record):
+        info = probe(record)
+        mode = info.get("sandbox_mode")
+        if not mode:
+            raise CodexError("missing codex capabilities: sandbox")
+        argv += ["-a", "never", "--sandbox", mode]
+    argv += ["exec"]
     if session:
         argv.append("resume")
     argv.append("--json")
     if _unrestricted(record):
         argv.append(BYPASS_FLAG)
-    else:
-        mode = _sandbox_mode(_help([*_command(exe), "exec", "--help"]))
-        if mode is None:
-            raise CodexError("missing codex capabilities: sandbox")
-        argv.extend(["--sandbox", mode])
     if session:
         argv.append(str(session))
     return [*argv, "-"]
@@ -323,6 +283,8 @@ def headless(record: dict, prompt: str) -> list[str]:
         raise CodexError("codex CLI not found on PATH")
 
     result = probe(record)
+    if session and not result.get("capabilities", {}).get("resume_json"):
+        raise CodexError("missing codex capabilities: resume_json")
     if not result.get("supported"):
         raise CodexError(result.get("error") or "missing codex capabilities")
 
@@ -344,6 +306,8 @@ def interactive(record: dict) -> list[str]:
         raise CodexError("codex CLI not found on PATH")
 
     result = probe(record)
+    if session and not result.get("capabilities", {}).get("resume_json"):
+        raise CodexError("missing codex capabilities: resume_json")
     if not result.get("supported"):
         raise CodexError(result.get("error") or "missing codex capabilities")
 
@@ -351,7 +315,7 @@ def interactive(record: dict) -> list[str]:
     argv = [*_command(exe)]
     if not unrestricted and result.get("capabilities", {}).get("approval_policy"):
         argv.extend(["-a", "never"])
-    sandbox = _sandbox_mode(_help([*_command(exe), "exec", "--help"]))
+    sandbox = result.get("sandbox_mode")
     if not unrestricted and sandbox:
         argv.extend(["--sandbox", sandbox])
     argv.append("resume")
@@ -393,6 +357,7 @@ def probe(record: dict | None = None) -> dict:
             "bypass": False,
             "sandbox": False,
             "approval_policy": False,
+            "resume_json": False,
         },
         "missing": [],
         "supported": False,
@@ -413,20 +378,13 @@ def probe(record: dict | None = None) -> dict:
     capabilities["exec_json"] = "--json" in exec_help
     capabilities["exec_resume"] = "resume" in exec_help
     capabilities["interactive_resume"] = bool(
-        re.search(r"^\\s*resume\\b", top_help, re.MULTILINE)
+        re.search(r"^\s*resume\b", top_help, re.MULTILINE)
     ) or ("resume" in top_help)
     capabilities["bypass"] = BYPASS_FLAG in exec_help or BYPASS_FLAG in top_help
-    capabilities["sandbox"] = (
-        ("--sandbox" in exec_help)
-        or ("workspace-write" in exec_help)
-        or ("read-only" in exec_help)
-    )
-    capabilities["approval_policy"] = (
-        ("--ask-for-approval" in top_help)
-        or ("-a" in top_help.split())
-        or ("approval_policy" in top_help)
-        or ("approval_policy" in exec_help)
-    )
+    capabilities["resume_json"] = "--json" in exec_resume_help
+    result["sandbox_mode"] = _sandbox_mode(top_help)
+    capabilities["sandbox"] = "--sandbox" in top_help and bool(result["sandbox_mode"])
+    capabilities["approval_policy"] = "--ask-for-approval" in top_help and "never" in top_help
 
     unrestricted = True
     if record is not None:
@@ -438,7 +396,7 @@ def probe(record: dict | None = None) -> dict:
     if unrestricted:
         required.append("bypass")
     else:
-        required.append("sandbox")
+        required.extend(["sandbox", "approval_policy"])
     result["missing"] = [name for name in required if not capabilities[name]]
     result["supported"] = not result["missing"]
     if not result["supported"]:
