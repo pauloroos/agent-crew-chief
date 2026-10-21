@@ -2200,6 +2200,244 @@
           "tokens_estimated": false,
           "cost_usd": null,
           "cost_known": false
+        },
+        {
+          "n": 3,
+          "executor": "opencode:opencode-go/beam-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:30:31.637843+00:00",
+          "duration_s": 257.3,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "DONE\n\nFocused proof: `python -m pytest tests/test_coordinator_claude.py -q` → 32 passed in 3.18s.",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/coordinator_claude.py",
+              "added": 44,
+              "deleted": 8
+            },
+            {
+              "file": "tests/test_coordinator_claude.py",
+              "added": 60,
+              "deleted": 4
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-8-3",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-8-3",
+          "base": {
+            "attempt": 1,
+            "branch": "crew/20261021-0722-central-8-1"
+          },
+          "steps": 30,
+          "tokens_in": 1383662,
+          "tokens_out": 16606,
+          "tokens_total": 1400268,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "f0fb0d2605e61f8dbd35c533361625e613be8897",
+          "end_sha": "e3d9f5c6dfe6b18a4c870478864b54158dba99ce",
+          "proof": {
+            "cmd": "python -m pytest tests/test_coordinator_claude.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 4,
+          "executor": "antigravity:claude-sonnet-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:35:11.227982+00:00",
+          "duration_s": 47.6,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "d run proof.\nHEAD at start: `e3d9f5c6dfe6b18a4c870478864b54158dba99ce`, which matches. Proof: `python -m pytest tests/test_coordinator_claude.py -q` gives 32 passed. The diff touches only the two allowed files. It deletes one test, which was replaced rather than lost. I changed no files.\n\n## Spec verdict\n- **FR-003:** done for this adapter. Launch/project/calling-CLI resolution is outside this file. Unrestricted is the default and the restrictive override works.\n- **FR-009:** done at the argv, parse and session-selection level. The supervisor is out of scope.\n- **FR-010:** done. `interactive()` requires a persisted session, resumes it, and checks the probe.\n- **FR-020:** done. The adapter is stdlib only and has no pty, curses, tmux or ConPTY.\n- **FR-025:** partial. Usage is captured and estimates are flagged. Rejecting bad numbers is mostly done, but see Important #1. Stable event IDs and exactly-once recording belong to other tasks.\n- **SC-002:** misunderstood or incomplete. The tests cover first launch, resume, permissions, usage, missing capabilities and failures. They do not execute a fake `.cmd` shim with metacharacters on Windows, which the brief requires.\n- **US1/AC5:** done. Restricted mode now requires `dontAsk`. Plan-only is a capability error, and bypass flags are absent when restricted.\n\n**Extra:** none beyond the criteria. The session-ID allowlist regex is a hardening change the criteria did not ask for. It is reasonable.\n\n## Quality findings\n**Critical:** none.\n\n**Important**\n1. [coordinator_claude.py:290-302](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-3/skill/crew-chief/scripts/crew_chief/coordinator_claude.py#L290-L302): `_int` can still raise.\n   - `math.isfinite()` on a huge JSON integer, such as a 400-digit `input_tokens`, raises `OverflowError`.\n   - The `except` clause catches only `TypeError` and `ValueError`, so `parse_events` crashes.\n   - Fix: catch `OverflowError`, or check `isinstance(value, float)` before calling `isfinite`.\n   - Also consider capping very large integers. No test covers this case.\n2. [tests/test_coordinator_claude.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-3/tests/test_coordinator_claude.py): there is no Windows `.cmd` shim test.\n   - The brief says an argv assertion alone does not prove execution safety.\n   - The new metacharacter test only checks that session validation rejects bad IDs. Nothing runs a fake shim that has metacharacters in its path.\n\n**Minor**\n- [coordinator_claude.py:77-78](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-3/skill/crew-chief/scripts/crew_chief/coordinator_claude.py#L77-L78): `dontAsk` is detected as a substring anywhere in the help text. A parse of the `--permission-mode` choices would be safer. The same applies to `stream-json` and `--verbose`.\n- [coordinator_claude.py:410-417](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-3/skill/crew-chief/scripts/crew_chief/coordinator_claude.py#L410-L417): a `usage` dict with no recognised keys reports 0 tokens with `estimated=False`. It should fall back to the character estimate.\n- [coordinator_claude.py:105](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-3/skill/crew-chief/scripts/crew_chief/coordinator_claude.py#L105): the probe cache is keyed by the executable path for the life of the process. A CLI upgrade is not noticed.\n- [coordinator_claude.py:179](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-3/skill/crew-chief/scripts/crew_chief/coordinator_claude.py#L179): the error message says \"whitespace or control characters\" but the regex now rejects more than that.\n- [coordinator_claude.py:300-301](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-3/skill/crew-chief/scripts/crew_chief/coordinator_claude.py#L300-L301): fractional floats are silently zeroed. That may undercount legitimate fractional usage.\n\n**Verdict:** needs changes. Fix Important #1 and #2.\n\nHEAD at end: `e3d9f5c6dfe6b18a4c870478864b54158dba99ce` (not re-checked after the review; I changed no files).\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 88760,
+          "tokens_out": 2914,
+          "tokens_total": 38839,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 5,
+          "executor": "opencode:opencode-go/longcat-2.5-preview-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:36:59.024877+00:00",
+          "duration_s": 6.6,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Upstream request failed: Endpoint is unavailable. (HTTP 402)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-8-5",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-8-5",
+          "base": {
+            "attempt": 3,
+            "branch": "crew/20261021-0722-central-8-3"
+          },
+          "steps": 1,
+          "tokens_in": 1376,
+          "tokens_out": 19,
+          "tokens_total": 1395,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false,
+          "start_sha": "e3d9f5c6dfe6b18a4c870478864b54158dba99ce",
+          "end_sha": "e3d9f5c6dfe6b18a4c870478864b54158dba99ce"
+        },
+        {
+          "n": 6,
+          "executor": "opencode:opencode/glm-5.3-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:38:35.040428+00:00",
+          "duration_s": 390.9,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "ęknięty problem jest jasny. Sprawdzam teraz fixture `fake_bin` w conftest i stan bazowy:\n\n库位:`math.isfinite(int)` 在超大整数上会抛出 `OverflowError`(未捕获)，且无效的主要用法会变成测得的 0。基准测试：32 个通过。正在检查 `_int` 是否有其他调用者，然后编写红色测试：\n\n`_int` 是适配器本地的。现在我来编写红色回归测试（修改断言“传出无效零”的四个测试，并添加新的测试，并加上带空格/元字符的 shim 测试）：\n\n我需要 `os`/`sys` 在测试文件中的导入：\n\nNow the observed RED run:\n\nRed confirmed: 400-digit integer → `OverflowError: int too large to convert to float`; 8 tests failing on the fake-zero semantics. Now the implementation:\n\nGREEN run:\n\n**T008 narrow correction — report**\n\nRed (observed): `python -m pytest tests/test_coordinator_claude.py -q` → `8 failed, 30 passed`; direct repro: `parse_events` on a 400-digit `input_tokens` → `OverflowError: int too large to convert to float` (`math.isfinite(int)` uncaught).\n\nFix (both allowed files only):\n- `coordinator_claude.py`: `_int` now returns `int | None` — ints (any magnitude) are exact and never route through float; floats must be finite, non-negative, integral; bool/string/invalid/missing → `None` (unknown, never fabricated zero). New `_cache` helper: optional cache counters contribute zero only when invalid/absent. `parse_events`: `tokens_in` is unknown (`None`) when `input_tokens` is invalid/missing (caches summed only on top of a valid primary); `tokens_out` likewise; `tokens_total` computed only when both primaries are known. Valid zeros stay measured zeros; usage-absent estimate path unchanged.\n- `test_coordinator_claude.py`: revised 4 tests that asserted invalid zero (NaN/Inf/negative/bool) to unknown semantics, preserving valid-event assertions (e.g. the `0/0` measured-zero error test untouched). Added red regressions: huge exact integer, `usage: {}`, absent primaries (cache-only), fractional/string primaries, valid primaries with invalid cache counters, and a fake Windows shim at a path with spaces/metacharacters (`prog files (x86) & crew`) that runs only `--version`/`--help`, plus headless argv-only/prompt-never-in-argv and `a&b` session-id injection rejection from that path.\n\nGreen (observed): `python -m pytest tests/test_coordinator_claude.py -q` → `38 passed in 3.9s`; overflow repro now `exact: True`. No cross-file consumers of `coordinator_claude` exist yet (matching only this adapter in repo), so no further immediate regressions apply. Diff confined to the two permitted files; not committed.\n\nSkipped: no tools.py `_int` change (neighboring task), no cache-path tests beyond the fake shard. Risk: downstream consumers that assumed `0` for unknown must now handle `None` — that is the intended contract.\n\nDONE",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/coordinator_claude.py",
+              "added": 36,
+              "deleted": 17
+            },
+            {
+              "file": "tests/test_coordinator_claude.py",
+              "added": 148,
+              "deleted": 8
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-8-6",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-8-6",
+          "base": {
+            "attempt": 3,
+            "branch": "crew/20261021-0722-central-8-3"
+          },
+          "steps": 28,
+          "tokens_in": 1243502,
+          "tokens_out": 13108,
+          "tokens_total": 1256610,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "e3d9f5c6dfe6b18a4c870478864b54158dba99ce",
+          "end_sha": "ef9faaf6fdab40d0ada03d3cb6eb3c27cdb2983c",
+          "proof": {
+            "cmd": "python -m pytest tests/test_coordinator_claude.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 7,
+          "executor": "antigravity:claude-opus-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:47:42.814828+00:00",
+          "duration_s": 44.7,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "**HEAD at start:** `ef9faaf6fdab40d0ada03d3cb6eb3c27cdb2983c` (matches ef9faaf)\n\n**Proof:** `python -m pytest tests/test_coordinator_claude.py -q` → 38 passed (run on Windows)\n\n## Spec verdict (only what this adapter is responsible for)\n- FR-003: **done**. Unrestricted is the default. `coordinator_unrestricted=false` switches to restricted. A non-boolean value is rejected.\n- FR-009: **done**. Headless rounds resume the exact session ID. The prompt goes in on stdin. Output is capped at 16 MiB and failures stay visible.\n- FR-010: **done**. Interactive mode uses `--resume <session>` and requires a saved session. Handoff ownership belongs to the supervisor, not this task.\n- FR-020: **done**. Only plain stdlib `subprocess`; no pty or curses.\n- FR-025: **done**. Usage reported by the CLI is passed through exactly. When there is none, the result is a character estimate marked as such. Invalid or missing input/output counts become `None`, never a made-up zero. Huge ints like `10**400` stay exact with no overflow. Stable event IDs are the caller's job.\n- SC-002: **done**. Covers first launch, resume, interactive, permissions, usage edge cases (NaN, inf, negative, bool, fractional, string) and failures, with no model calls.\n- US1/AC5: **done**. Restricted mode requires `dontAsk` (`--permission-mode dontAsk`) and never adds the bypass flag. Plan-only support raises a capability error. Denied tool names show up in `permission_denied`.\n\n**extra:** none. Only the 2 allowed files changed and no existing tests or code were deleted.\n\n## Quality verdict\n- **Important:** [test_coordinator_claude.py#L606-L629](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-6/tests/test_coordinator_claude.py#L606-L629). On non-Windows, the stub is `chmod 755` but has no shebang line. Exec should fail with ENOEXEC, `probe()` would return `available=False`, and this test would fail on Linux/macOS. Fix: start the script with `#!{sys.executable}`. On Windows the `.cmd` shim does run, from a path containing `&` and `()`.\n- **Minor:** [coordinator_claude.py#L77-L78](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-6/skill/crew-chief/scripts/crew_chief/coordinator_claude.py) checks capabilities by substring (`\"plan\" in help_text`). This is too loose, but it can't let anything bypass the restricted path, since only `dontAsk` grants restricted mode.\n- **Minor:** `_session` raises the same message (\"whitespace or control characters\") for every rejection, including a leading `-` or a too-long ID, which can mislead.\n- **Minor:** the shim test only proves the hostile session `a&b` is rejected before argv is built. It never runs a round through the `.cmd` shim, but that's acceptable because rejection happens up front.\n- **Minor:** the character estimate counts only the answer text. This is labelled as a `shortcut:`, so it's known debt.\n\nNo Critical issues. The probe check runs before any argv is built, so a failed probe can't be bypassed.\n\n**HEAD at end:** `ef9faaf6fdab40d0ada03d3cb6eb3c27cdb2983c`\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 129125,
+          "tokens_out": 2269,
+          "tokens_total": 45320,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 8,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:49:43.803470+00:00",
+          "duration_s": 133.8,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief file first.\n\nNow I'll add the structural assertion first (to demonstrate red before the fix):\n\nRed confirmed. Now the fix — add the shebang as the first line of the stub script:\n\nDone — one small correction, test-file only.\n\n**Change** (`tests/test_coordinator_claude.py`, +3 lines, no production code touched):\n- `test_probe_and_headless_from_path_with_spaces_and_metacharacters`: the hand-built hostile-path stub now starts with `#!{sys.executable}`, so `chmod(0o755)` is enough on Linux/macOS (matching the `fake_bin` fixture convention in `tests/conftest.py`).\n- Added a structural assertion on the written stub's first line (`== f\"#!{sys.executable}\"`), which is content-based and therefore red on Windows too — it does not rely on POSIX exec semantics to fail.\n\n**Observed proof**\n- Red before fix: `python -m pytest tests/test_coordinator_claude.py -q -k \"metacharacters\"` → `1 failed, 37 deselected` (`AssertionError: assert 'import json, sys' == '#!C:\\Python314\\python.exe'`).\n- Green after fix: `python -m pytest tests/test_coordinator_claude.py -q` → `38 passed in 3.42s`.\n- Immediate regressions: `python -m pytest tests/test_coordinator_protocol.py tests/test_conftest.py -q` → `53 passed`.\n\n**Skipped / not checked:** no full-suite run and no Linux/macOS execution (this host is Windows) — POSIX viability of the stub is argued from the shebang contract and the identical pattern already used by the `fake_bin` fixture, not observed. Not committed, per brief.\n\nDONE",
+          "diffstat": [
+            {
+              "file": "tests/test_coordinator_claude.py",
+              "added": 3,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-8-8",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-8-8",
+          "base": {
+            "attempt": 6,
+            "branch": "crew/20261021-0722-central-8-6"
+          },
+          "steps": 13,
+          "tokens_in": 366420,
+          "tokens_out": 4400,
+          "tokens_total": 370820,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "ef9faaf6fdab40d0ada03d3cb6eb3c27cdb2983c",
+          "end_sha": "c72864422bb1d7e050a702b320a91484fdc039a6",
+          "proof": {
+            "cmd": "python -m pytest tests/test_coordinator_claude.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 9,
+          "executor": "antigravity:claude-sonnet-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:52:34.070304+00:00",
+          "duration_s": 41.2,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "- Quota family detection from stderr and from the error text.\n\nHEAD at start: c72864422bb1d7e050a702b320a91484fdc039a6. It matches c728644.\n\nProof: `python -m pytest tests/test_coordinator_claude.py -q` gave 38 passed. Only the two allowed files changed, and the diff has no deletions of existing tests or code. I didn't run any real CLI or change any file.\n\n**Spec verdict**\n- FR-003: done. [`headless`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-8-8/skill/crew-chief/scripts/crew_chief/coordinator_claude.py) and `interactive` default to unrestricted, and `coordinator_unrestricted=False` selects the restrictive override. Resolving the CLI by override, preference and `CREW_CHIEF_COORDINATOR` is outside this adapter's boundary.\n- FR-009: done within the adapter. `headless()` builds argv only, the prompt goes on stdin, and it uses `--resume <exact session>`. The supervisor loop belongs to a neighbouring task.\n- FR-010: done within the adapter. `interactive()` resumes the persisted session and raises `AdapterError` without one. Ownership handoff and restoring background eligibility belong to the supervisor.\n- FR-020: done. The adapter uses only subprocess and shutil, with no pty, curses, tmux or ConPTY.\n- FR-025: done for parsing. `parse_events` takes `usage`, marks character estimates with `estimated=True`, and leaves invalid or missing counts as `None`. Recording usage once by event ID is outside this task.\n- SC-002: done. The tests cover first launch, exact-session headless and interactive resume, permissions, usage, missing capabilities and failures, all with fake CLIs.\n- US1/AC5: done. With unrestricted off, `--dangerously-skip-permissions` is absent. Restricted rounds need `dontAsk` in the help output and otherwise raise `AdapterError`. A plan-only help text is rejected by test. Denied tool names are reported without tool input.\n\n**Extra**\n- Output cap `MAX_EVENT_CHARS` and a conflicting-session-id check.\n- Cached probe results.\n\nAll three are small and defensible.\n\n**Quality**\n- Critical: none.\n- Important: none.\n- Minor:\n  - `coordinator_claude.py` (`_capabilities_from`): `dontAsk` is detected by a plain substring match in the help text. That is weak but fails closed.\n  - `coordinator_claude.py` (`_PROBED`): the probe cache is keyed by executable path and never expires. A CLI upgrade during a long run goes unnoticed.\n  - `coordinator_claude.py` (`parse_events`): a result that carries an error and has partial usage still reports the usage. That seems acceptable.\n  - `coordinator_claude.py` (`interactive`): restricted interactive mode adds no permission-mode flag, so Claude Code's normal prompts apply in a real terminal. This fits the intent.\n  - `test_coordinator_claude.py` (~line 599): the Windows `.cmd` shim runs `--version` and `--help` through a path containing spaces, `&` and parentheses, so execution is demonstrated. The prompt-metacharacter check is an argv assertion only, but the prompt never reaches argv by design. The new shebang assertion only checks text, and `chmod` and execution are covered by the probe call.\n\nThe numeric handling is correct. `_int` keeps huge ints exact, so there is no overflow. It rejects bool, NaN, inf, negative, fractional and string values as `None`, and an invalid primary count never becomes a measured zero. Session ids with metacharacters are rejected, and the shim test covers `a&b`.\n\nVerdict: all 7 criteria met within this task's scope.\n\nHEAD at end: c72864422bb1d7e050a702b320a91484fdc039a6.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 123018,
+          "tokens_out": 2576,
+          "tokens_total": 47352,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
       "corrections": [
@@ -2207,6 +2445,16 @@
           "reason": "Coordinator executable reproducer: parse_events with NaN raises ValueError, Infinity raises OverflowError, negative usage returns negative totals; headless ignores missing required flags. Require strict finite nonnegative integer usage/error handling, validated mandatory capabilities before argv, and no plan-mode assumption of deny-without-prompt. Keep adapter argv-only contract; tests isolated.",
           "executor": "opencode:opencode/deepseek-v4.1-flash-free",
           "at": "2026-10-21T17:30:02.088278+00:00"
+        },
+        {
+          "reason": "Independent Sonnet review at e3d9f5c6dfe6b18a4c870478864b54158dba99ce confirms huge JSON integer still raises OverflowError and empty usage invents measured zero; invalid numbers are silently zeroed. Require unknown/estimated usage rather than fabricated measured values, huge-number regression and real safe Windows fake-shim execution. All declared scope remains unchanged.",
+          "executor": "opencode:opencode-go/beam-free",
+          "at": "2026-10-21T17:36:46.426840+00:00"
+        },
+        {
+          "reason": "Opus cumulative review confirms seven criteria at ef9faaf but identifies new POSIX fake CLI test stub without shebang; Windows passes but Linux/macOS execute fails ENOEXEC. Add portable interpreter shebang to this newly added test fixture only; no production behavior changes.",
+          "executor": "opencode:opencode/glm-5.3-flash-free",
+          "at": "2026-10-21T17:49:16.058784+00:00"
         }
       ],
       "escalations": [],
@@ -2221,6 +2469,39 @@
           "penalties": [],
           "executor": "opencode:opencode/deepseek-v4.1-flash-free",
           "graded_at": "2026-10-21T17:30:02.363849+00:00"
+        },
+        "opencode:opencode-go/beam-free": {
+          "score": 56,
+          "explain": "adherence 5/7 → 71.4; 1 correction −15; 0 extra; penalties none → 56",
+          "corrections": 1,
+          "done": 5,
+          "missing": 2,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/beam-free",
+          "graded_at": "2026-10-21T17:36:46.694943+00:00"
+        },
+        "opencode:opencode/glm-5.3-flash-free": {
+          "score": 85,
+          "explain": "adherence 7/7 → 100; 1 correction −15; 0 extra; penalties none → 85",
+          "corrections": 1,
+          "done": 7,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/glm-5.3-flash-free",
+          "graded_at": "2026-10-21T17:49:16.636177+00:00"
+        },
+        "opencode:opencode-go/minimax-m3.1-flash-free": {
+          "score": 100,
+          "explain": "adherence 7/7 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 7,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "graded_at": "2026-10-21T17:53:43.431226+00:00"
         }
       },
       "ref": "T008",
@@ -2241,9 +2522,47 @@
           "pick": "opencode:opencode-go/beam-free",
           "reason": "best score 61.7 (opencode:opencode-go/beam-free); tier free",
           "at": "2026-10-21T17:30:14.117262+00:00"
+        },
+        {
+          "pick": "antigravity:claude-sonnet-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-sonnet-5-5-low); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:35:07.832180+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode-go/longcat-2.5-preview-free",
+          "reason": "best score 60 (opencode:opencode-go/longcat-2.5-preview-free); tier free",
+          "at": "2026-10-21T17:36:54.189075+00:00"
+        },
+        {
+          "pick": "opencode:opencode/glm-5.3-flash-free",
+          "reason": "best score 48 (opencode:opencode/glm-5.3-flash-free); tier free",
+          "at": "2026-10-21T17:38:31.347246+00:00"
+        },
+        {
+          "pick": "antigravity:claude-opus-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-opus-5-5-low); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free",
+          "at": "2026-10-21T17:46:47.194972+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 43.8 (opencode:opencode-go/minimax-m3.1-flash-free); tier free",
+          "at": "2026-10-21T17:49:40.289569+00:00"
+        },
+        {
+          "pick": "antigravity:claude-sonnet-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-sonnet-5-5-low); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode-go/minimax-m3.1-flash-free, opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free",
+          "at": "2026-10-21T17:52:31.394695+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 4
+      "next_attempt": 10,
+      "accepted": {
+        "attempt": 8,
+        "branch": "crew/20261021-0722-central-8-8",
+        "at": "2026-10-21T17:53:44.161602+00:00"
+      }
     },
     {
       "n": 9,
@@ -2293,6 +2612,168 @@
             "exit": 0,
             "passed": true
           }
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode-go/beam-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:31:44.729461+00:00",
+          "duration_s": 234.3,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "DONE\n\nProof: `python -m pytest tests/test_coordinator_codex.py -q` → 23 passed; immediate regression `tests/test_coordinator_protocol.py` → 73 passed total. `headless()` now returns argv only and never calls Popen; restricted mode uses explicit sandbox capabilities; session IDs and usage are strictly validated.",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/coordinator_codex.py",
+              "added": 113,
+              "deleted": 109
+            },
+            {
+              "file": "tests/test_coordinator_codex.py",
+              "added": 81,
+              "deleted": 64
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-9-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-9-2",
+          "base": {
+            "attempt": 1,
+            "branch": "crew/20261021-0722-central-9-1"
+          },
+          "steps": 59,
+          "tokens_in": 4022475,
+          "tokens_out": 29201,
+          "tokens_total": 4051676,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "1e939445342400b0d85d5bbe43577ab01124f72c",
+          "end_sha": "4402e41a9534cff7c7f189a6e5d7bfaf9be4a04a",
+          "proof": {
+            "cmd": "python -m pytest tests/test_coordinator_codex.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 3,
+          "executor": "antigravity:gpt-oss-120b-medium",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:36:47.929689+00:00",
+          "duration_s": 45.0,
+          "status": "failed",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 31724,
+          "tokens_out": 1284,
+          "tokens_total": 6768,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 4,
+          "executor": "antigravity:gemini-4-argon-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:38:48.828746+00:00",
+          "duration_s": 157.6,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "/test_coordinator_codex.py).\n- Prior API violation (spawning process in [`headless`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L308-L329)) is resolved at `4402e41`: [`headless`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L308-L329) now validates inputs/capabilities and returns `list[str]` argv only (`exec [resume] --json ... -`), leaving process execution and session-mismatch checking against `record[\"session_id\"]` to `T012`.\n\n## Spec verdict\n- **FR-003**: `done` (default unrestricted uses `--dangerously-bypass-approvals-and-sandbox`; explicit `coordinator_unrestricted: False` omits bypass and uses `--sandbox` / `-a never`).\n- **FR-009**: `done` (within T009 boundary: first-round and exact-session resume argv generation, JSONL event normalization, and bounded error diagnostics).\n- **FR-010**: `done` (within T009 boundary: [`interactive`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L332-L360) validates and returns exact-session resume argv).\n- **FR-020**: `done` (pure stdlib argv generation; no pty, curses, tmux, or ConPTY).\n- **FR-025**: `done` (within T009 boundary: [`parse_events`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L223-L284) captures valid non-negative integer usage, rejects bool/NaN/Inf/negative/fractional counts, preserves zero usage without inventing estimates, and falls back to `ceil(len(text)/4)` marked `estimated=True`).\n- **SC-002**: `missing` (missing execution-safety test with shell metacharacters through the Windows `.cmd` shim; see Important finding).\n- **US1/AC5**: `done` (restricted mode omits bypass flags, requires probed `--sandbox` capability, and surfaces capability/event errors without relying on round timeouts).\n- **extra**: none (no extra files modified).\n\n## Quality verdict\n- **Important** — [test_coordinator_codex.py:130-135](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/tests/test_coordinator_codex.py#L130-L135): `test_first_round_returns_exec_json_argv_with_prompt_on_stdin` only inspects the returned `argv` list after refactoring `headless` to not spawn. No test executes the returned `argv` (e.g. `subprocess.run(argv, input=prompt, ...)`) against the Windows `.cmd` shim from `fake_bin` with `cmd.exe` metacharacters (`&`, `|`, `%`, `^`, quotes) in `session_id` or stdin to prove batch-shim execution safety.\n- **Minor** — [coordinator_codex.py:415-417](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L415-L417): `r\"^\\\\s*resume\\\\b\"` double-escapes `\\s` and `\\b` inside a raw string, matching literal backslashes and making the regex dead code (masked by `or (\"resume\" in top_help)`).\n- **Minor** — [coordinator_codex.py:410](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L410): `exec_resume_help` is fetched via a subprocess call in [`probe`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L381-L446) but never used; also [coordinator_codex.py:44-53](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L44-L53), [82-84](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L82-L84), [111-118](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L111-L118), [133-143](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-2/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L133-L143) retain unused `LOG_MAX_BYTES`, `DEFAULT_TIMEOUT_S`, `SessionMismatchError`, `_timeout`, and `_lines` leftovers from attempt 1.\n\nHEAD: `4402e41a9534cff7c7f189a6e5d7bfaf9be4a04a` (`4402e41`)\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 734101,
+          "tokens_out": 3057,
+          "tokens_total": 98843,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 5,
+          "executor": "opencode:opencode/glm-5.3-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T17:45:07.728907+00:00",
+          "duration_s": 92.4,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "The coordinator's production fix is already committed (c383c1a), and this is the validation step: add one regression test for the BOM/CRLF event path with measured-zero usage. Baseline first:\n\nBaseline green: 28 passed. Adding the regression test next to the related zero-usage test:\n\nNow the red demonstration — temporarily reversing BOM support in the parser:\n\nConfirmed red with the reverted parser. Restoring:\n\n**T009 validation contribution — complete**\n\nFiles changed: only `tests/test_coordinator_codex.py` (+17 lines, one new test). Production `coordinator_codex.py` untouched — its BOM/CRLF handling via `removeprefix(\"\\ufeff\")` + `strip()` stays exactly as the coordinator authored in c383c1a.\n\nNew test `test_bom_crlf_event_stream_keeps_text_and_measured_zero_usage`: a UTF-8 BOM-prefixed, CRLF-joined stdout stream (ANSWER → SESSION → turn.completed with `input/output/total_tokens: 0`) must normalize to the exact assistant text (`\"hello\"`), `thread-1`, `estimated is False`, and `(tokens_in, tokens_out, tokens_total) == (0, 0, 0)` — measured zeros stay measured, never estimated doubles.\n\nRed/green sequence observed:\n- Baseline (HEAD c383c1a): `28 passed`\n- Temporarily reverted BOM support in `_events` (`removeprefix` removed): `FAILED ... assert '' == 'hello'` (1 failed, 28 deselected)\n- Restored: production file back to HEAD (clean `git diff` on `skill/`)\n- Task proof: `python -m pytest tests/test_coordinator_codex.py -q` → **29 passed in 9.81s** (all 28 pre-existing tests/assertions preserved)\n\nNo commit made (ACC records it); no live CLIs, no real HOME touched; test uses only existing fixtures. Attribution honest: coordinator owns the production fix, this session owns only the regression test.\n\n`DONE_WITH_CONCERNS` — concerns are minor only: the new test reuses the shared `ANSWER` fixture (text `\"hello\"`) for exactness, and it intentionally makes the BOM-first *answer* event carry the stream's BOM so the red state is observable on the text assertion rather than the session id; if the coordinator prefers the BOM on the session event instead, that is a one-line fixture reorder.",
+          "diffstat": [
+            {
+              "file": "tests/test_coordinator_codex.py",
+              "added": 15,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-9-5",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-9-5",
+          "base": {
+            "attempt": null,
+            "branch": "fallback/phase2-t009"
+          },
+          "steps": 14,
+          "tokens_in": 419028,
+          "tokens_out": 5811,
+          "tokens_total": 424839,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "c383c1a192f603fc48d7278ccba3b14be74cbd93",
+          "end_sha": "2ea2b8a035390dc168ece1d7ba78d1bb7c63793d",
+          "proof": {
+            "cmd": "python -m pytest tests/test_coordinator_codex.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 6,
+          "executor": "antigravity:gemini-3.8-flash-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-21T17:48:01.941511+00:00",
+          "duration_s": 63.4,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "HEAD 2ea2b8a035390dc168ece1d7ba78d1bb7c63793d\n\n### Spec verdict\n- **FR-003**: done (`probe`, `headless`, `interactive` resolve `codex`, respect `coordinator_unrestricted` [lines 79-87](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-5/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L79-L87) with unrestricted default and explicit restrictive overrides).\n- **FR-009**: done (adapter bounds `headless` to returning argv for `exec resume --json` or initial `exec --json`, bounds output/diagnostics via `ERROR_MAX_CHARS` and `MAX_EVENT_BYTES` in [parse_events](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-5/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L177-L242), retains failures; round supervision is T012).\n- **FR-010**: done (`interactive` returns terminal argv for `resume` reusing `session_id`, rejecting missing session; exclusive ownership & background restore managed by supervisor).\n- **FR-020**: done (Windows requires no pty/tmux/ConPTY; returns direct process argv for the terminal without subshell wrapper [lines 94-98](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-5/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L94-L98)).\n- **FR-025**: done (CLI-reported tokens parsed directly, non-integers/negative/infinite rejected [lines 100-109](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-5/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L100-L109), measured zero keeps `estimated=False`, missing falls back to character estimation `math.ceil(len(text)/4)`).\n- **SC-002**: done (comprehensive fake shim tests covering first launch, headless/interactive resume, permissions, capabilities probe, failure paths, and metacharacters on Windows).\n- **US1/AC5**: done (when unrestricted is false, `BYPASS_FLAG` omitted, `-a never --sandbox <mode>` required, missing capability cleanly blocks execution without hidden prompt).\n\n### Extra files / changes\n- None. Only allowed files touched: [coordinator_codex.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-5/skill/crew-chief/scripts/crew_chief/coordinator_codex.py) and [test_coordinator_codex.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-5/tests/test_coordinator_codex.py).\n\n### Quality verdict\n- **No blocking findings** (Critical / Important: None).\n- Previous review concern verified: `headless()` returns `list[str]` (argv only), does not spawn processes (deferred properly to T012).\n- **Minor**: [coordinator_codex.py:348](file:///E:/DEV/acc-v04.crew/20261021-0722-central-9-5/skill/crew-chief/scripts/crew_chief/coordinator_codex.py#L348): Type annotation `dict[str, Any]` is used without importing `Any` from `typing`, though not executed under static type checker at runtime.\n\nHEAD 2ea2b8a035390dc168ece1d7ba78d1bb7c63793d\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 147209,
+          "tokens_out": 1514,
+          "tokens_total": 130880,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
       "corrections": [
@@ -2300,6 +2781,11 @@
           "reason": "Coordinator red executable check with injected Popen proves headless spawns instead of returning argv; breaks declared adapter composition with T012. Remove process lifecycle from adapter, enforce probed restrictive deny/no-prompt or capability error, exact session validation and finite nonnegative integer usage. Preserve scoped tests, update incorrect test assumptions.",
           "executor": "opencode:opencode/deepseek-v4.1-flash-free",
           "at": "2026-10-21T17:31:34.215591+00:00"
+        },
+        {
+          "reason": "Second free attempt still lacks explicit approval deny in restricted headless argv (coordinator executable repro), ignores exec-resume help and crashes on huge integer counts; independent Gemini review additionally requires actual Windows fake-shim execution and identifies stale lifecycle leftovers. Owner-authorized coordinator fallback follows two failed free contributions.",
+          "executor": "opencode:opencode-go/beam-free",
+          "at": "2026-10-21T17:42:08.321370+00:00"
         }
       ],
       "escalations": [],
@@ -2314,6 +2800,28 @@
           "penalties": [],
           "executor": "opencode:opencode/deepseek-v4.1-flash-free",
           "graded_at": "2026-10-21T17:31:34.785201+00:00"
+        },
+        "opencode:opencode-go/beam-free": {
+          "score": 56,
+          "explain": "adherence 5/7 → 71.4; 1 correction −15; 0 extra; penalties none → 56",
+          "corrections": 1,
+          "done": 5,
+          "missing": 2,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/beam-free",
+          "graded_at": "2026-10-21T17:42:08.688117+00:00"
+        },
+        "opencode:opencode/glm-5.3-flash-free": {
+          "score": 100,
+          "explain": "adherence 7/7 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 7,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/glm-5.3-flash-free",
+          "graded_at": "2026-10-21T17:49:52.603859+00:00"
         }
       },
       "ref": "T009",
@@ -2328,9 +2836,37 @@
           "pick": "opencode:opencode-go/beam-free",
           "reason": "best score 61.7 (opencode:opencode-go/beam-free); tier free",
           "at": "2026-10-21T17:31:41.842286+00:00"
+        },
+        {
+          "pick": "antigravity:gpt-oss-120b-medium",
+          "reason": "unrated, no history (antigravity:gpt-oss-120b-medium); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:36:43.295157+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "antigravity:gemini-4-argon-low",
+          "reason": "unrated, no history (antigravity:gemini-4-argon-low); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-21T17:38:45.687958+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode/glm-5.3-flash-free",
+          "reason": "best score 48 (opencode:opencode/glm-5.3-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-21T17:45:02.871638+00:00"
+        },
+        {
+          "pick": "antigravity:gemini-3.8-flash-low",
+          "reason": "unrated, no history (antigravity:gemini-3.8-flash-low); tier free; reviewer outside the family of: opencode:opencode-go/beam-free, opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free",
+          "at": "2026-10-21T17:47:59.031001+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 3
+      "next_attempt": 7,
+      "accepted": {
+        "attempt": 5,
+        "branch": "crew/20261021-0722-central-9-5",
+        "at": "2026-10-21T17:49:53.701925+00:00"
+      }
     },
     {
       "n": 10,
@@ -2342,7 +2878,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T010",
-      "task_text": "Preflight requests and explicit worktree skill updates in skill/crew-chief/scripts/crew_chief/central_preflight.py, tests/test_central_preflight.py; depends on T005, T007, T008, T009"
+      "task_text": "Preflight requests and explicit worktree skill updates in skill/crew-chief/scripts/crew_chief/central_preflight.py, tests/test_central_preflight.py; depends on T005, T007, T008, T009",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 65 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-21T17:54:09.877192+00:00"
+        }
+      ]
     },
     {
       "n": 11,
@@ -3081,6 +3624,42 @@
       "n": 46,
       "text": "T013 post-accept branch proof: 17 passed in 15.19s. Mid-phase economy is 100 percent recorded free work/tokens, coordinator not recorded, 2.6 attempts/piece, mean score 57; inherited job-time alert 370 min above 180 and attempts above 2.5 remain visible. Response: narrow red-backed correction briefs and free independent reviews; no paid escalation, no invented coordinator usage/savings. Checkpoint records before further work.",
       "at": "2026-10-21T17:33:44.203953+00:00",
+      "promoted": null
+    },
+    {
+      "n": 47,
+      "text": "T008 LongCat Free correction attempt 5 hit quota before work; read note and exclude both route aliases while other free models remain. T009 GPT-OSS review returned 503 capacity, matching its T008 failure; exclude that reviewer locally and use another free independent family. No all-free-quota condition, no paid dispatch. Coordinator additionally reproduced T009 restricted argv missing explicit approval deny despite advertised capability; await independent review and require correction if confirmed.",
+      "at": "2026-10-21T17:38:44.629420+00:00",
+      "promoted": null
+    },
+    {
+      "n": 48,
+      "text": "Invoke owner fallback for T009 after two failed free contributions: DeepSeek attempt 1 violates argv-only API; Beam attempt 2 still omits explicit no-prompt approval policy and fails capability/parser boundaries. Coordinator will fix only declared two files in isolated fallback worktree, prove red/green, preserve valid tests and record attribution. Then free validation contribution plus independent cumulative review, grade, accept and branch proof. No other phase work or paid executor.",
+      "at": "2026-10-21T17:42:09.014562+00:00",
+      "promoted": null
+    },
+    {
+      "n": 49,
+      "text": "T009 coordinator fallback red: 5 failed/23 passed, covering explicit approval deny, missing deny capability, resume-specific JSON capability, huge integer parser and real Windows fake shim path spaces/ampersand. Minimal fix retains argv-only API, puts -a never and supported sandbox before subcommands, validates resume JSON, avoids int-to-float overflow, removes obsolete lifecycle helpers and corrects shim prefix. Green declared proof: 28 passed in 10.74s. Separate attributed fallback commit will get free test validation and cumulative independent review; no acceptance yet.",
+      "at": "2026-10-21T17:44:31.701115+00:00",
+      "promoted": null
+    },
+    {
+      "n": 50,
+      "text": "T009 final Gemini Flash Low cumulative review confirms full HEAD 2ea2b8a035390dc168ece1d7ba78d1bb7c63793d at both ends, seven criteria done, no extras or blocking findings. Coordinator fallback attribution in rulings 48-49 is retained; GLM Free added BOM/CRLF measured-zero regression. Coordinator inspected cumulative two-new-file diff and corrections: removed only newly introduced erroneous lifecycle/test assumptions, no baseline code/tests deleted. Local Any variable annotation is not runtime-evaluated and review labels it minor; no new task scope. Grade free validation and accept, then branch proof.",
+      "at": "2026-10-21T17:49:52.352179+00:00",
+      "promoted": null
+    },
+    {
+      "n": 51,
+      "text": "T009 immediate post-accept branch proof: 29 passed in 9.56s. T008 portability correction by MiniMax Free is now proof-passing; final cumulative review pending. Only T007/T009/T013 accepted in Phase 2 so far. Keep architecture/spec/sidecar unchanged; no next-phase dispatch. Owner quota/stall US7 remains a Phase 3 prerequisite when that phase is authorized.",
+      "at": "2026-10-21T17:52:34.131917+00:00",
+      "promoted": null
+    },
+    {
+      "n": 52,
+      "text": "T008 final Sonnet Low cumulative review confirms exact full HEAD c72864422bb1d7e050a702b320a91484fdc039a6, all seven scoped criteria met and no Critical/Important findings. Numeric unknowns, huge integers and actual Windows probe/shim execution covered; POSIX shebang corrected by MiniMax. Coordinator inspected full cumulative two-new-file diff: no baseline deletion. Output cap and session mismatch checks are explicit plan/verification requirements; probe memoization is internal implementation, no extra deliverable/files to grade. Accept after free contribution grade, then immediate proof.",
+      "at": "2026-10-21T17:53:43.111949+00:00",
       "promoted": null
     }
   ]
