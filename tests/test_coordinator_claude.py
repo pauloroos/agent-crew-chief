@@ -604,6 +604,7 @@ def test_probe_and_headless_from_path_with_spaces_and_metacharacters(
     bin_dir.mkdir(parents=True)
     log = tmp_path / "calls.log"
     script = "\n".join([
+        f"#!{sys.executable}",
         "import json, sys",
         f"HELP = {HELP_FULL!r}",
         f"LOG = {str(log)!r}",
@@ -620,6 +621,8 @@ def test_probe_and_headless_from_path_with_spaces_and_metacharacters(
     ])
     stub = bin_dir / "claude"
     stub.write_text(script, encoding="utf-8")
+    # a POSIX stub only runs when the kernel finds a shebang: chmod alone fails
+    assert stub.read_text(encoding="utf-8").splitlines()[0] == f"#!{sys.executable}"
     if os.name == "nt":
         shim = bin_dir / "claude.cmd"
         shim.write_text(
