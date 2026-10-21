@@ -1422,16 +1422,19 @@ def _cmd_brief_render(args: argparse.Namespace) -> int:
         )
         found, missing = resolve_refs(list(dict.fromkeys(meta.accept)), index)
         refs = found + [f"UNRESOLVED: {item}" for item in missing]
+        ponytail_level = load_prefs(project).ponytail_level
         if args.review:
             worktree, start, end = _review_target(project, piece, number, args.attempt)
             kind = "review"
             brief = render_review_brief(
-                task, meta, refs, sidecar.global_constraints, worktree, start, end
+                task, meta, refs, sidecar.global_constraints, worktree, start, end,
+                ponytail_level,
             )
         else:
             kind = "exec"
             brief = render_exec_brief(
-                task, meta, refs, sidecar.global_constraints, folder.name
+                task, meta, refs, sidecar.global_constraints, folder.name,
+                ponytail_level,
             )
     payload = {"job": args.job, "piece": number, "kind": kind, "brief": brief}
     if args.out:

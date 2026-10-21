@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 
 from crew_chief import records
-from crew_chief.brief import render_converge_brief, render_exec_brief, render_review_brief
+from crew_chief.brief import (
+    PONYTAIL_REVIEW_LINE, render_converge_brief, render_exec_brief,
+    render_review_brief,
+)
 from crew_chief.cli import main
 from crew_chief.sidecar import Sidecar, TaskMeta, save_sidecar
 from crew_chief.speckit import SpecTask
@@ -45,7 +48,8 @@ def test_exec_brief_has_sections_in_order_and_no_full_spec():
     )
     assert _heads(b) == [
         "## Acceptance criteria", "## Global constraints", "## Interfaces",
-        "## Files you may change", "## Proof", "## Report",
+        "## Files you may change", "## Proof", "## Style (ponytail full)",
+        "## Report",
     ]
     lines = b.splitlines()
     assert lines[0] == "# T012 Create User model in src/user.py"
@@ -80,6 +84,45 @@ def test_converge_brief_names_the_spec_files_and_gap_format():
     assert "specs/003-csv-export/spec.md" in b and "specs/003-csv-export/tasks.md" in b
     assert "- [ ] T### <text> per <ref> (<gap-type>)" in b
     assert "Converged" in b
+
+
+# -- ponytail style --------------------------------------------------------
+
+
+def test_exec_brief_has_ponytail_full_by_default():
+    b = render_exec_brief(
+        TASK_T012, META, ["FR-001: ..."], ["No new deps"], "003-csv-export"
+    )
+    heads = _heads(b)
+    assert heads.index("## Style (ponytail full)") == heads.index("## Proof") + 1
+    assert heads[-1] == "## Report"
+    assert "Never add a dependency" in b
+
+
+def test_exec_brief_ponytail_levels():
+    lite = render_exec_brief(TASK_T012, META, [], [], "003-csv-export", "lite")
+    assert "## Style (ponytail lite)" in lite
+    assert "name it in one line" in lite
+    assert "Never add a dependency" not in lite
+    ultra = render_exec_brief(TASK_T012, META, [], [], "003-csv-export", "ultra")
+    assert "## Style (ponytail ultra)" in ultra
+    assert "Never add a dependency" in ultra
+    assert "need does not justify" in ultra
+
+
+def test_briefs_without_ponytail_when_off():
+    exec_brief = render_exec_brief(TASK_T012, META, [], [], "003-csv-export", "off")
+    review = render_review_brief(TASK_T012, META, [], ponytail_level="off")
+    assert "ponytail" not in exec_brief.lower()
+    assert "ponytail" not in review.lower()
+    assert PONYTAIL_REVIEW_LINE not in review
+
+
+def test_review_brief_flags_bloat():
+    b = render_review_brief(TASK_T012, META, ["FR-001: ..."])
+    judge = "Judge the code, not the spec: bugs, edge cases, tests, readability."
+    lines = b.splitlines()
+    assert lines[lines.index(judge) + 1] == PONYTAIL_REVIEW_LINE
 
 
 # -- CLI -------------------------------------------------------------------
@@ -126,6 +169,17 @@ def test_brief_render_cli_prints_exec_brief(git_repo, capsys):
     assert "UNRESOLVED: US1/AC9" in out
     assert "No new deps" in out
     assert "# Spec" not in out               # never the whole spec
+
+
+def test_brief_render_cli_uses_project_ponytail_level(git_repo, capsys):
+    job, _ = _setup(git_repo)
+    n = _piece_n(git_repo, job, "T012")
+    prefs = git_repo / "docs" / "crew-chief" / "preferences.toml"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_text('ponytail_level = "off"\n', encoding="utf-8")
+    capsys.readouterr()
+    assert _render(git_repo, job, "--piece", str(n)) == 0
+    assert "ponytail" not in capsys.readouterr().out.lower()
 
 
 def test_brief_render_cli_review_and_converge(git_repo, capsys):
