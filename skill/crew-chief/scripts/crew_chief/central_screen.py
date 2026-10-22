@@ -15,22 +15,22 @@ Public API
 
 from __future__ import annotations
 
-import math
+from contextlib import contextmanager
 import queue
-import sys
 import threading
-import time
 import webbrowser
+import sys
+import time
 from pathlib import Path
 from typing import Any, Protocol
 
 from . import (
     central_attach,
+    central_web,
     central_controls,
     central_messages,
     central_snapshot,
     central_terminal,
-    central_web,
 )
 from .central_keys import (
     KEY_DETAILS,
@@ -46,7 +46,7 @@ from .central_keys import (
     terminal_size,
 )
 
-__all__ = ["run_screen"]
+__all__ = ["run_screen", "run_web"]
 
 _DEFAULT_POLL_S = 1.0
 
@@ -194,22 +194,26 @@ def _handle_attach(root: Path, snap: dict, selected: int, io: _IO) -> None:
         pass
 
 
-def _drain_attach_intents(root: Path, server: Any, io_obj: _IO) -> None:
-    """Consume queued web attach intents on the terminal thread."""
-    intents = getattr(server, "attach_intents", None)
-    if intents is None:
+@contextmanager
+def _web_bridge(server):
+    if server is not None:
+        server.attach_bridge_active = True
+    try:
+        yield
+    finally:
+        if server is not None:
+            server.attach_bridge_active = False
+
+
+def _drain_attach_intents(root, server, io):
+    if server is None:
         return
-    while True:
+    for _ in range(16):
         try:
-            cid = intents.get_nowait()
+            cid = server.attach_intents.get_nowait()
         except queue.Empty:
-            break
-        except Exception:
-            break
-        try:
-            central_attach.attach(root, str(cid), io_obj, timeout_s=5.0)
-        except Exception:
-            pass
+            return
+        central_attach.attach(root, cid, io, timeout_s=5.0)
 
 
 def run_screen(
@@ -217,16 +221,10 @@ def run_screen(
     options: dict | None = None,
     io: _IO | None = None,
     clock: _Clock | None = None,
-    server: Any = None,
-    web_server: Any = None,
-    attach_server: Any = None,
-    **kwargs: Any,
+    *,
+    web_server=None,
 ) -> int:
     """Run the central terminal screen.  Returns 0 on clean exit."""
-    srv = web_server or server or attach_server
-    if srv is None:
-        srv = kwargs.get("web_server") or kwargs.get("server") or kwargs.get("attach_server")
-
     opts = options or {}
     once = bool(opts.get("once"))
     plain = bool(opts.get("plain"))
@@ -236,12 +234,6 @@ def run_screen(
 
     io_obj: _IO = io if io is not None else _StdIO()
     clk: _Clock = clock if clock is not None else _RealClock()
-
-    if srv is not None:
-        try:
-            srv.attach_bridge_active = True
-        except Exception:
-            pass
 
     # Redirected / non-TTY → one finite snapshot, no input loop.
     supported = True
@@ -260,8 +252,9 @@ def run_screen(
         except Exception:
             supported = False
 
+    if web_server is not None:
+        web_server.attach_bridge_active = False
     if once or not supported:
-        _drain_attach_intents(root, srv, io_obj)
         snap = _snapshot(root, None)
         cols = None
         try:
@@ -270,222 +263,104 @@ def run_screen(
             cols = 80
         text = _render(snap, selected=0, details=False, plain=True, width=cols)
         _write(getattr(io_obj, "stdout", sys.stdout), text)
-        if srv is not None:
-            try:
-                srv.attach_bridge_active = False
-            except Exception:
-                pass
         return 0
 
     selected = 0
     show_details = False
     paused = False
 
-    try:
-        with terminal_input(stream=io_obj):
-            while True:
-                _drain_attach_intents(root, srv, io_obj)
-                snap = _snapshot(root, None)
-                count = _row_count(snap)
-                selected = _clamp_selected(selected, count)
+    with terminal_input(stream=io_obj), _web_bridge(web_server):
+        while True:
+            _drain_attach_intents(root, web_server, io_obj)
+            snap = _snapshot(root, None)
+            count = _row_count(snap)
+            selected = _clamp_selected(selected, count)
 
-                cols = None
-                try:
-                    cols = terminal_size()[0]
-                except Exception:
-                    cols = 80
-
-                frame = _render(snap, selected=selected, details=show_details, plain=plain, width=cols)
-                _clear_and_draw(getattr(io_obj, "stdout", sys.stdout), frame, plain)
-
-                key = read_key(timeout_s=poll_s)
-                if key is None:
-                    continue
-                if key == KEY_QUIT:
-                    return 0
-                if key == KEY_UP:
-                    selected = max(0, selected - 1)
-                    continue
-                if key == KEY_DOWN:
-                    selected = min(max(count - 1, 0), selected + 1)
-                    continue
-                if key == KEY_DETAILS:
-                    show_details = not show_details
-                    continue
-                if key == KEY_ESC:
-                    show_details = False
-                    continue
-                if key == KEY_MESSAGE:
-                    _handle_message(root, snap, selected, io_obj)
-                    continue
-                if key == KEY_PAUSE:
-                    _handle_pause_resume(root, snap, selected)
-                    continue
-                if key == KEY_ENTER:
-                    _handle_attach(root, snap, selected, io_obj)
-                    continue
-    except KeyboardInterrupt:
-        return 0
-    finally:
-        if srv is not None:
+            cols = None
             try:
-                srv.attach_bridge_active = False
+                cols = terminal_size()[0]
             except Exception:
-                pass
-    return 0
+                cols = 80
 
-def _is_tty(io_obj: Any) -> bool:
-    stdin = getattr(io_obj, "stdin", None)
-    stdout = getattr(io_obj, "stdout", None)
-    supported = True
-    for stream in (stdin, stdout):
-        if stream is not None and hasattr(stream, "isatty"):
-            try:
-                if not stream.isatty():
-                    supported = False
-            except Exception:
-                supported = False
-    return supported
+            frame = _render(snap, selected=selected, details=show_details, plain=plain, width=cols)
+            _clear_and_draw(getattr(io_obj, "stdout", sys.stdout), frame, plain)
 
-
-def _make_server(factory: Any, root: Path, assets: Path, port: int, interactive: bool) -> Any:
-    try:
-        return factory(root, assets, port, attach_bridge_active=interactive)
-    except TypeError:
-        try:
-            server = factory(root, assets, port)
-        except TypeError:
-            server = factory(root, assets)
-        try:
-            server.attach_bridge_active = interactive
-        except Exception:
-            pass
-        return server
-
-
-def run_web(
-    root: Path,
-    options: dict | None = None,
-    io: _IO | None = None,
-    clock: _Clock | None = None,
-    *,
-    assets: Any = None,
-    port: int = 0,
-    browser_open: Any = None,
-    server_factory: Any = None,
-    **kwargs: Any,
-) -> int:
-    """Serve the loopback web view and (when interactive) the terminal bridge."""
-    if assets is None and "assets_dir" in kwargs:
-        assets = kwargs["assets_dir"]
-    if port is None:
-        port = 0
-    if not isinstance(port, int) or isinstance(port, bool):
-        try:
-            port = int(port)
-        except (TypeError, ValueError):
-            port = 0
-
-    opts = dict(options or {})
-    poll_raw = opts.get("poll", 1.0)
-    try:
-        poll_s = float(poll_raw if poll_raw is not None else 1.0)
-    except (TypeError, ValueError):
-        poll_s = 1.0
-    if not math.isfinite(poll_s) or poll_s <= 0:
-        poll_s = 1.0
-
-    io_obj: _IO = io if io is not None else _StdIO()
-    clk: _Clock = clock if clock is not None else _RealClock()
-    root = Path(root)
-    assets_path = Path(assets) if assets is not None else (Path(__file__).resolve().parents[2] / "web")
-
-    factory = server_factory
-    if factory is None:
-        factory = central_web.create_server
-
-    interactive = _is_tty(io_obj)
-
-    try:
-        server = _make_server(factory, root, assets_path, port, interactive)
-    except Exception as exc:
-        print(f"error: could not start web server: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        server.attach_bridge_active = interactive
-    except Exception:
-        pass
-
-    try:
-        url = f"http://127.0.0.1:{server.server_port}/"
-    except Exception:
-        url = f"http://127.0.0.1:{port}/"
-
-    out = getattr(io_obj, "stdout", sys.stdout)
-    _write(out, url + "\n")
-
-    opener = browser_open
-    if opener is None:
-        opener = webbrowser.open
-    opened = True
-    try:
-        result = opener(url)
-        if result is False:
-            opened = False
-    except Exception:
-        opened = False
-    if not opened:
-        fallback = f"fallback: could not open browser; open {url} manually"
-        _write(getattr(io_obj, "stderr", sys.stderr), fallback + "\n")
-        _write(out, fallback + "\n")
-
-    server_thread = None
-    try:
-        if interactive:
-            server_thread = threading.Thread(
-                target=server.serve_forever, kwargs={"poll_interval": 0.01}
-            )
-            server_thread.start()
-            run_screen(
-                root,
-                {"once": False, "plain": False, "poll": poll_s},
-                io=io_obj,
-                clock=clk,
-                web_server=server,
-            )
-        else:
-            try:
-                server.serve_forever(poll_interval=0.01)
-            except KeyboardInterrupt:
+            key = read_key(timeout_s=poll_s)
+            if key is None:
+                continue
+            if key == KEY_QUIT:
                 return 0
+            if key == KEY_UP:
+                selected = max(0, selected - 1)
+                continue
+            if key == KEY_DOWN:
+                selected = min(max(count - 1, 0), selected + 1)
+                continue
+            if key == KEY_DETAILS:
+                show_details = not show_details
+                continue
+            if key == KEY_ESC:
+                show_details = False
+                continue
+            if key == KEY_MESSAGE:
+                _handle_message(root, snap, selected, io_obj)
+                continue
+            if key == KEY_PAUSE:
+                _handle_pause_resume(root, snap, selected)
+                continue
+            if key == KEY_ENTER:
+                _handle_attach(root, snap, selected, io_obj)
+                continue
+
+def _is_tty(io):
+    try:
+        return bool(io.stdin.isatty() and io.stdout.isatty())
+    except (AttributeError, OSError):
+        return False
+
+
+def run_web(root, options=None, io=None, clock=None, *, assets=None, port=0,
+            browser_open=None, server_factory=None):
+    """Own one loopback server; only the terminal input loop may attach."""
+    io_obj = io if io is not None else _StdIO()
+    assets = Path(assets) if assets is not None else Path(__file__).resolve().parents[2] / "web"
+    factory = server_factory if server_factory is not None else central_web.create_server
+    server = None
+    thread = None
+    started = False
+    try:
+        server = factory(Path(root), assets, port)
+        # Serve before invoking the browser: an opener may immediately fetch.
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .01})
+        thread.start()
+        started = True
+        url = f"http://127.0.0.1:{server.server_port}/"
+        _write(io_obj.stdout, url + "\n")
+        opener = browser_open if browser_open is not None else webbrowser.open
+        try:
+            opened = opener(url)
+        except Exception:
+            opened = False
+        if opened is False:
+            _write(getattr(io_obj, "stderr", io_obj.stdout), "fallback: open " + url + " manually\n")
+            _write(io_obj.stdout, "fallback: open " + url + " manually\n")
+        if _is_tty(io_obj):
+            return run_screen(Path(root), options, io=io_obj, clock=clock, web_server=server)
+        # Redirected input cannot own a terminal bridge. Keep HTTP alive until
+        # Ctrl-C, rather than the terminal screen's finite plain snapshot.
+        while thread.is_alive():
+            thread.join(.2)
+        return 0
     except KeyboardInterrupt:
         return 0
-    except Exception as exc:
-        print(f"error: web server failed: {exc}", file=sys.stderr)
+    except Exception:
+        _write(getattr(io_obj, "stderr", sys.stderr), "error: web view failed\n")
         return 1
     finally:
-        try:
-            server.shutdown()
-        except Exception:
-            pass
-        if server_thread is not None:
-            try:
-                server_thread.join(timeout=5)
-            except Exception:
-                pass
-        try:
-            server.server_close()
-        except Exception:
-            pass
-        try:
+        if server is not None:
             server.attach_bridge_active = False
-        except Exception:
-            pass
-    return 0
-
-
-run_web_screen = run_web
-run_web_view = run_web
-serve_web = run_web
-run_web_server = run_web
+            if started and thread.is_alive():
+                server.shutdown()
+            if started:
+                thread.join(5)
+            server.server_close()

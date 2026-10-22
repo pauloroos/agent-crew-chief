@@ -302,10 +302,6 @@ def handle_central(args: argparse.Namespace, browser_open: Any = None) -> int:
     return central_screen.run_screen(_central_dir(args), options)
 
 
-handle_web = handle_central
-handle_central_web = handle_central
-handle_web_central = handle_central
-
 
 # ---------------------------------------------------------------------------
 # supervisor (private entry)
