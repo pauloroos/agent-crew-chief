@@ -226,7 +226,7 @@ def handle_control(args: argparse.Namespace) -> int:
         )
         return 2
 
-    # Routed by the stored backend: an unusable one refuses the control, never switches.
+    # Routed by the stored backend: an unknown one refuses the control, never switches.
     try:
         row, _backend = central_controls.registered_backend(root, coordinator_id)
     except central_controls.ControlError as exc:

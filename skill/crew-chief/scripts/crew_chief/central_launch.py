@@ -103,12 +103,14 @@ def _settings(repo: Path, options: dict[str, Any]) -> tuple[dict[str, Any] | Non
         return None, str(exc)
 
 
-def select_backend(root: Path, name: Any) -> Any:
+def select_backend(root: Path, name: Any, *, probe: bool = True) -> Any:
     """The backend called ``name``, usable now; never another one.
 
     The default backend resolves no optional executable. A missing,
     incompatible or unknown backend raises ``BackendError``: there is no
     fallback, so a launch or a stored coordinator never switches backend.
+    ``probe=False`` checks only the name: Orca creates the worktree, and the
+    lifecycle of a stored coordinator is the core's, so it never needs Orca.
     """
     from .central_backend import BackendError, default_backend
 
@@ -118,6 +120,8 @@ def select_backend(root: Path, name: Any) -> Any:
         raise BackendError(f"unknown backend {name!r}; expected one of {_BACKEND!r}, {_ORCA!r}")
     from .central_orca import orca_backend
 
+    if not probe:
+        return orca_backend(root, _ORCA)
     executable = shutil.which(_ORCA)
     if executable is None:
         raise BackendError(

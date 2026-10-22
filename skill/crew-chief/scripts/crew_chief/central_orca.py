@@ -67,9 +67,7 @@ class OrcaBackend(DefaultBackend):
         except (BackendError, ValueError, RecursionError) as exc:
             return {"ok": False, "supported": False, "backend": self.name, "error": str(exc)[:700]}
 
-    def _require(self, record: dict | None = None) -> None:
-        if record is not None and record.get("backend") != self.name:
-            raise BackendError("registered backend does not match Orca")
+    def _require(self) -> None:
         result = self.probe()
         if not result["ok"]:
             raise BackendError(result["error"])
@@ -127,20 +125,26 @@ class OrcaBackend(DefaultBackend):
                                              {**options, "backend": self.name}, self.root,
                                              worktree_creator=self._create_worktree)
 
+    # The lifecycle below is the core's and never calls Orca, so a removed or
+    # upgraded Orca cannot block an existing coordinator (FR-011).
+    def _owns(self, record: dict) -> None:
+        if not isinstance(record, dict) or record.get("backend") != self.name:
+            raise BackendError("registered backend does not match Orca")
+
     def start(self, record: dict) -> dict:
-        self._require(record)
+        self._owns(record)
         return super().start(record)
 
     def send(self, record: dict, envelope: dict) -> str:
-        self._require(record)
+        self._owns(record)
         return super().send(record, envelope)
 
     def attach(self, record: dict) -> dict:
-        self._require(record)
+        self._owns(record)
         return super().attach(record)
 
     def state(self, record: dict) -> dict:
-        self._require(record)
+        self._owns(record)
         return super().state(record)
 
 

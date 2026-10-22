@@ -125,8 +125,10 @@ def registered_backend(root: Path, coordinator_id: Any) -> tuple[dict | None, An
 
     Returns ``(None, None)`` when no such coordinator is registered. The
     stored ``backend`` decides, never current preferences; an unreadable
-    registry or an unknown or unusable backend raises :class:`ControlError`
-    instead of falling back to another backend.
+    registry or an unknown backend raises :class:`ControlError` instead of
+    falling back to another backend. A known backend is not probed: Orca only
+    creates the worktree, so removing or upgrading it never blocks a control,
+    message or attach of an existing coordinator (FR-011).
     """
     from .central_backend import BackendError
 
@@ -139,6 +141,6 @@ def registered_backend(root: Path, coordinator_id: Any) -> tuple[dict | None, An
     if not isinstance(row, dict):
         return None, None
     try:
-        return row, central_launch.select_backend(Path(root), row.get("backend"))
+        return row, central_launch.select_backend(Path(root), row.get("backend"), probe=False)
     except BackendError as exc:
         raise ControlError(f"coordinator {canonical}: {exc}") from exc

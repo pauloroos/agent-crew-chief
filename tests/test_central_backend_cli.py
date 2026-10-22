@@ -2,9 +2,11 @@
 
 The ``--backend`` flag selects an immutable backend per launch. Default mode
 never resolves Orca; explicit Orca selection is rejected when the backend is
-unavailable or incompatible; switching mid-launch is prevented; messages and
-attach route to the registered backend; existing JSON output and error shapes
-are preserved. Every CLI is a fake Python stub, every root is temporary, and
+unavailable or incompatible; switching mid-launch is prevented; message,
+attach and controls route by the stored backend name without probing Orca, so
+removing or upgrading Orca never blocks an existing coordinator, while an
+unknown stored backend is refused; existing JSON output and error shapes are
+preserved. Every CLI is a fake Python stub, every root is temporary, and
 no test runs a live model CLI or a real Orca executable.
 """
 
@@ -20,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from crew_chief import central_messages, central_registry, central_supervisor, cli
+from crew_chief import central_controls, central_messages, central_registry, central_supervisor, cli
 from crew_chief.central_backend import default_backend
 from crew_chief.central_cli import handle_launch
 from crew_chief import coordinator_claude
@@ -215,46 +217,25 @@ def test_incompatible_backend_choice_fails_without_switching(
     assert not (repo.parent / "repo.crew").exists()
 
 
-# --- backend immutability per launch ----------------------------------------
+# --- message and controls on a default row, through the public CLI ----------
 
 
-def test_backend_is_immutable_per_launch_record(
-    repo, request_file, release, root
+def test_message_and_stop_on_a_default_row_go_through_the_cli(
+    repo, request_file, release, root, started, capsys
 ):
-    args = _launch_args(repo, request_file, release, root)
-    assert handle_launch(args) == 0
+    assert _cli_launch(repo, request_file, release, root) == 0
+    row = _launched(capsys, root)
+    assert row["backend"] == "default"
 
-    registry = central_registry.load_registry(root)
-    coordinators = list(registry["coordinators"].values())
-    record = coordinators[-1]
-    assert record["backend"] == "default"
+    assert _acc("message", row["id"], "--text", "hello from test", "--json",
+                "--central-dir", str(root)) == 0
+    message_id = json.loads(capsys.readouterr().out)["message_id"]
+    pending = central_messages.pending(root, row["id"], "in")
+    assert [(p["id"], p["body"]) for p in pending] == [(message_id, "hello from test")]
 
-    # The stored record carries the backend; any later operation reads it from
-    # here rather than re-resolving a flag.
-    state = default_backend(root).state(record)
-    assert state["ok"] is True
-    assert state["backend"] == "default"
-
-
-# --- message and attach route to the registered backend ----------------------
-
-
-def test_message_routes_to_the_registered_backend(
-    repo, request_file, release, root
-):
-    args = _launch_args(repo, request_file, release, root)
-    assert handle_launch(args) == 0
-
-    registry = central_registry.load_registry(root)
-    record = list(registry["coordinators"].values())[-1]
-
-    message_id = default_backend(root).send(
-        record, central_messages.owner_message(record["id"], "hello from test")
-    )
-    assert central_messages._canonical_uuid(message_id) == message_id
-
-    pending = central_messages.pending(root, record["id"], "in")
-    assert any(p["body"] == "hello from test" for p in pending)
+    assert _acc("stop", row["id"], "--central-dir", str(root)) == 0
+    [control] = _controls(root, row["id"])
+    assert json.loads(control.read_text(encoding="utf-8"))["command"] == "stop"
 
 
 # --- JSON output and error shapes are preserved ------------------------------
@@ -460,85 +441,82 @@ def orca_row(repo, request_file, release, root, fake_orca, started, capsys) -> d
     return row
 
 
-def test_message_to_orca_row_is_routed_through_orca(root, orca_row, fake_orca, capsys):
+@pytest.fixture(params=["removed", "incompatible"])
+def orca_gone(request, tmp_path, monkeypatch) -> str:
+    """Orca is uninstalled or upgraded to an incompatible version after launch."""
+    if request.param == "removed":
+        for stub in (tmp_path / "bin").glob("orca*"):
+            stub.unlink()
+        assert shutil.which("orca") is None
+    else:
+        monkeypatch.setenv("FAKE_ORCA_MODE", "version")
+    return request.param
+
+
+def test_message_to_orca_row_needs_no_orca(root, orca_row, orca_gone, fake_orca, capsys):
     assert _acc("message", orca_row["id"], "--text", "hi orca", "--central-dir", str(root)) == 0
 
     assert "sent message" in capsys.readouterr().out
-    assert ["--version"] in _orca_calls(fake_orca)
     assert [m["body"] for m in central_messages.pending(root, orca_row["id"], "in")] == ["hi orca"]
+    # Orca only created the worktree: the core owns the lifecycle.
+    assert _orca_calls(fake_orca) == []
 
 
-def test_message_to_orca_row_fails_when_orca_breaks_without_fallback(
-    root, orca_row, fake_orca, capsys, monkeypatch
-):
-    monkeypatch.setenv("FAKE_ORCA_MODE", "version")
-
-    assert _acc("message", orca_row["id"], "--text", "hi", "--central-dir", str(root)) == 1
-
-    assert "unsupported Orca version" in capsys.readouterr().err
-    assert central_messages.pending(root, orca_row["id"], "in") == []
-
-
-def test_attach_to_orca_row_is_routed_through_orca(root, orca_row, fake_orca, capsys):
+def test_attach_to_orca_row_needs_no_orca(root, orca_row, orca_gone, fake_orca, capsys):
     # A test terminal is not interactive, so the core attach answers with its fallback.
     assert _acc("attach", orca_row["id"], "--central-dir", str(root)) == 1
 
     assert "non-interactive" in capsys.readouterr().err
-    assert ["--version"] in _orca_calls(fake_orca)
-
-
-def test_attach_to_orca_row_fails_when_orca_breaks(
-    root, orca_row, fake_orca, capsys, monkeypatch
-):
-    monkeypatch.setenv("FAKE_ORCA_MODE", "version")
-
-    assert _acc("attach", orca_row["id"], "--central-dir", str(root)) == 1
-
-    assert "unsupported Orca version" in capsys.readouterr().err
-    assert _controls(root, orca_row["id"]) == []
+    assert _orca_calls(fake_orca) == []
 
 
 @pytest.mark.parametrize("action", ["pause", "resume", "stop"])
-def test_controls_on_orca_row_are_routed_through_orca(
-    root, orca_row, fake_orca, capsys, action
+def test_controls_on_orca_row_need_no_orca(
+    root, orca_row, orca_gone, fake_orca, capsys, action
 ):
+    """FR-011: an owner who removes or upgrades Orca can still steer and stop."""
     assert _acc(action, orca_row["id"], "--json", "--central-dir", str(root)) == 0
 
     control_id = json.loads(capsys.readouterr().out)["control_id"]
     path = root / "coordinators" / orca_row["id"] / "control" / f"{control_id}.json"
     assert json.loads(path.read_text(encoding="utf-8"))["command"] == action
-    assert ["--version"] in _orca_calls(fake_orca)
+    assert _orca_calls(fake_orca) == []
 
 
-def test_stop_on_orca_row_fails_when_orca_breaks_without_writing_a_control(
-    root, orca_row, fake_orca, capsys, monkeypatch
-):
-    monkeypatch.setenv("FAKE_ORCA_MODE", "version")
+def test_recover_on_orca_row_needs_no_orca(root, orca_row, orca_gone, fake_orca, capsys):
+    central_registry.update_record(root, orca_row["id"], {"state": "stopped"})
 
-    assert _acc("stop", orca_row["id"], "--central-dir", str(root)) == 1
+    assert _acc("recover", orca_row["id"], "--central-dir", str(root)) == 0
 
-    assert "unsupported Orca version" in capsys.readouterr().err
-    assert _controls(root, orca_row["id"]) == []
+    assert central_registry.load_registry(root)["coordinators"][orca_row["id"]]["state"] == "created"
+    assert _orca_calls(fake_orca) == []
+
+
+def _stored_row(tmp_path: Path, backend: str, state: str = "running") -> dict:
+    """A registry row as a launch with ``backend`` would have stored it."""
+    stamp = "2026-01-01T00:00:00+00:00"
+    return {
+        "schema_version": 1, "id": str(uuid.uuid4()),
+        "repo": str(tmp_path), "worktree": str(tmp_path),
+        "branch": "central/x", "base_commit": "0" * 40, "backend": backend,
+        "cli": "claude", "cli_version": "", "acc_version": "", "session_id": None,
+        "mode": "raw-request", "authorization": {}, "job_ids": [],
+        "active_job_id": None, "state": state, "created_at": stamp,
+        "updated_at": stamp, "last_error": None, "supervisor_nonce": None,
+    }
 
 
 def test_unknown_stored_backend_is_a_clear_error(root, tmp_path, capsys):
-    stamp = "2026-01-01T00:00:00+00:00"
-    row = {
-        "schema_version": 1, "id": str(uuid.uuid4()),
-        "repo": str(tmp_path), "worktree": str(tmp_path),
-        "branch": "central/x", "base_commit": "0" * 40, "backend": "mystery",
-        "cli": "claude", "cli_version": "", "acc_version": "", "session_id": None,
-        "mode": "raw-request", "authorization": {}, "job_ids": [],
-        "active_job_id": None, "state": "running", "created_at": stamp,
-        "updated_at": stamp, "last_error": None, "supervisor_nonce": None,
-    }
+    row = _stored_row(tmp_path, "mystery", state="stopped")
     central_registry.register(root, row)
 
-    for argv in (["message", row["id"], "--text", "x"], ["attach", row["id"]], ["stop", row["id"]]):
+    for argv in (["message", row["id"], "--text", "x"], ["attach", row["id"]],
+                 ["pause", row["id"]], ["stop", row["id"]], ["recover", row["id"]]):
         assert _acc(*argv, "--central-dir", str(root)) == 1
         assert "unknown backend 'mystery'" in capsys.readouterr().err
     assert central_messages.pending(root, row["id"], "in") == []
     assert _controls(root, row["id"]) == []
+    assert central_registry.load_registry(root)["coordinators"][row["id"]]["state"] == "stopped"
 
 
 def test_preference_change_after_launch_never_switches_backend(
@@ -559,7 +537,8 @@ def test_preference_change_after_launch_never_switches_backend(
 
     prefs.write_text('central_backend = "default"\n', encoding="utf-8")
     assert _acc("message", orca_row["id"], "--text", "o", "--central-dir", str(root)) == 0
-    assert ["--version"] in _orca_calls(fake_orca)
+    assert central_controls.registered_backend(root, orca_row["id"])[1].name == "orca"
+    assert _orca_calls(fake_orca) == []
 
     rows = central_registry.load_registry(root)["coordinators"]
     assert rows[default_row["id"]]["backend"] == "default"
