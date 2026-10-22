@@ -348,6 +348,14 @@ class TestRealSubcommands:
         assert rc == 1
         assert "message failed" in capsys.readouterr().err
 
+    def test_message_to_an_unknown_coordinator_is_refused(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        root, _ = _prepared(tmp_path)
+        rc = _main("message", str(uuid.uuid4()), "--text", "x", "--central-dir", str(root))
+        assert rc == 2
+        assert "registered" in capsys.readouterr().err
+
     def test_attach_falls_back_without_an_interactive_terminal(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:

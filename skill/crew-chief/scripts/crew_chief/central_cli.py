@@ -137,6 +137,14 @@ def handle_message(args: argparse.Namespace) -> int:
     reply_to = getattr(args, "reply_to", None)
 
     try:
+        registered = coordinator_id in central_registry.load_registry(root).get("coordinators", {})
+    except central_registry.RegistryError as exc:
+        print(f"error: message failed: {exc}", file=sys.stderr)
+        return 1
+    if not registered:
+        print(f"error: no coordinator {coordinator_id!r} registered", file=sys.stderr)
+        return 2
+    try:
         message_id = central_messages.send(
             root,
             coordinator_id,
