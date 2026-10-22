@@ -6298,6 +6298,12 @@
       "text": "T030 self-implemented: opencode-go/muse-spark-1.3-contributor dispatch timed out with no output (bhchiqujr); nemotron-3.5-super-vl-free hit quota earlier — implementing myself per cost rules as last Phase 5 task, will self-review and send to free reviewer if available",
       "at": "2026-10-22T08:59:57.566588+00:00",
       "promoted": null
+    },
+    {
+      "n": 100,
+      "text": "T030 shipped in v0.4.0 at 2108dbb; accepted from the release, no new attempt",
+      "at": "2026-10-22T12:33:19.898214+00:00",
+      "promoted": null
     }
   ]
 }
