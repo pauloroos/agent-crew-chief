@@ -12,17 +12,13 @@ Public API
     Write one validated control file into the coordinator's ``control/``
     directory.  Returns the canonical message id used as the filename stem.
 
-``apply_controls(record, commands, owned_child)``
-    Pure helper consumed by the supervisor between rounds.  Returns the
-    updated record dict with the newest command applied; ``owned_child`` is
-    only signalled when the coordinator itself owns that child tree.
+The supervisor (:mod:`central_supervisor`) reads these files between rounds;
+``stop`` is cooperative and never signals a process.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import signal
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +28,6 @@ from . import central_messages, central_registry, records
 
 __all__ = [
     "ControlError",
-    "apply_controls",
     "request_control",
 ]
 
@@ -42,10 +37,6 @@ VALID_COMMANDS = frozenset({"pause", "resume", "stop"})
 
 class ControlError(Exception):
     """Raised when a control request or application is invalid."""
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _canonical_uuid(value: Any) -> str | None:
@@ -122,82 +113,3 @@ def request_control(
     path = control_dir / f"{message_id}.json"
     records.write_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return message_id
-
-
-def _signal_owned_tree(child: object | None) -> bool:
-    """Send SIGTERM to the owned child process tree when safe.
-
-    Only the live owner may signal its own tracked child.  A persisted PID
-    alone is diagnostics, never kill authority.  Returns True when a signal
-    was delivered.
-    """
-    if child is None:
-        return False
-    pid = getattr(child, "pid", None)
-    if not isinstance(pid, int) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        return False
-    return True
-
-
-def apply_controls(
-    record: dict,
-    commands: list[dict],
-    owned_child: object | None = None,
-) -> dict:
-    """Apply validated control commands to a coordinator record.
-
-    Parameters
-    ----------
-    record:
-        Current coordinator record dict (shallow-copied before mutation).
-    commands:
-        Ordered list of parsed control payloads (oldest first); the newest
-        recognised command wins per the supervisor contract.
-    owned_child:
-        The live child process handle owned by this coordinator.  Only this
-        handle may be signalled; persisted PIDs are ignored.
-
-    Returns
-    -------
-    dict
-        Updated record reflecting the winning command.  Unknown commands are
-        skipped; repeated identical commands are idempotent.
-    """
-    if not isinstance(record, dict):
-        raise ControlError("record must be a dict")
-    if not isinstance(commands, list):
-        raise ControlError("commands must be a list")
-    updated = dict(record)
-    winner: str | None = None
-    for entry in commands:
-        if not isinstance(entry, dict):
-            continue
-        command = entry.get("command")
-        if command in VALID_COMMANDS:
-            winner = command
-    if winner is None:
-        return updated
-    state = updated.get("state")
-    if winner == "pause":
-        if state not in {"paused", "stopped", "completed", "failed"}:
-            updated["previous_state"] = state
-            updated["state"] = "paused"
-            updated["updated_at"] = _now_iso()
-    elif winner == "resume":
-        if state == "paused":
-            previous = updated.get("previous_state")
-            if not isinstance(previous, str) or not previous:
-                previous = "idle"
-            updated["state"] = previous
-            updated.pop("previous_state", None)
-            updated["updated_at"] = _now_iso()
-    elif winner == "stop":
-        if state != "stopped":
-            updated["state"] = "stopped"
-            updated["updated_at"] = _now_iso()
-            _signal_owned_tree(owned_child)
-    return updated
