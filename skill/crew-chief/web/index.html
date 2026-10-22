@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>ACC Central</title>
+<link rel="stylesheet" href="/central.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>ACC Central</h1>
+  <p class="subtitle">Local, read-only dashboard for coordinator snapshots</p>
+  <div class="toolbar" aria-label="Controls (disabled until authorized)">
+    <button type="button" id="btn-message" disabled>Message</button>
+    <button type="button" id="btn-reply" disabled>Reply</button>
+    <button type="button" id="btn-pause" disabled>Pause</button>
+    <button type="button" id="btn-resume" disabled>Resume</button>
+    <button type="button" id="btn-attach" disabled>Attach</button>
+    <span id="status" class="status" role="status" aria-live="polite">Loading…</span>
+  </div>
+</header>
+
+<main id="app">
+  <section id="alerts-section" class="panel" hidden>
+    <h2>Alerts</h2>
+    <ul id="alerts" class="list"></ul>
+  </section>
+
+  <section id="coordinators-section" class="panel">
+    <h2>Cards</h2>
+    <div id="cards" class="cards"></div>
+  </section>
+
+  <section id="questions-section" class="panel">
+    <h2>Questions</h2>
+    <div id="questions" class="stack"></div>
+  </section>
+
+  <section id="history-section" class="panel">
+    <h2>Job history</h2>
+    <div id="history" class="stack"></div>
+  </section>
+
+  <section id="charts-section" class="panel">
+    <h2>Model token charts</h2>
+    <div id="charts" class="charts"></div>
+  </section>
+
+  <section id="scoreboard-section" class="panel">
+    <h2>Scoreboard</h2>
+    <div id="scoreboard" class="stack"></div>
+  </section>
+
+  <section id="totals-section" class="panel">
+    <h2>Totals</h2>
+    <dl id="totals" class="totals"></dl>
+  </section>
+
+  <section id="diagnostics-section" class="panel">
+    <h2>Diagnostics</h2>
+    <ul id="diagnostics" class="list"></ul>
+  </section>
+</main>
+
+<script src="/central.js" defer></script>
+</body>
+</html>
