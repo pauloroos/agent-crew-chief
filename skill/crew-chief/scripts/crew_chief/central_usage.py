@@ -12,8 +12,8 @@ The rules:
   same job or in another one.
 * The round's usage payload is authoritative.  Counts the CLI did not report
   stay ``None``; a sum is derived only when both components are known.  When
-  no count was reported the characters of the round's output give a
-  ``characters / 4`` estimate, marked as estimated.
+  no count was reported, coordinator output can provide a marked
+  ``characters / 4`` estimate. Central-session usage must be reported.
 * The target job is bound in the round metadata *before* the job is updated.
   A crash, or a job switch, after that point can no longer reassign usage
   that was already spent.
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,11 +72,7 @@ def _count(value: Any) -> int | None:
 
 def _job_id(value: Any) -> str | None:
     """A job id safe to use as a file name, or ``None``."""
-    if not isinstance(value, str) or not value:
-        return None
-    if value in (".", ".."):
-        return None
-    if any(ch in value for ch in '/\\:*?"<>|\x00'):
+    if not isinstance(value, str) or re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", value) is None:
         return None
     return value
 
@@ -256,7 +253,8 @@ def _numbers(payload: dict, chars: int | None) -> dict:
             # reported total is the sum of the two components
             "sum_ok": total is None or total == derived,
         }
-    if total is None and chars is not None:
+    if (total is None and tokens_in is None and tokens_out is None
+            and chars is not None and payload["role"] == "coordinator"):
         guess = chars // CHARS_PER_TOKEN
         total = guess or None
         estimated = True
@@ -391,7 +389,23 @@ def _apply_job(
 def _event(meta: dict) -> dict:
     """The usage event block of a round, empty when it has none."""
     event = meta.get("usage_event")
-    return dict(event) if isinstance(event, dict) else {}
+    if event is None:
+        return {}
+    if not isinstance(event, dict):
+        raise UsageError("the usage event must be an object")
+    expected = f"central:{meta.get('coordinator_id')}:{meta.get('id')}"
+    if event.get("event_id") != expected:
+        raise UsageError("the usage event id does not match its coordinator and round")
+    if event.get("state") not in ("pending", "recorded"):
+        raise UsageError("the usage event state must be pending or recorded")
+    if event.get("role") != _payload(meta)["role"]:
+        raise UsageError("the usage event role does not match its round")
+    job_id = event.get("job_id")
+    if job_id is not None and _job_id(job_id) is None:
+        raise UsageError("the usage event job id is invalid")
+    if event["state"] == "recorded" and job_id is None:
+        raise UsageError("a recorded usage event must identify its job")
+    return dict(event)
 
 
 def _target_job(meta: dict, record: dict) -> str | None:
@@ -485,7 +499,7 @@ def _record_round(
     event["role"] = payload["role"]
     _bind(path, meta, bom, newline, event, job_id)
     chars = payload["chars"]
-    if chars is None:
+    if chars is None and payload["role"] == "coordinator":
         chars = _log_chars(coord, meta)
     numbers = _numbers(payload, chars)
     added = _apply_job(
@@ -501,14 +515,14 @@ def _check_binding(meta: dict, coordinator_id: str, round_id: str) -> None:
     if not isinstance(meta, dict):
         raise UsageError("the round metadata is not a JSON object")
     stored = meta.get("id")
-    if stored is not None and stored != round_id:
+    if stored != round_id:
         raise UsageError(
             f"the round metadata belongs to round {stored!r}, not {round_id!r}"
         )
     owner = meta.get("coordinator_id")
-    if owner is not None and owner != coordinator_id:
+    if owner != coordinator_id:
         raise UsageError(f"the round metadata belongs to coordinator {owner!r}")
-    if meta.get("schema_version") != 1:
+    if type(meta.get("schema_version")) is not int or meta["schema_version"] != 1:
         raise UsageError(
             f"the round metadata schema_version must be 1, got "
             f"{meta.get('schema_version')!r}"
@@ -621,17 +635,17 @@ def pending_usage(root: Path, record: dict) -> list[dict]:
             continue
         if meta.get("state") == "running":
             continue
-        event = _event(meta)
-        if event.get("state") == "recorded":
-            continue
         try:
+            event = _event(meta)
+            if event.get("state") == "recorded":
+                continue
             payload = _payload(meta)
         except UsageError as exc:
             warnings.warn(f"{path}: {exc}", UserWarning, stacklevel=2)
             continue
         round_id = str(meta.get("id") or path.stem)
         chars = payload["chars"]
-        if chars is None:
+        if chars is None and payload["role"] == "coordinator":
             chars = _log_chars(coord, meta)
         numbers = _numbers(payload, chars)
         event_id = event.get("event_id")

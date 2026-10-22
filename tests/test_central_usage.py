@@ -435,3 +435,185 @@ def test_the_round_metadata_keeps_its_bom_and_newlines(tmp_path, worktree):
     assert meta["schema_version"] == 1
     assert meta["id"] == round_id
     assert meta["state"] == "completed"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("schema_version", 2), ("schema_version", True),
+    ("id", str(uuid.uuid4())), ("id", None),
+    ("coordinator_id", str(uuid.uuid4())), ("coordinator_id", None),
+])
+def test_history_binding_is_checked_before_pending_or_backfill(tmp_path, worktree, field, value):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    make_job(worktree, "job-1")
+    _, bad = write_round(root, record, active_job_id="job-1")
+    good_id, _ = write_round(root, record, active_job_id="job-1")
+    meta = read_round(bad)
+    meta[field] = value
+    bad.write_text(json.dumps(meta), encoding="utf-8")
+    before = bad.read_bytes()
+    with pytest.warns(UserWarning):
+        assert [item["round_id"] for item in central_usage.pending_usage(root, record)] == [good_id]
+    with pytest.warns(UserWarning):
+        central_usage.backfill_usage(root, record)
+    assert len(usage_of(worktree, "job-1")) == 1
+    assert bad.read_bytes() == before
+
+
+def test_running_round_is_not_accounted_early(tmp_path, worktree):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    make_job(worktree, "job-1")
+    round_id, path = write_round(root, record, active_job_id="job-1", state="running")
+    before = path.read_bytes()
+    central_usage.record_round_usage(root, record, round_result(round_id))
+    central_usage.backfill_usage(root, record)
+    assert central_usage.pending_usage(root, record) == []
+    assert usage_of(worktree, "job-1") == []
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("bad", ["../evil", "bad\njob", ""])
+def test_invalid_original_job_never_falls_through_to_a_new_job(tmp_path, worktree, bad):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-2")
+    make_job(worktree, "job-2")
+    round_id, _ = write_round(root, record, active_job_id=bad)
+    with pytest.raises(UsageError):
+        central_usage.record_round_usage(root, record, round_result(round_id))
+    assert usage_of(worktree, "job-2") == []
+
+
+@pytest.mark.parametrize("state", ["pending", "recorded"])
+def test_foreign_usage_event_id_is_rejected(tmp_path, worktree, state):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    make_job(worktree, "job-1")
+    round_id, path = write_round(root, record, active_job_id="job-1")
+    meta = read_round(path)
+    meta["usage_event"] = {"event_id": "foreign-event", "state": state,
+                           "role": "coordinator", "job_id": "job-1"}
+    path.write_text(json.dumps(meta), encoding="utf-8")
+    with pytest.raises(UsageError):
+        central_usage.record_round_usage(root, record, round_result(round_id))
+    assert usage_of(worktree, "job-1") == []
+
+
+def test_unreported_central_usage_is_not_estimated_from_coordinator_output(tmp_path, worktree):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    make_job(worktree, "job-1")
+    usage = dict(MEASURED, role="central", tokens_in=None, tokens_out=None, tokens_total=None)
+    round_id, _ = write_round(root, record, usage=usage, active_job_id="job-1", log="x" * 400)
+    central_usage.record_round_usage(root, record, round_result(round_id))
+    entry = usage_of(worktree, "job-1")[0]
+    assert entry["role"] == "central"
+    assert entry["tokens_total"] is None
+    assert entry["estimated"] is False
+
+
+def test_partial_reported_counts_do_not_become_a_smaller_estimated_total(tmp_path, worktree):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    make_job(worktree, "job-1")
+    usage = dict(MEASURED, tokens_in=1000, tokens_out=None, tokens_total=None)
+    round_id, _ = write_round(root, record, usage=usage, active_job_id="job-1", log="x" * 400)
+    central_usage.record_round_usage(root, record, round_result(round_id))
+    entry = usage_of(worktree, "job-1")[0]
+    assert entry["tokens_in"] == 1000
+    assert entry["tokens_out"] is None
+    assert entry["tokens_total"] is None
+    assert entry["estimated"] is False
+
+
+def test_redirected_job_storage_never_receives_a_lock_or_write(tmp_path, worktree):
+    import os
+    import subprocess
+
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    outside_job = make_job(tmp_path / "outside", "job-1")
+    destination = worktree / "docs" / "crew-chief" / "jobs"
+    destination.parent.mkdir(parents=True)
+    target = outside_job.parent
+    if os.name == "nt":
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(destination), str(target)],
+                                capture_output=True, shell=False)
+        assert result.returncode == 0
+    else:
+        destination.symlink_to(target, target_is_directory=True)
+    round_id, _ = write_round(root, record, active_job_id="job-1")
+    before = {p.name: p.read_bytes() for p in target.iterdir()}
+    try:
+        with pytest.raises(UsageError):
+            central_usage.record_round_usage(root, record, round_result(round_id))
+        assert {p.name: p.read_bytes() for p in target.iterdir()} == before
+    finally:
+        if os.name == "nt":
+            os.rmdir(destination)
+        else:
+            destination.unlink()
+
+
+def test_concurrent_first_bind_cannot_charge_two_jobs(tmp_path, worktree, monkeypatch):
+    from contextlib import contextmanager
+    import threading
+
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    make_job(worktree, "job-1")
+    make_job(worktree, "job-2")
+    round_id, path = write_round(root, record)
+    first_at_bind = threading.Event()
+    second_approaching = threading.Event()
+    original_bind = central_usage._bind
+    original_read = central_usage._read_round
+    original_lock = records.file_lock
+    errors = []
+
+    def read(*args):
+        value = original_read(*args)
+        if threading.current_thread().name == "usage-second":
+            second_approaching.set()
+        return value
+
+    def bind(*args):
+        if threading.current_thread().name == "usage-first":
+            first_at_bind.set()
+            assert second_approaching.wait(5)
+        return original_bind(*args)
+
+    @contextmanager
+    def lock(lock_path, *args, **kwargs):
+        if Path(lock_path).parent == path.parent and threading.current_thread().name == "usage-second":
+            second_approaching.set()
+        with original_lock(lock_path, *args, **kwargs) as held:
+            yield held
+
+    def run(current):
+        try:
+            central_usage.record_round_usage(root, current, round_result(round_id))
+        except BaseException as exc:
+            errors.append(exc)
+
+    monkeypatch.setattr(central_usage, "_read_round", read)
+    monkeypatch.setattr(central_usage, "_bind", bind)
+    monkeypatch.setattr(records, "file_lock", lock)
+    first = threading.Thread(name="usage-first", target=run, args=(record,))
+    second = threading.Thread(name="usage-second", target=run,
+                              args=(dict(record, active_job_id="job-2"),))
+    first.start()
+    try:
+        assert first_at_bind.wait(5)
+        second.start()
+        first.join(10)
+        second.join(10)
+        assert not first.is_alive() and not second.is_alive()
+        assert errors == []
+        assert len(usage_of(worktree, "job-1")) == 1
+        assert usage_of(worktree, "job-2") == []
+    finally:
+        second_approaching.set()
+        first.join(10)
+        if second.ident is not None:
+            second.join(10)
