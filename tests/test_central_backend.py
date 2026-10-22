@@ -366,5 +366,24 @@ def test_the_default_mode_never_resolves_or_invokes_orca(
 
     assert "orca" not in looked_up
     assert not marker.exists()
-    assert "crew_chief.central_orca" not in sys.modules
     assert message_id
+
+
+def test_default_import_and_probe_do_not_import_orca_in_a_fresh_process(root):
+    scripts = Path(__file__).resolve().parents[1] / "skill" / "crew-chief" / "scripts"
+    code = f"""
+import sys, importlib.abc
+sys.path.insert(0, {str(scripts)!r})
+class NoOrca(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == 'crew_chief.central_orca':
+            raise AssertionError('default mode attempted to import Orca')
+sys.meta_path.insert(0, NoOrca())
+from pathlib import Path
+from crew_chief.central_backend import default_backend
+assert default_backend(Path({str(root)!r})).probe()['ok']
+assert 'crew_chief.central_orca' not in sys.modules
+"""
+    result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True,
+                            text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
