@@ -220,6 +220,46 @@ Seven steps, in order. For a project-size request that has a spec, follow
 `CC scoreboard --project .` regenerates and prints the scoreboard when the user
 asks how the executors are doing.
 
+## Central coordinator commands
+
+The central CLI manages coordinators running in isolated worktrees. Every
+command below takes `--central-dir <path>` to override the storage root
+(default: `<project>/.crew-chief`).
+
+```bash
+CC launch --repo <path> --request-file <file> --mode approved-spec|direct-spec|raw-request [options]
+CC message <coordinator-id> --text "..." [--reply-to <question-id>]
+CC attach <coordinator-id> [--timeout SECONDS]
+CC pause <coordinator-id>
+CC resume <coordinator-id>
+CC stop <coordinator-id>
+CC recover <coordinator-id>
+```
+
+`launch` validates the chosen mode/authorization, creates a coordinator
+branch and worktree, registers it and starts one supervisor. `approved-spec`
+requires `--approved` and `--spec-dir`; `direct-spec` requires `--spec-dir`;
+`raw-request` requires `--authorize-raw`. Optional flags: `--cli`,
+`--backend`, `--base`, `--restricted`, `--unrestricted`,
+`--install-worktree-acc`.
+
+`message` sends a text message into the coordinator's inbox; `--reply-to`
+links it to an existing question.
+
+`attach` yields exclusive ownership to the current terminal for interactive
+resume of the coordinator's session in its worktree. Returns a fallback with
+an explicit reason when the CLI does not support resume or the terminal is
+redirected; never starts a substitute session.
+
+`pause`, `resume` and `stop` write durable control files consumed by the
+live supervisor between bounded rounds. `pause` finishes the current round
+before holding; `resume` restores eligibility; `stop` signals only the owned
+child tree. Repeated controls are idempotent.
+
+`recover` resets a `failed` or `stopped` coordinator to `created` so a new
+supervisor can reconcile it. Applies only to terminal states; other states
+return exit code 2.
+
 ## Spec-driven work
 
 Size the process to the request before you create anything:
