@@ -1,220 +1,220 @@
 {
-  "last_check": "2026-10-22T13:36:07+00:00",
+  "last_check": "2026-10-22T13:47:04+00:00",
   "models": {
     "antigravity:claude-opus-5-5-high": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:claude-opus-5-5-low": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:claude-opus-5-5-medium": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:claude-sonnet-5-5-high": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:claude-sonnet-5-5-low": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:claude-sonnet-5-5-medium": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:gemini-3.8-flash-high": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:gemini-3.8-flash-low": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:gemini-3.8-flash-medium": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:gemini-4-argon-high": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:gemini-4-argon-low": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:gemini-4-argon-medium": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "antigravity:gpt-oss-120b-medium": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "claude-ghost:claude-opus-5-5": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "claude-ghost:gpt-6-astra": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "claude:haiku": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "claude:opus": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "claude:sonnet": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "codex:gpt-6.1-sol": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/beam-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/deepseek-v4-pro": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/deepseek-v4.1-flash": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/glm-5.2": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/glm-5.3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/glm-5.3-flash": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/grok-4.7": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/hy3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/hy4-preview": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/kimi-k2.7-code": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/kimi-k3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/longcat-2.0": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
@@ -228,175 +228,175 @@
     "opencode:opencode-go/mimo-v2.5": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/mimo-v2.5-pro": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/mimo-v2.6-flash": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/mimo-v2.6-pro": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/minimax-m3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/minimax-m3.1-flash-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/muse-spark-1.2-contributor": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": true
     },
     "opencode:opencode-go/muse-spark-1.3-contributor": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": true
     },
     "opencode:opencode-go/qwen3.7-plus": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/qwen3.8-flash": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/qwen3.8-max": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode-go/step-5-preview": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/beam-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/big-pickle": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/deepseek-v4-pro": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/deepseek-v4.1-flash": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/deepseek-v4.1-flash-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/flint-40b-free": {
       "cost": "free",
       "first_seen": "2026-10-21T18:18:31+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/glm-5.3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/glm-5.3-flash": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/glm-5.3-flash-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/grok-4.7": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/grok-build-0.1": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/kimi-k2.7-code": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/kimi-k3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
@@ -410,112 +410,112 @@
     "opencode:opencode/mimo-v2.6-flash-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/minimax-m3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/minimax-m3.1-flash-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/mistral-large-4": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/muse-spark-1.3": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/muse-wonder-1.0": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/nemotron-3-ultra-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/nemotron-3.5-lightning-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/nemotron-3.5-super-vl-free": {
       "cost": "free",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/qwen3.6-plus": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/qwen3.8-flash": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:opencode/qwen3.8-max": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:roos-local-ai/gemma-4-12b-it-qat@q4_k_xl": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:roos-local-ai/ornith-1.5-9b": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:roos-local-ai/qwen3.5-9b-the-defiant-fable-uncensored-heretic-neo-imatrix-max-mtp": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     },
     "opencode:roos-local-ai/qwen3.8-27b-gsq-rco": {
       "cost": "paid",
       "first_seen": "2026-10-21T11:22:41+00:00",
-      "last_seen": "2026-10-22T13:36:07+00:00",
+      "last_seen": "2026-10-22T13:47:04+00:00",
       "present": true,
       "trains": false
     }

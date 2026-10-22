@@ -5390,6 +5390,53 @@
           "tokens_estimated": false,
           "cost_usd": null,
           "cost_known": false
+        },
+        {
+          "n": 8,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T13:47:00.303122+00:00",
+          "duration_s": null,
+          "note": "T035 integration found web clock mismatch; narrow T031 caller correction only, accepted core untouched. Real shared snapshot regression red1, green29passed1skip. Full diff9ca5db8..HEAD is2 allowed files; no task reset, no paid executor.",
+          "branch": "crew/20261021-0722-central-31-time",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-31-self",
+          "start_sha": "9ca5db8a48dbd0b09f08bf73af4b8d35ee524beb",
+          "end_sha": "16ec954fe0ead4494be92ea3e8097ac2dd05f0e2",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 9,
+          "executor": "antigravity:claude-sonnet-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:47:30.593644+00:00",
+          "duration_s": 25.6,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "**Review of T031 correction (9ca5db8..HEAD). HEAD was 16ec954 at start and end.**\n\n**Proof:** `python -m pytest tests/test_central_web.py -q` gave 29 passed, 1 skipped, which matches the expected \"focused29passed1symlinkskip\".\n\n**Diff:**\n- [central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-31-self/skill/crew-chief/scripts/crew_chief/central_web.py) line 159: `/api/snapshot` now passes `datetime.now(timezone.utc).isoformat()` to `central_snapshot.snapshot` instead of a datetime object. This is the one-line change the brief describes.\n- [test_central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-31-self/tests/test_central_web.py): a new test, `test_http_snapshot_preserves_injected_utc_clock`, runs the real snapshot function with a fake clock and checks that `generated_at` is `2026-01-01T00:00:10+00:00`. I did not run the pre-fix code, so I did not confirm the red state the brief mentions.\n\n**Spec verdict:**\n- FR-016: done\n- FR-019: done\n- FR-024: done\n- FR-026: done. The web route uses the shared snapshot with the clock preserved.\n- SC-009: done\n- US5/AC1: done\n- US5/AC3: done\n\nI only read the correction diff, so I did not re-audit the earlier T031 work behind these verdicts.\n\n**Extra:** none.\n\n**Quality verdict:**\n- **Critical:** none.\n- **Important:** none.\n- **Minor:**\n  - [test_central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-31-self/tests/test_central_web.py) line 11: `REAL_SNAPSHOT` is defined right after the import, with no blank line before it.\n  - [test_central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-31-self/tests/test_central_web.py) lines 138–142: the explanatory comments are wordy.\n  - [test_central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-31-self/tests/test_central_web.py) lines 133–136: the test replaces the whole `datetime` name in `central_web` with a fake class that only has `now`. This works today, but it would break if the handler used other `datetime` attributes.\n\nI edited no files.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 77954,
+          "tokens_out": 1266,
+          "tokens_total": 26113,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
       "corrections": [
@@ -5397,20 +5444,25 @@
           "reason": "Independent free review identified auth_token key bypass in nested public metadata; add red regression, remove credential-key variants and confirm public slash labels remain unchanged. Review also assessed later tasks despite explicit T031 boundary; rerender scoped review and require HEAD confirmation.",
           "executor": "coordinator:self",
           "at": "2026-10-22T12:50:47.740600+00:00"
+        },
+        {
+          "reason": "T035 integration exposed UTC clock parity mismatch. Focused real snapshot/injected UTC HTTP regression red1; pass isoformat string to supported shared snapshot clock API, green29passed1skip. One-line caller correction, no accepted core changes.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T13:47:00.107840+00:00"
         }
       ],
       "escalations": [],
       "grades": {
         "coordinator:self": {
-          "score": 85,
-          "explain": "adherence 7/7 → 100; 1 correction −15; 0 extra; penalties none → 85",
-          "corrections": 1,
+          "score": 70,
+          "explain": "adherence 7/7 → 100; 2 corrections −30; 0 extra; penalties none → 70",
+          "corrections": 2,
           "done": 7,
           "missing": 0,
           "extra": 0,
           "penalties": [],
           "executor": "coordinator:self",
-          "graded_at": "2026-10-22T12:54:10.924479+00:00"
+          "graded_at": "2026-10-22T13:48:35.909699+00:00"
         }
       },
       "ref": "T031",
@@ -5443,9 +5495,15 @@
           "reason": "unrated, no history (antigravity:gemini-4-argon-low); tier free; reviewer outside the family of: coordinator:self",
           "at": "2026-10-22T12:51:20.550635+00:00",
           "role": "review"
+        },
+        {
+          "pick": "antigravity:claude-sonnet-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-sonnet-5-5-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:47:07.822072+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 8,
+      "next_attempt": 10,
       "accepted": {
         "attempt": 6,
         "branch": "crew/20261021-0722-central-31-self",
@@ -6159,14 +6217,74 @@
           "role": "review"
         }
       ],
-      "next_attempt": 5
+      "next_attempt": 5,
+      "accepted": {
+        "attempt": 3,
+        "branch": "crew/20261021-0722-central-34-self",
+        "at": "2026-10-22T13:37:43.373629+00:00"
+      }
     },
     {
       "n": 35,
       "title": "T035 Prove terminal and web parity through HTTP actions in tests/test_central_web_flow.py; depends on T031, T032, T033, T034",
       "type": "tests",
       "risk": "high",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/nemotron-3.5-super-vl-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T13:38:19.813035+00:00",
+          "duration_s": 6.4,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-35-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-35-1",
+          "base": null,
+          "steps": 1,
+          "tokens_in": 2010,
+          "tokens_out": 29,
+          "tokens_total": 2039,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false,
+          "start_sha": "9ca5db8a48dbd0b09f08bf73af4b8d35ee524beb",
+          "end_sha": "9ca5db8a48dbd0b09f08bf73af4b8d35ee524beb"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode/flint-40b-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T13:39:29.077133+00:00",
+          "duration_s": 241.4,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll start by reading the brief (done) and surveying the task directory to understand the current state.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-35-2",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-35-2",
+          "base": null,
+          "steps": 23,
+          "tokens_in": 211179,
+          "tokens_out": 2791,
+          "tokens_total": 213970,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "9ca5db8a48dbd0b09f08bf73af4b8d35ee524beb",
+          "end_sha": "9ca5db8a48dbd0b09f08bf73af4b8d35ee524beb"
+        }
+      ],
       "corrections": [],
       "escalations": [],
       "grades": {},
@@ -6177,8 +6295,19 @@
           "pick": "opencode:opencode/nemotron-3.5-lightning-free",
           "reason": "unrated, no history (opencode:opencode/nemotron-3.5-lightning-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
           "at": "2026-10-22T13:21:40.345882+00:00"
+        },
+        {
+          "pick": "opencode:opencode/nemotron-3.5-super-vl-free",
+          "reason": "unrated, no history (opencode:opencode/nemotron-3.5-super-vl-free); tier free; skipped for quota: opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
+          "at": "2026-10-22T13:37:53.879895+00:00"
+        },
+        {
+          "pick": "opencode:opencode/flint-40b-free",
+          "reason": "unrated, no history (opencode:opencode/flint-40b-free); tier free; skipped for quota: opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
+          "at": "2026-10-22T13:39:19.425379+00:00"
         }
-      ]
+      ],
+      "next_attempt": 3
     },
     {
       "n": 36,
@@ -7299,6 +7428,24 @@
       "n": 113,
       "text": "T034 free Gemini3.8 low review confirms70c4c0b, focused19passed/no findings/no extras/5refs done. Coordinator corrects two inaccurate review descriptions: server and request threads are NON-daemon and explicitly joined; focused19 tests lifecycle/parser, while earlier web proofs cover CSRF/traversal/escaping. Actual source inspected, full67b5d9c..HEAD only3 allowed files, existing terminal body and tests preserved. Accept T034, repeat branch19 proof; T033 privacy fix retained by disjoint merge. Neither executor/reviewer/test child remains.",
       "at": "2026-10-22T13:37:42.679350+00:00",
+      "promoted": null
+    },
+    {
+      "n": 114,
+      "text": "T035 two free failures: Nemotron3.5 superVL quota; Flint240s timeout with no file diff. Coordinator will write only owned integration test file against already accepted behavior, not redo accepted tasks or implement other phases. Use real loopback HTTP with temp registry/jobs, fake control consumer/terminal attach, no live CLIs; independent free review and branch/full-suite proof required. Owned executor/test processes checked finished.",
+      "at": "2026-10-22T13:45:03.663777+00:00",
+      "promoted": null
+    },
+    {
+      "n": 115,
+      "text": "T035 actual HTTP parity proof red1failed9passed exposed T031 transport clock mismatch: central_snapshot accepts ISO strings, but datetime instances are re-normalized through now(), losing injected clock/timezone. Fix only web caller to pass UTC isoformat, not accepted core module. Narrow T031 correction uses existing two-free-failure exception, preserves all accepted tasks; independent review and branch proof before T035 continues. Integration test itself remains only T035 file.",
+      "at": "2026-10-22T13:46:35.256942+00:00",
+      "promoted": null
+    },
+    {
+      "n": 116,
+      "text": "T031 narrow clock correction16ec954 reviewed by free Sonnet low at exactHEAD, focused29passed1skip/no Critical/Important/no extras. Coordinator observed red1 before fix and T035 parity red1/9pass independently. Accepted shared snapshot/core remains untouched; only UTC ISO caller and regression added. Land correction, repeat branchproof, then fast-forward pending T035 test branch to accepted prerequisite before its own proof/commit/review.",
+      "at": "2026-10-22T13:48:36.142808+00:00",
       "promoted": null
     }
   ]
