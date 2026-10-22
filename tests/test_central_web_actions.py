@@ -412,7 +412,38 @@ def test_attach_fallback_keeps_an_explicit_central_dir_without_the_home_path(tmp
         assert exchange(server, "/api/attach")[1]["command"] == "acc attach " + CID
         server.central_dir = str(home / "my central")
         data = exchange(server, "/api/attach")[1]
-    assert data["command"] == f'acc attach {CID} --central-dir "~/my central"'
+    quoted = '"~/my central"' if os.name == "nt" else "'~/my central'"
+    assert data["command"] == f"acc attach {CID} --central-dir {quoted}"
     assert str(home) not in json.dumps(data)
     # The copied command reaches the same root in any shell: acc expands the ~ itself.
     assert central_config.resolve_root("~/my central", {}) == home / "my central"
+
+
+def _shell_argument(command):
+    """What this machine's shell passes to ``acc`` as the --central-dir value."""
+    quoted = command.split(" --central-dir ", 1)[1]
+    if os.name != "nt":
+        return shlex.split(quoted)[0]
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    if not shell:
+        pytest.skip("PowerShell unavailable")
+    done = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", "[Console]::Out.Write(" + quoted + ")"],
+                          capture_output=True, text=True, timeout=60)
+    return done.stdout
+
+
+@pytest.mark.parametrize("given,expected", [("~/central", "~/central"), ("rel/central", "~/project/rel/central")])
+def test_attach_fallback_uses_the_root_acc_would_open(tmp_path, monkeypatch, given, expected):
+    """``~`` is expanded first and a relative dir is resolved against the view's directory."""
+    project = Path.home() / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    assert central_web.attach_command(CID, given) == f"acc attach {CID} --central-dir {expected}"
+
+
+def test_attach_fallback_quotes_a_root_outside_home_for_the_shell(tmp_path):
+    root = tmp_path / "a dir $HOME & 'x'" / "central"
+    command = central_web.attach_command(CID, str(root))
+    assert command.startswith(f"acc attach {CID} --central-dir ")
+    # Outside home the full path is the owner's own --central-dir, served to this loopback browser only.
+    assert _shell_argument(command) == str(root)

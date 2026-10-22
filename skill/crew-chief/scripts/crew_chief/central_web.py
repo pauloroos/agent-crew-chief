@@ -9,13 +9,15 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
+import os
 import queue
 from pathlib import Path
 import re
 import secrets
+import shlex
 import threading
 
-from . import briefcheck, central_controls, central_messages, central_registry, central_snapshot
+from . import briefcheck, central_config, central_controls, central_messages, central_registry, central_snapshot
 from .central_backend import BackendError
 
 _ASSETS = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -294,16 +296,33 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def attach_command(cid: str, central_dir=None) -> str:
-    """The copyable ``acc attach`` line; an explicit central dir is kept, home shown as ``~``."""
+    """The copyable ``acc attach`` line, quoted for this machine's shell.
+
+    An explicit central dir becomes the absolute root ``acc`` opens (``~``
+    expanded, a relative dir resolved against this view's directory). Under
+    home it is shown as ``~/...``, which ``acc`` expands itself. A root outside
+    home is shown in full: it is the owner's own ``--central-dir``, served only
+    to this loopback browser, and without it the command opens another registry.
+    """
     command = "acc attach " + cid
     if not central_dir:
         return command
-    path = Path(central_dir)
+    path = Path(os.path.abspath(central_config.resolve_root(central_dir, {})))
     try:
-        shown = "~/" + path.resolve().relative_to(Path.home().resolve()).as_posix()
-    except (OSError, ValueError):
-        shown = str(central_dir)
-    return command + " --central-dir " + (f'"{shown}"' if " " in shown else shown)
+        shown = "~/" + path.relative_to(os.path.abspath(Path.home())).as_posix()
+    except ValueError:
+        shown = str(path)
+    return command + " --central-dir " + _shell_quote(shown)
+
+
+def _shell_quote(text: str) -> str:
+    if os.name != "nt":
+        return shlex.quote(text)
+    if re.fullmatch(r"[\w.:\\/~-]+", text):
+        return text
+    # PowerShell, the Windows shell the docs use: a backtick keeps $ and ` literal.
+    # shortcut: cmd.exe would expand %NAME% inside the quotes; upgrade if such roots appear.
+    return '"' + re.sub(r"([`$])", r"`\1", text) + '"'
 
 
 def create_server(root: Path, assets: Path, port: int = 0, *, attach_bridge_active: bool = False) -> ThreadingHTTPServer:
