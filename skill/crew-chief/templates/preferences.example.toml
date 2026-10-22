@@ -110,6 +110,17 @@
 # central_round_timeout_s = 900
 # Label for the launch in the central registry.
 # central_backend = "default"
+# Minutes without job progress *and* child output before the coordinator round
+# is considered stalled (a normal round timeout stays distinct). Must be a
+# finite number greater than zero. Waiting for a known quota reset never calls
+# a model.
+# stall_minutes = 40
+# What happens when the coordinator hits a quota or stalls: `ask` leaves a
+# durable question, `wait` waits without model calls until the known reset and
+# resumes the exact session, and `handoff:<cli>` continues the same job with
+# the named CLI (claude or codex). An explicitly named target is your choice of
+# that CLI; installing a CLI never authorizes a costlier one on its own.
+# on_coordinator_quota = "ask"
 #
 # --- models ----------------------------------------------------------------
 #
