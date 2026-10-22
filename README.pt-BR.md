@@ -39,6 +39,16 @@ Sem servidor, sem processo de fundo, sem dependências: uma skill e um CLI Pytho
 
 Começando agora? Siga os [tutoriais](docs/tutorials/README.pt-BR.md): seu primeiro job em 10 minutos, trabalho guiado por spec, custo e segurança, e [coordenadoras em worktrees próprias](docs/tutorials/04-central.pt-BR.md) (`acc launch`/`acc central`), com um projeto de treino em [`examples/hello-crew`](examples/hello-crew).
 
+A central também serve uma visão de navegador só de loopback (`acc central --web`
+em `http://127.0.0.1`, porta efêmera, assets empacotados, sem CDN) com os
+mesmos cartões, histórico, gráficos, placar e perguntas, além de ações
+locais autorizadas; a entrada pelo terminal cai para uma instrução
+`acc attach` para copiar. O Orca é explicitamente opcional (`--backend orca`):
+ele só cria a worktree, passa por probe no lançamento, e uma coordenadora
+Orca continua atendendo `acc message`/`stop` se o Orca for removido depois;
+o modo padrão nunca precisa dele. Detalhes, passos de smoke e limites estão
+em [04-central](docs/tutorials/04-central.pt-BR.md).
+
 ## Como funciona
 
 ```mermaid

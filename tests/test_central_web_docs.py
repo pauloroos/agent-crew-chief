@@ -163,3 +163,40 @@ def test_doc_links_and_web_assets_exist():
             assert target.is_file(), f"{doc.name} links to missing {match.group(1)}"
         for match in re.finditer(r"`(skill/crew-chief/web/[^\s`]+)`", _read(doc)):
             assert (REPO_ROOT / match.group(1)).is_file(), f"missing {match.group(1)}"
+
+
+# ---------------------------------------------------------------------------
+# pt-BR twins keep up with the English browser and Orca documentation
+# ---------------------------------------------------------------------------
+
+README_PT = REPO_ROOT / "README.pt-BR.md"
+TUTORIAL_PT = REPO_ROOT / "docs" / "tutorials" / "04-central.pt-BR.md"
+
+
+def _fenced(text: str) -> list[str]:
+    """Every fenced block, with quoted message text (which is translated) blanked."""
+    return [re.sub(r'"[^"]*"', '""', block)
+            for block in re.findall(r"```[a-z]*\n(.*?)```", text, re.S)]
+
+
+def test_pt_br_tutorial_mirrors_every_section_and_command():
+    english, portuguese = _read(TUTORIAL), _read(TUTORIAL_PT)
+    numbers = lambda text: re.findall(r"^## (\d+)\.", text, re.M)
+    assert numbers(portuguese) == numbers(english)
+    assert _fenced(portuguese) == _fenced(english)
+
+
+def test_pt_br_readme_documents_web_and_orca():
+    text = _read(README_PT)
+    for needle in ("acc central --web", "127.0.0.1", "acc attach", "--backend orca",
+                   "docs/tutorials/04-central.pt-BR.md"):
+        assert needle in text, needle
+    for pattern in _PRIVATE_PATTERNS:
+        assert not pattern.search(text)
+
+
+def test_orca_section_describes_the_lifecycle_after_launch():
+    """Orca creates the worktree; the core runs the lifecycle, also without Orca."""
+    section = _read(TUTORIAL).split("## 10.", 1)[1].split("\n## ", 1)[0]
+    assert "acc stop" in section
+    assert "removed" in section.lower() or "uninstall" in section.lower()

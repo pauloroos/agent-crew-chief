@@ -8,14 +8,17 @@ All notable changes to this project are documented here. Versions follow
 
 ### Added
 - **Web view:** `acc central --web` serves a loopback-only dashboard with packaged static assets (cards, charts, history, scoreboard, messages, questions) and controlled terminal entry; no external network, no CDN, no secrets or personal paths in served content (FR-016, SC-009).
-- **Optional Orca backend:** explicitly optional backend with the same launch/message/state/attach contract as the default; capability probe runs at startup, incompatibility fails without switching mid-launch, and default mode never needs Orca (FR-017, SC-010).
-- **Release gate:** installed-bundle fake end-to-end flow covers web/default/Orca modes, three-OS CI matrix requirement and documented fake-browser smoke evidence before release review (SC-008, SC-011).
+- **Optional Orca backend:** `acc launch --backend orca` (or the `central_backend = "orca"` preference) lets Orca create the coordinator's worktree; supervisor, rounds, messages, controls, attach and recovery stay the core's. Orca is probed only at launch (executable, version and `agent-context --json` capabilities); a missing or incompatible Orca fails the launch with no fallback and no switch mid-launch. The backend is stored with the coordinator, and default mode never resolves Orca (FR-017, SC-010).
+- **Release gate:** `tests/test_central_web_gate.py` installs the bundle with `install.py` into a temporary project and drives the installed `acc` through a default launch (Orca hidden from `PATH`) and an Orca launch with a fake `orca`, both completed by a fake `claude`, then fetches the snapshot over HTTP from the web view on an ephemeral loopback port and reaps every process. It also runs the documented fake-browser smoke, checks the stdlib-only imports and reads the three-OS CI matrix from `ci.yml` (SC-008, SC-011).
 
 ### Changed
-- Runtime still requires only Python 3.11+ stdlib and Git; pytest remains development-only (FR-019).
-- Public artifacts contain no private data; all tests use temporary homes/config roots and fake CLIs (FR-021).
-- Commits omit AI co-author trailers while preserving human authorship and executor accounting (FR-023).
+- `acc message`, `attach`, `pause`, `resume`, `stop` and `recover` route an existing coordinator by its stored backend name without probing Orca, so removing or upgrading Orca never blocks an Orca coordinator; an unknown stored backend is refused.
+- The browser actions and the terminal screen keys (`m`, `p`, `Enter`) go through the same stored-backend routing as the CLI.
+- The pt-BR README and tutorial now cover the browser view, Orca and the v0.4.1 limits.
 - `__version__` is `0.4.1`.
+
+### Fixed
+- Accepted pieces no longer show as pending in the central snapshot.
 
 ## [0.4.0] - 2026-10-22
 

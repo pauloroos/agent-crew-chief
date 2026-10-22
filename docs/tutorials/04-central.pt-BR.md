@@ -166,3 +166,97 @@ git merge BRANCH
 ```
 
 O ACC nunca faz merge nem push por você.
+
+## 9. Inspecione no navegador (v0.4.1)
+
+O navegador mostra os mesmos registros do terminal: cartões, perguntas,
+histórico de jobs, gráficos de tokens por modelo, placar, totais e
+diagnósticos.
+
+```bash
+acc central --web
+acc central --web --port 8080
+```
+
+A página é só de loopback, em `http://127.0.0.1:<porta>/` (padrão: uma
+porta efêmera), e é servida a partir dos assets estáticos empacotados
+`skill/crew-chief/web/index.html`, `skill/crew-chief/web/central.css` e
+`skill/crew-chief/web/central.js`. Não há CDN nem script ou folha de estilo
+externos; texto não confiável é exibido só via `textContent`, nunca como
+markup.
+
+As ações locais (mensagem, resposta, pausar, retomar, entrar pelo terminal)
+são autorizadas por servidor: a página primeiro busca um token CSRF e depois
+o envia, junto com um id de nova tentativa, em todo POST; o servidor exige
+Origin/Host estritos e não tem CORS. Os botões ficam desativados até o token
+chegar.
+
+A entrada pelo terminal é controlada: Attach enfileira um pedido para uma
+tela de terminal ativa, que faz a mesma passagem de controle do `Enter`. Sem
+ponte de terminal disponível, a página mostra uma instrução para copiar:
+
+```bash
+acc attach COORDINATOR_ID
+```
+
+Ela não afirma que abriu a sessão; rode esse comando no seu próprio
+terminal.
+
+Smoke reproduzível com navegador falso (só fixtures sintéticas, sem
+coordenadora real, sem registro real):
+
+```bash
+python tests/test_central_web_assets.py --smoke
+```
+
+1. Ele imprime uma URL de loopback com porta efêmera e serve só snapshots
+   sintéticos.
+2. Abra `http://127.0.0.1:<porta>/` e confirme que cartões, perguntas,
+   histórico, gráficos, placar e totais aparecem a partir de `/api/snapshot`.
+3. Confirme que o texto de demonstração com cara de HTML aparece literal,
+   nunca como markup.
+4. Confirme que nenhum script ou folha de estilo externo é carregado; depois
+   pare o servidor e confirme que o socket de escuta foi liberado.
+
+## 10. Backend Orca opcional (v0.4.1)
+
+O modo padrão nunca precisa do Orca. Passe `--backend orca` só quando quiser
+que o Orca crie a worktree:
+
+```bash
+acc launch --repo . --request-file request.md --mode raw-request --authorize-raw --backend orca
+```
+
+O Orca faz uma coisa só: cria a worktree da coordenadora. Todo o resto
+(supervisor, rodadas, mensagens, controles, attach e recuperação) é o mesmo
+núcleo do modo padrão.
+
+O `probe` roda só no lançamento: `acc launch --backend orca` verifica o
+executável `orca` no `PATH` (`--version`, `--help` e as capacidades legíveis
+por máquina de `agent-context --json`) antes de criar qualquer coisa, e de
+novo logo antes de pedir a worktree ao Orca. Executável ausente, versão sem
+suporte ou capacidade faltando fazem o lançamento falhar de forma explícita,
+sem cair para o backend padrão e sem trocar de backend no meio do lançamento.
+
+O backend fica guardado com a coordenadora e não muda. `acc message`,
+`acc attach`, `acc pause`, `acc resume`, `acc stop` e `acc recover`, e as
+mesmas ações no `acc central` e no navegador, seguem esse nome guardado e
+nunca chamam o Orca. Se o Orca for removido ou atualizado depois, você ainda
+consegue mandar mensagem, entrar, pausar, parar e recuperar uma coordenadora
+Orca:
+
+```bash
+acc stop COORDINATOR_ID
+```
+
+Uma coordenadora cujo backend guardado não é `default` nem `orca` é recusada
+com um erro `unknown backend`; ela nunca é tratada como outro backend.
+
+## 11. Limites da v0.4.1
+
+- Só loopback (`127.0.0.1`), porta efêmera por padrão; sem servidor remoto
+  nem acesso compartilhado entre usuários, e nunca há um shell embutido no
+  navegador.
+- Quem integra é você: revise o branch da coordenadora e faça o merge como
+  na seção 8. O ACC nunca faz merge nem push e nunca remove sozinho a
+  worktree de uma coordenadora.

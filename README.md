@@ -43,8 +43,9 @@ Central also serves a loopback browser view (`acc central --web` on
 `http://127.0.0.1`, ephemeral port, packaged assets, no CDN) with the same
 cards, history, charts, scoreboard and questions plus authorized local
 actions; terminal entry falls back to a copyable `acc attach` instruction.
-Orca is explicitly optional (`--backend orca` with probed capabilities,
-immutable per launch) and default mode never needs it. Details, smoke
+Orca is explicitly optional (`--backend orca`): it only creates the
+worktree, is probed at launch, and an Orca coordinator keeps answering
+`acc message`/`stop` if Orca is removed later; default mode never needs it. Details, smoke
 steps and limits are in [04-central](docs/tutorials/04-central.md).
 
 ## How it works

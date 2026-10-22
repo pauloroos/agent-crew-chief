@@ -220,13 +220,29 @@ Orca to create the worktree:
 acc launch --repo . --request-file request.md --mode raw-request --authorize-raw --backend orca
 ```
 
-Before anything is created, `probe` checks the installed executable
-(`--version`, `--help` and the machine-readable `agent-context --json`
-capabilities). On success, worktree, terminal, message and state behavior
-meets the same backend contract as the default backend. On an unsupported
-version or missing capability the launch fails explicitly without
-switching backend mid-launch. The backend choice is immutable per launch:
-later message and attach operations route to the registered backend.
+Orca does one thing: it creates the coordinator's worktree. Everything after
+that (supervisor, rounds, messages, controls, attach and recovery) is the same
+core as in default mode.
+
+The `probe` runs only at launch: `acc launch --backend orca` checks the
+`orca` executable on `PATH` (`--version`, `--help` and the machine-readable
+`agent-context --json` capabilities) before anything is created, and again
+right before it asks Orca for the worktree. A missing executable, an
+unsupported version or a missing capability fails the launch explicitly,
+with no fallback to the default backend and no switch mid-launch.
+
+The backend is stored with the coordinator and is immutable. `acc message`,
+`acc attach`, `acc pause`, `acc resume`, `acc stop` and `acc recover`, and the
+same actions in `acc central` and in the browser, route by that stored name
+and never call Orca. If Orca is removed or upgraded later, you can still
+message, attach, pause, stop and recover an Orca coordinator:
+
+```bash
+acc stop COORDINATOR_ID
+```
+
+A coordinator whose stored backend is neither `default` nor `orca` is refused
+with an `unknown backend` error; it is never handled as another backend.
 
 ## 11. v0.4.1 limits
 
