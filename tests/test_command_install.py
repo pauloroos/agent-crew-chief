@@ -118,6 +118,19 @@ def test_wrapper_name_per_family(tmp_path, platform, name):
     assert wrapper_path(tmp_path / "bin", platform) == target
 
 
+def test_wrapper_keeps_a_linked_interpreter_unresolved(tmp_path):
+    release = _release(tmp_path)
+    link = tmp_path / "python-link"
+    try:
+        link.symlink_to(sys.executable)
+    except OSError:
+        pytest.skip("symlinks are not available here")
+
+    target = install_command(release, tmp_path / "bin", link, "linux")
+
+    assert f"'{link}'" in target.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("platform", ["windows", "linux", "macos"])
 def test_wrapper_runs_the_explicit_interpreter_in_isolated_mode(
     tmp_path, platform

@@ -271,9 +271,11 @@ def install_command(
         raise CommandInstallError(f"{interpreter}: no such interpreter")
 
     # Bind both paths to their install-time location so the wrapper keeps
-    # working no matter what the caller's current directory is later.
+    # working no matter what the caller's current directory is later. The
+    # interpreter keeps the name the caller gave (absolute, links not
+    # followed): a venv or a python3 -> python3.x link must survive upgrades.
     entry = Path(entry).resolve()
-    interpreter = interpreter.resolve()
+    interpreter = interpreter.absolute()
 
     bin_dir = Path(bin_dir)
     target = wrapper_path(bin_dir, family)
