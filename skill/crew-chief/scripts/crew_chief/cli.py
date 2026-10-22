@@ -53,7 +53,7 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import economy, records, setup, spend
+from . import central_cli, economy, records, setup, spend
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
 from .config import (
@@ -1793,6 +1793,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="language of the questions (default: the system language)",
     )
     setup_parser.set_defaults(handler=_cmd_setup)
+
+    # --- central coordinator commands (T019) --------------------------------
+    central_cli.add_central_subcommands(subcommands, common)
 
     return parser
 
