@@ -97,7 +97,7 @@ _PATH_FIELDS = ("repo", "worktree")
 #: Every field of the schema version above; extras are per-row errors.
 _KNOWN_FIELDS = frozenset(
     ("schema_version", "id", *_PATH_FIELDS, *_REQUIRED_TEXT, *_OPTIONAL_TEXT,
-     *_NULLABLE_TEXT, "authorization", "job_ids")
+     *_NULLABLE_TEXT, "authorization", "job_ids", "handoff_history")
 )
 #: Fields an :func:`update_record` change must not touch.
 _IMMUTABLE_FIELDS = frozenset(("id", "schema_version", "created_at"))
