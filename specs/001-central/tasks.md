@@ -288,7 +288,7 @@ Also run `python -m pytest -q` and require the declared CI matrix before release
 - [X] T032 [P] [US5] Build public dashboard cards charts and history in tests/test_central_web_assets.py, skill/crew-chief/web/index.html, skill/crew-chief/web/central.css, skill/crew-chief/web/central.js; depends on T031
 - [X] T033 [US5] Authorize web messages replies and lifecycle actions in tests/test_central_web_actions.py, skill/crew-chief/scripts/crew_chief/central_web.py, skill/crew-chief/web/central.js; depends on T031, T032
 - [X] T034 [US5] Wire acc central --web startup and shutdown in tests/test_central_web_cli.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_screen.py; depends on T025, T033
-- [ ] T035 [US5] Prove terminal and web parity through HTTP actions in tests/test_central_web_flow.py; depends on T031, T032, T033, T034
+- [X] T035 [US5] Prove terminal and web parity through HTTP actions in tests/test_central_web_flow.py; depends on T031, T032, T033, T034
 
 ### T031: verification boundary
 
