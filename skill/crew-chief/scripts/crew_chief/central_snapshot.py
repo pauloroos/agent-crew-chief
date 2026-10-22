@@ -176,7 +176,8 @@ def _job_row(job: dict[str, Any], active_job_id: Any) -> dict[str, Any]:
 def _active_piece(piece: dict[str, Any], now_dt: datetime) -> dict[str, Any] | None:
     if not isinstance(piece, dict):
         return None
-    if piece.get("accepted") is True:
+    # records.mark_accepted stores an object; legacy records store True.
+    if piece.get("accepted"):
         return None
     work_type = piece.get("type")
     if work_type is None:

@@ -96,3 +96,24 @@ def test_corrupt_job_first_read_unavailable(tmp_path):
     assert result["diagnostics"]
     assert result["coordinators"][0]["stale"] is True
     assert result["coordinators"][0]["worktree_available"] is True
+
+
+def test_accepted_pieces_are_not_active(tmp_path):
+    """records.mark_accepted stores an object, not True; both mean accepted."""
+    root = _root(tmp_path)
+    worktree = tmp_path / "repo.crew" / "worktree-a"
+    (worktree / "docs" / "crew-chief" / "jobs").mkdir(parents=True, exist_ok=True)
+    cid = central_registry.register(root, _record(tmp_path, worktree=str(worktree)))
+    job = records.new_job(worktree, "title", "request", False, "reason")
+    job["pieces"] = [
+        {"n": 1, "title": "object", "type": "code", "ref": "T1", "attempts": []},
+        {"n": 2, "title": "legacy", "type": "code", "ref": "T2", "accepted": True, "attempts": []},
+        {"n": 3, "title": "open", "type": "code", "ref": "T3", "accepted": False, "attempts": []},
+    ]
+    records.mark_accepted(job, 1, {"n": 1, "branch": "crew/t1"})
+    records.save_job(worktree, job)
+    central_registry.update_record(root, cid, {"active_job_id": job["id"], "job_ids": [job["id"]]})
+
+    row = snapshot(root, "2026-01-01T00:00:10+00:00")["coordinators"][0]
+
+    assert [p["ref"] for p in row["active_pieces"]] == ["T3"]
