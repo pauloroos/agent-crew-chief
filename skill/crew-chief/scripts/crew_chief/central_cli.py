@@ -137,7 +137,8 @@ def handle_message(args: argparse.Namespace) -> int:
     reply_to = getattr(args, "reply_to", None)
 
     try:
-        registered = coordinator_id in central_registry.load_registry(root).get("coordinators", {})
+        canonical = central_messages._canonical_uuid(coordinator_id)
+        registered = canonical in central_registry.load_registry(root).get("coordinators", {})
     except central_registry.RegistryError as exc:
         print(f"error: message failed: {exc}", file=sys.stderr)
         return 1
