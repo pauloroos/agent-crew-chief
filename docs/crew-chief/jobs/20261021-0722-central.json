@@ -5505,9 +5505,9 @@
       ],
       "next_attempt": 10,
       "accepted": {
-        "attempt": 6,
-        "branch": "crew/20261021-0722-central-31-self",
-        "at": "2026-10-22T12:54:12.551776+00:00"
+        "attempt": 8,
+        "branch": "crew/20261021-0722-central-31-time",
+        "at": "2026-10-22T13:48:36.989986+00:00"
       }
     },
     {
@@ -6283,11 +6283,70 @@
           "cost_known": true,
           "start_sha": "9ca5db8a48dbd0b09f08bf73af4b8d35ee524beb",
           "end_sha": "9ca5db8a48dbd0b09f08bf73af4b8d35ee524beb"
+        },
+        {
+          "n": 3,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T13:49:16.010894+00:00",
+          "duration_s": null,
+          "note": "T035 tests only against accepted prerequisites, initial parity red1/9pass exposed caller clock bug, corrected separately in T03116ec954 and accepted. Test branch fast-forwarded accepted root3b74bcc; final focused10passed. Real temp registry/jobs, actual loopback HTTP/assets, durable replies/control IDs, fake consumer/terminal attach only, hostile requests read-only, all sockets/threads joined. No live CLIs or future phases.",
+          "branch": "crew/20261021-0722-central-35-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-35-self",
+          "start_sha": "3b74bccee49e764997be6ca51f8bac8236b884b9",
+          "end_sha": "1769a5113dbccf9e05d081cd6c1d4554115971fb",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web_flow.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 4,
+          "executor": "antigravity:gemini-3.8-flash-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:49:33.211175+00:00",
+          "duration_s": 47.8,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Start HEAD: `1769a51`\nEnd HEAD: `1769a51`\n\n### Spec verdict\n- FR-016: done\n- FR-026: done\n- SC-009: done\n- US5/AC1: done\n- US5/AC2: done\n- US5/AC3: done\n- US5/AC4: done\n- Extra: none\n\n### Quality verdict\n- Critical: none\n- Important: none\n- Minor: none\n\n### Review Notes\nThe diff modifies only `tests/test_central_web_flow.py` (+204 lines). All 10 tests run against temporary roots with real registry and worktree records, zero live coordinators, and no live model calls. Real loopback HTTP sockets are exercised and clean up cleanly in `finally` blocks (verifying thread termination and closed socket fileno). Snapshot parity between raw terminal snapshot, public web snapshot, and rendered ANSI outputs is tested. POST action idempotency, durable control/intent recording, active/inactive terminal attach fallback semantics (`acc attach <id>`), CSRF/Origin/Host checks, directory traversal, HTML entity escaping via safe DOM assignment, and recursive JSON redacted string verification are thoroughly asserted. Proof passed cleanly: 10 passed in 4.22s.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 100213,
+          "tokens_out": 577,
+          "tokens_total": 71651,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
       "corrections": [],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "coordinator:self": {
+          "score": 100,
+          "explain": "adherence 7/7 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 7,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:self",
+          "graded_at": "2026-10-22T13:50:35.357811+00:00"
+        }
+      },
       "ref": "T035",
       "task_text": "Prove terminal and web parity through HTTP actions in tests/test_central_web_flow.py; depends on T031, T032, T033, T034",
       "picks": [
@@ -6305,9 +6364,15 @@
           "pick": "opencode:opencode/flint-40b-free",
           "reason": "unrated, no history (opencode:opencode/flint-40b-free); tier free; skipped for quota: opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
           "at": "2026-10-22T13:39:19.425379+00:00"
+        },
+        {
+          "pick": "antigravity:gemini-3.8-flash-low",
+          "reason": "unrated, no history (antigravity:gemini-3.8-flash-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:49:23.056314+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 3
+      "next_attempt": 5
     },
     {
       "n": 36,
@@ -7446,6 +7511,12 @@
       "n": 116,
       "text": "T031 narrow clock correction16ec954 reviewed by free Sonnet low at exactHEAD, focused29passed1skip/no Critical/Important/no extras. Coordinator observed red1 before fix and T035 parity red1/9pass independently. Accepted shared snapshot/core remains untouched; only UTC ISO caller and regression added. Land correction, repeat branchproof, then fast-forward pending T035 test branch to accepted prerequisite before its own proof/commit/review.",
       "at": "2026-10-22T13:48:36.142808+00:00",
+      "promoted": null
+    },
+    {
+      "n": 117,
+      "text": "T035 final free Gemini3.8 low review confirms1769a51 start/end, reads entire only-new204-line test file, focused10passed/all7refs done/no extras/no findings. Real HTTP/temp registry/jobs, no live coordinator/model/real terminal, fake cooperative state consumer explicit. Clock mismatch found and corrected separately in accepted T031 before final integration proof. Accept T035, repeat branch proof then mandatory FULL python-m-pytest-q; no Phase7/8 work.",
+      "at": "2026-10-22T13:50:35.624030+00:00",
       "promoted": null
     }
   ]

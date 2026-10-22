@@ -13,6 +13,12 @@
 | opencode:opencode/glm-5.3-flash-free | 53.1 | 8 | 2.5 | 15 | 499248 | 167s | 2026-10-21 |
 | opencode:opencode/nemotron-3-ultra-free | 9 | 2 | — | — | — | — | 2026-10-22 |
 
+## tests
+
+| executor | score | n | attempts/pass | mean steps | mean tokens | mean duration | last graded |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| coordinator:self | 100 | 1 | 1 | — | — | — | 2026-10-22 |
+
 ## docs
 
 | executor | score | n | attempts/pass | mean steps | mean tokens | mean duration | last graded |
