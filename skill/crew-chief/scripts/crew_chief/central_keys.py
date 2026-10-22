@@ -38,7 +38,6 @@ if os.name == "nt":
         _msvcrt = None
 else:  # pragma: no cover - exercised on POSIX
     try:
-        import select as _select_mod  # noqa: F401
         import termios as _termios_mod
         import tty as _tty_mod
     except ImportError:  # pragma: no cover
@@ -85,20 +84,25 @@ _ARROWS_POSIX = {
 
 
 class Key(str):
-    """A key name that compares equal to common spelling variants."""
+    """A key name that compares equal to common spelling variants.
+
+    Hash and equality are both based on the lowercased canonical form so
+    that ``Key`` instances work correctly as dict keys and set members.
+    """
 
     def __new__(cls, canonical: str, *aliases: str) -> "Key":
         obj = super().__new__(cls, canonical)
-        names = {canonical.lower(), *[a.lower() for a in aliases]}
+        names = frozenset({canonical.lower(), *[a.lower() for a in aliases]})
         obj._aliases = names  # type: ignore[attr-defined]
         return obj
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, str):
             return other.lower() in self._aliases
-        return super().__eq__(other)
+        return NotImplemented
 
-    __hash__ = str.__hash__
+    def __hash__(self) -> int:
+        return hash(str(self).lower())
 
 
 def _key(canonical: str, *aliases: str) -> Key:
@@ -144,7 +148,7 @@ def _normalize_platform(platform: Any) -> str:
         return "windows"
     if text in {"posix", "linux", "darwin", "macos", "mac", "unix"}:
         return "posix"
-    return text
+    return "posix"
 
 
 def _resolve_streams(stream: Any) -> tuple[Any, Any]:
@@ -235,11 +239,10 @@ class _TerminalInput:
                 except Exception:
                     self._saved = None
                 try:
+                    # Use setcbreak (not setraw) to preserve signal delivery.
                     if tty_mod is not None and hasattr(tty_mod, "setcbreak"):
                         tty_mod.setcbreak(fd)
-                    if tty_mod is not None and hasattr(tty_mod, "setraw"):
-                        tty_mod.setraw(fd)
-                    elif mod is not None and not (tty_mod is not None and hasattr(tty_mod, "setcbreak")):
+                    elif mod is not None:
                         # Fallback for fakes that only expose termios.
                         attrs = mod.tcgetattr(fd)
                         if isinstance(attrs, list) and len(attrs) >= 4:
@@ -299,6 +302,11 @@ def terminal_input(stream: Any = None, platform: Any = None) -> _TerminalInput:
 
 
 def _read_byte(stdin: Any, timeout_s: float) -> bytes | None:
+    """Read one byte with a timeout.
+
+    When no file descriptor is available, returns ``None`` immediately
+    instead of blocking indefinitely.
+    """
     fd = _fileno(stdin)
     sel = _select()
     if fd is not None and sel is not None:
@@ -316,11 +324,9 @@ def _read_byte(stdin: Any, timeout_s: float) -> bytes | None:
             except Exception:
                 data = b""
     else:
-        # No usable file descriptor: fall back to a direct (possibly blocking) read.
-        try:
-            data = stdin.read(1)
-        except Exception:
-            data = b""
+        # No usable file descriptor: cannot honour timeout safely.
+        # Return None to avoid blocking indefinitely.
+        return None
     if isinstance(data, str):
         try:
             data = data.encode("utf-8")
@@ -382,6 +388,7 @@ def _decode_windows_key(msvcrt_mod: Any) -> str | None:
         lowered = code.strip().lower()
         if lowered in {"up", "down", "left", "right"}:
             return _as_key(lowered)
+        # Unknown second byte after prefix: ignore the prefix entirely.
         return None
 
     if char in ("\r", "\n"):
@@ -389,11 +396,10 @@ def _decode_windows_key(msvcrt_mod: Any) -> str | None:
     if char == "\x1b":
         return _as_key(KEY_ESC)
     if char == "\x03":
-        return None
+        # Ctrl-C: raise KeyboardInterrupt so callers can handle it.
+        raise KeyboardInterrupt
     if char.isprintable() and len(char) == 1:
         lowered = char.lower()
-        if lowered in {"m", "p", "d", "q"}:
-            return _as_key(lowered)
         return _as_key(lowered)
     return None
 
@@ -407,7 +413,6 @@ def read_key(
     stdout: Any = None,
     platform: Any = None,
     supported: Any = None,
-    **_ignored: Any,
 ) -> str | None:
     """Read one key, waiting at most ``timeout_s`` seconds."""
     global _ACTIVE_STREAM, _ACTIVE_STDIN, _ACTIVE_STDOUT
@@ -440,7 +445,6 @@ def read_key(
         return None
     if not supported_provided and not (stream is None and stdin is None and stdout is None and _ACTIVE_STREAM is not None):
         if not _is_tty(resolved_stdin, resolved_stdout):
-            # Redirected/non-interactive input is unsupported.
             supported = False
     if not supported:
         return None
@@ -451,59 +455,54 @@ def read_key(
             return None
         end = time.monotonic() + max(0.0, float(timeout_s or 0.0))
         while True:
-            key = _decode_windows_key(mod)
+            try:
+                key = _decode_windows_key(mod)
+            except KeyboardInterrupt:
+                raise
             if key is not None:
                 return key
-            # kbhit False path returns None immediately; avoid tight loop
-            # by checking the clock.
             if time.monotonic() >= end:
                 break
             time.sleep(min(0.01, max(0.0, end - time.monotonic())))
         return None
 
     # POSIX path.
-    mod_termios = _termios()
     fd = _fileno(resolved_stdin)
     end = time.monotonic() + max(0.0, float(timeout_s or 0.0))
-    # Ensure at least one attempt even for zero timeout.
     while True:
         remaining = end - time.monotonic()
         if remaining < 0:
             remaining = 0.0
         first = _read_byte(resolved_stdin, remaining if remaining > 0 else 0.0)
-        # For zero timeout, _read_byte already polls once; if None, finish.
         if first is None:
-            # One final non-blocking check is already done; exit.
             break
         if first == b"\x1b":
-            # Try to read an escape sequence with a short grace period.
-            second = _read_byte(resolved_stdin, 0.05)
+            # Escape sequence grace bounded by remaining time.
+            seq_remaining = max(0.0, end - time.monotonic())
+            grace = min(0.05, seq_remaining)
+            second = _read_byte(resolved_stdin, grace)
             if second == b"[":
-                third = _read_byte(resolved_stdin, 0.05)
+                third = _read_byte(resolved_stdin, grace)
                 if third in (b"A", b"B", b"C", b"D"):
                     return _as_key(_ARROWS_POSIX[third.decode("latin-1")])
-            # Application cursor keys: ESC O A ...
             if second == b"O":
-                third = _read_byte(resolved_stdin, 0.05)
+                third = _read_byte(resolved_stdin, grace)
                 if third in (b"A", b"B", b"C", b"D"):
                     return _as_key(_ARROWS_POSIX[third.decode("latin-1")])
             return _as_key(KEY_ESC)
         if first in (b"\r", b"\n"):
             return _as_key(KEY_ENTER)
+        if first == b"\x03":
+            raise KeyboardInterrupt
         try:
             char = first.decode("utf-8")
         except UnicodeDecodeError:
             char = first.decode("latin-1")
         if char.isprintable() and len(char) == 1:
             lowered = char.lower()
-            if lowered in {"m", "p", "d", "q"}:
-                return _as_key(lowered)
             return _as_key(lowered)
-        # Unknown byte: stop waiting.
         break
 
-    # If we got here with a zero timeout we may not have polled; do one
-    # non-blocking read already performed above. Nothing more to do.
     return None
 
 
