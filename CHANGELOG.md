@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [0.4.0] - 2026-10-22
+
+### Added
+- **Central coordinator:** multi-worktree coordinator flow with durable file inboxes/outboxes, correlated question blocking, finite headless rounds with persisted sessions, pause/resume/stop controls, explicit recovery without bare-PID signals, attach exclusive ownership with fallback, and coordinator branch isolation (FR-002/007/008/009/010/011/018, SC-001/002/003/004).
+- **Core verification suite:** tests covering multi-repo launch, message durability, headless round lifecycle, supervisor controls, recovery reconciliation, attach handoff, documentation verification, CI matrix isolation, and release gating across Windows/Linux/macOS (T027–T030).
+- **Coordinator interruption alerts:** quota and stall detection with continuity propagation in terminal snapshots; handoff preference `on_coordinator_quota` with ask/wait/handoff options (US7, T042–T044).
+
+### Changed
+- Runtime requires Python 3.11+ stdlib and Git only; optional CLIs are probed at launch (FR-019).
+- Public artifacts contain no private data; tests use temporary homes and fake CLIs exclusively (FR-021).
+- Commits omit AI co-author trailers while preserving executor accounting in records (FR-023).
+- `__version__` is `0.4.0`.
+
 ## [0.3.4] - 2026-10-20
 
 ### Fixed
