@@ -6592,7 +6592,12 @@
           "role": "review"
         }
       ],
-      "next_attempt": 6
+      "next_attempt": 6,
+      "accepted": {
+        "attempt": 3,
+        "branch": "crew/20261021-0722-central-36-self",
+        "at": "2026-10-22T14:18:30.817551+00:00"
+      }
     },
     {
       "n": 37,
@@ -6604,7 +6609,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T037",
-      "task_text": "Adapt probed Orca capabilities to the backend contract in skill/crew-chief/scripts/crew_chief/central_orca.py, tests/test_central_orca.py; depends on T036"
+      "task_text": "Adapt probed Orca capabilities to the backend contract in skill/crew-chief/scripts/crew_chief/central_orca.py, tests/test_central_orca.py; depends on T036",
+      "picks": [
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 64.5 (opencode:opencode-go/minimax-m3.1-flash-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
+          "at": "2026-10-22T14:19:04.544894+00:00"
+        }
+      ]
     },
     {
       "n": 38,
