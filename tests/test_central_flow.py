@@ -28,10 +28,8 @@ No test touches real HOME or live model CLIs.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
-import time
 import uuid
 from pathlib import Path
 
@@ -47,6 +45,7 @@ from crew_chief import (
     coordinator_protocol,
 )
 from crew_chief.central_launch import prepare_launch
+from test_central_supervisor import CLAUDE_HELP, FAKE_CLI
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skill" / "crew-chief" / "scripts"
 
@@ -65,35 +64,6 @@ def _git(repo: Path, *args: str) -> str:
         encoding="utf-8",
     )
     return result.stdout
-
-
-def _is_alive(pid: int) -> bool:
-    """Check whether a PID is alive without substring-match false positives."""
-    try:
-        if os.name == "nt":
-            result = subprocess.run(
-                ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                capture_output=True,
-            )
-            out = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
-            # Exact match: tasklist columns are fixed-width; look for the PID
-            # as a whole word preceded by whitespace or line start.
-            import re
-            return bool(re.search(rf"(?:^|\s){pid}(?:\s|$)", out))
-        os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError):
-        return False
-
-
-def _kill(pid: int) -> None:
-    try:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
-        else:
-            os.kill(pid, 9)
-    except OSError:
-        pass
 
 
 def _write_acc_version(root: Path, version: str) -> None:
@@ -204,21 +174,28 @@ class _FakeSpawn:
 # Owned-process tracking
 # ---------------------------------------------------------------------------
 
-OWNED_PIDS: list[int] = []
+OWNED: list[subprocess.Popen] = []
+
+
+@pytest.fixture(autouse=True)
+def _fake_claude(fake_bin):
+    """A fake claude on PATH: these tests never depend on a real CLI."""
+    fake_bin("claude", FAKE_CLI.replace("__HELP__", repr(CLAUDE_HELP)))
 
 
 @pytest.fixture(autouse=True)
 def _tracked_cleanup():
-    """Kill every owned process after each test; assert none survive."""
-    OWNED_PIDS.clear()
+    """Kill and reap every owned process after each test; assert none survive."""
+    OWNED.clear()
     yield
-    for pid in list(OWNED_PIDS):
-        if _is_alive(pid):
-            _kill(pid)
-    time.sleep(0.15)
-    for pid in list(OWNED_PIDS):
-        assert not _is_alive(pid), f"test process {pid} still alive after cleanup"
-    OWNED_PIDS.clear()
+    for proc in OWNED:
+        if proc.poll() is None:
+            proc.kill()
+        # wait() reaps the child, so a POSIX zombie never looks alive.
+        proc.wait(timeout=10)
+    for proc in OWNED:
+        assert proc.poll() is not None, f"test process {proc.pid} still alive after cleanup"
+    OWNED.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -502,8 +479,8 @@ def test_pause_resume_stop_and_explicit_recovery(tmp_path, monkeypatch):
 
     # Spawn a sleeper to prove recovery never signals unrelated PIDs.
     sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    OWNED_PIDS.append(sleeper.pid)
-    assert _is_alive(sleeper.pid)
+    OWNED.append(sleeper)
+    assert sleeper.poll() is None
 
     # --- pause/resume/stop controls (FR-011) ---
     pause_id = central_controls.request_control(central, coord_id, "pause")
@@ -564,7 +541,7 @@ def test_pause_resume_stop_and_explicit_recovery(tmp_path, monkeypatch):
     assert recon.get("stale") is True or "stale" in recon.get("reason", "")
 
     # Sleeper must still be alive: reconcile never signalled it.
-    assert _is_alive(sleeper.pid), "reconcile must never signal unrelated PIDs"
+    assert sleeper.poll() is None, "reconcile must never signal unrelated PIDs"
 
 
 def test_attach_exclusive_ownership_and_fallback(tmp_path, monkeypatch):
@@ -653,9 +630,8 @@ def test_coordinator_branch_retains_output_no_merge_push(tmp_path, monkeypatch):
 def test_no_test_process_survives_after_flow(tmp_path):
     """Final cleanup proves no owned test process survives."""
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
-    OWNED_PIDS.append(proc.pid)
-    assert _is_alive(proc.pid)
-    _kill(proc.pid)
-    time.sleep(0.15)
-    assert not _is_alive(proc.pid)
-    OWNED_PIDS.remove(proc.pid)
+    OWNED.append(proc)
+    assert proc.poll() is None
+    proc.kill()
+    proc.wait(timeout=10)
+    assert proc.poll() is not None
