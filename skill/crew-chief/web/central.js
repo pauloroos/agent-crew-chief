@@ -12,9 +12,11 @@
     token: null, snapshot: null, busy: false, failed: null,
     select: null, placeholder: null, options: {}, selected: "", everSelected: false,
     loading: false, reloadAfter: false, timer: null,
+    // Reply/Stop buttons rendered inside the lists; updateControls() keeps them current.
+    itemButtons: [],
     // Bumped after every action: a snapshot requested before it is dropped.
     actionEpoch: 0,
-    announced: {}, open: {}, lastGood: null, lost: false
+    announced: {}, announcements: [], open: {}, lastGood: null, lost: false
   };
 
   function $(id) { return document.getElementById(id); }
@@ -219,7 +221,7 @@
       when.appendChild(make("span", null, ", policy " + text(alert.policy || "ask")));
       li.appendChild(when);
       var stop = button("Stop…", "danger");
-      stop.disabled = !state.token || state.busy;
+      state.itemButtons.push(stop);
       stop.addEventListener("click", function () { confirmStop(row.id, stop); });
       li.appendChild(stop);
       root.appendChild(li);
@@ -241,8 +243,9 @@
       var refs = list(q.task_refs);
       if (refs.length) item.appendChild(make("p", "muted", "Tasks: " + refs.map(text).join(", ")));
       var reply = button("Reply", "primary");
-      reply.disabled = !state.token || state.busy;
+      state.itemButtons.push(reply);
       reply.addEventListener("click", function () {
+        if (!state.token || state.busy) return;
         var answer = window.prompt("Reply to " + label(row) + ": " + text(q.body).slice(0, 200));
         if (answer === null || answer === undefined || !String(answer).trim()) return;
         act("/api/answer", { coordinator_id: q.coordinator_id, question_id: q.id, text: answer }, "Reply recorded.");
@@ -440,6 +443,7 @@
   function render(snapshot) {
     if (!snapshot || typeof snapshot !== "object") snapshot = {};
     state.snapshot = snapshot;
+    state.itemButtons = [];
     updateSelect();
     renderAlerts(snapshot);
     renderQuestions(snapshot);
@@ -503,12 +507,17 @@
       var node = $("btn-" + name);
       if (node) node.disabled = !state.token || state.busy || !state.selected;
     });
+    state.itemButtons.forEach(function (node) { node.disabled = !state.token || state.busy; });
   }
 
   // --- actions --------------------------------------------------------------
 
   async function sendAction(route, payload, pendingText) {
-    if (!state.token || state.busy) return null;
+    if (!state.token || state.busy) {
+      // Never lose what the owner typed: keep it on screen to send again.
+      if (payload.text) showCommand("Another action is still running, so this was not sent. Your text:", payload.text, "error");
+      return null;
+    }
     var signature = JSON.stringify([route, payload]);
     // A lost answer is retried with the same id, so the server applies it once.
     var id = state.failed && state.failed.signature === signature ? state.failed.id : window.crypto.randomUUID();

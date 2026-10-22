@@ -233,6 +233,34 @@ def test_reply_is_bound_to_its_own_question():
     """)
 
 
+def test_reply_is_unavailable_while_another_action_runs_and_never_drops_text():
+    _run(r"""
+    respond('/api/csrf', { csrf_token: 'tok' });
+    respond('/api/snapshot', snap([row(A)], { questions: [{ id: 'q-a', coordinator_id: A, body: 'first' }] }));
+    run(); await settle();
+    const reply = () => document.getElementById('questions').find(e => e.tag === 'button' && /Reply/.test(e.textContent));
+    // A message is in flight: the rendered Reply is disabled and asks for nothing.
+    const sent = defer('/api/message');
+    elements['btn-message'].click(); await settle();
+    assert(reply().disabled);
+    const asked = prompts.length;
+    reply().click(); await settle();
+    assert.equal(prompts.length, asked);
+    assert.equal(posts('/api/answer').length, 0);
+    respond('/api/snapshot', snap([row(A)], { questions: [{ id: 'q-a', coordinator_id: A, body: 'first' }] }));
+    sent({ ok: true, body: { ok: true, message_id: 'm' } }); await settle();
+    assert(!reply().disabled);
+    // Another action starts while the owner types: the typed text stays on screen.
+    window.prompt = (q) => { prompts.push(q); elements['btn-pause'].click(); return 'keep this answer'; };
+    defer('/api/pause');
+    reply().click(); await settle();
+    assert.equal(posts('/api/answer').length, 0);
+    const feedback = document.getElementById('feedback');
+    assert.match(feedback.className, /error/);
+    assert(feedback.find(e => e.tag === 'code' && e.textContent === 'keep this answer'));
+    """)
+
+
 def test_stop_asks_for_confirmation_naming_the_session():
     _run(r"""
     respond('/api/csrf', { csrf_token: 'tok' });
