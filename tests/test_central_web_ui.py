@@ -68,7 +68,7 @@ async function fire(filter) {  // run the due timers once
 }
 const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(setImmediate); };
 
-const calls = [], pending = {}, answers = {};
+const calls = [], pending = {}, answers = {}, inFlight = {};
 function respond(url, body, ok = true) { (answers[url] ||= []).push({ ok, body }); }
 function defer(url) { let resolve; const p = new Promise(r => resolve = r); (answers[url] ||= []).push({ deferred: p }); return resolve; }
 const fetch = async (url, opts = {}) => {
@@ -76,9 +76,15 @@ const fetch = async (url, opts = {}) => {
   const queue = answers[url] || [];
   if (!queue.length) throw new Error('no answer for ' + url);
   const next = queue.shift();
-  const value = next.deferred ? await next.deferred : next;
-  if (value instanceof Error) throw value;
-  return { ok: value.ok, status: value.ok ? 200 : 400, json: async () => value.body };
+  // Like a browser: an aborted request settles at once and is no longer pending.
+  const aborted = new Promise((_, reject) => opts.signal && opts.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+  aborted.catch(() => {});
+  inFlight[url] = (inFlight[url] || 0) + 1;
+  try {
+    const value = next.deferred ? await Promise.race([next.deferred, aborted]) : next;
+    if (value instanceof Error) throw value;
+    return { ok: value.ok, status: value.ok ? 200 : 400, json: async () => value.body };
+  } finally { inFlight[url] -= 1; }
 };
 let prompts = [], confirms = [];
 const window = { crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(calls.length).padStart(12, '0') + Math.random().toString(16).slice(2, 6) },
@@ -87,9 +93,17 @@ let confirmAnswer = true;
 const text = id => document.getElementById(id).textContent;
 function run() {
   vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'),
-    { document, window, fetch, setTimeout, clearTimeout, Date, Intl, Promise, console });
+    { document, window, fetch, setTimeout, clearTimeout, AbortController, Date, Intl, Promise, console });
 }
 const posts = route => calls.filter(c => c.url === route);
+// A native <dialog> for the stop confirmation: close() fires "close" like a form submit.
+function nativeDialog() {
+  const dialog = document.getElementById('stop-dialog');
+  dialog.showModal = () => { dialog.open = true; };
+  dialog.close = (value) => { dialog.open = false; dialog.returnValue = value;
+    (dialog.listeners.close || []).slice().forEach(f => f()); };
+  return dialog;
+}
 const snap = (coordinators, extra = {}) => Object.assign(
   { generated_at: '2026-01-01T00:00:00+00:00', coordinators, questions: [], alerts: [], totals: {} }, extra);
 const row = (id, extra = {}) => Object.assign({ id, repo_label: 'demo', state: 'running', accepted: 1, total: 2 }, extra);
@@ -157,6 +171,12 @@ def test_timeout_releases_the_refresh():
     await fire(t => t.ms === 8000);
     assert.match(text('connection'), /stale|lost/i);
     assert.equal(timers.filter(t => t.ms === 2000).length, 1);
+    // The timed-out request is cancelled, so the next cycle is the only one pending.
+    assert.equal(inFlight['/api/snapshot'], 0);
+    defer('/api/snapshot');
+    await fire(t => t.ms === 2000);
+    assert.equal(posts('/api/snapshot').length, 2);
+    assert.equal(inFlight['/api/snapshot'], 1);
     """)
 
 

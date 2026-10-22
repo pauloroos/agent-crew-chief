@@ -661,10 +661,12 @@
     state.loading = true;
     var epoch = state.actionEpoch;
     var timer = null;
+    // Cancelled on timeout, so a slow answer never overlaps the next refresh.
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
     var timeout = new Promise(function (resolve, reject) {
-      timer = setTimeout(function () { reject(new Error("timeout")); }, TIMEOUT_MS);
+      timer = setTimeout(function () { if (controller) controller.abort(); reject(new Error("timeout")); }, TIMEOUT_MS);
     });
-    var request = fetch(API, { credentials: "same-origin", cache: "no-store" }).then(function (response) {
+    var request = fetch(API, { credentials: "same-origin", cache: "no-store", signal: controller ? controller.signal : undefined }).then(function (response) {
       if (!response.ok) throw new Error("HTTP " + response.status);
       return response.json();
     });
