@@ -31,10 +31,10 @@ from . import (
     central_launch,
     central_messages,
     central_recovery,
-    central_registry,
     central_screen,
     central_supervisor,
 )
+from .central_backend import ATTACH_TIMEOUT_KEY, TERMINAL_KEY, BackendError
 
 __all__ = [
     "add_central_subcommands",
@@ -103,14 +103,24 @@ def handle_launch(args: argparse.Namespace) -> int:
         "release_root": Path(getattr(args, "release_root", None) or _RELEASE_ROOT),
     }
 
-    prepared = central_launch.prepare_launch(repo, request_file, options, root)
+    backend, error = central_launch.launch_backend(repo, options, root)
+    if backend is None:
+        print(f"error: launch failed: {error}", file=sys.stderr)
+        return 1
+    # Resolved once: a preference change mid-launch cannot switch the backend.
+    options["backend"] = backend.name
+
+    prepared = backend.create(repo, {**options, "request_file": request_file})
     coordinator_id = prepared.get("id")
     if not prepared.get("ok"):
         where = f" (coordinator {coordinator_id})" if coordinator_id else ""
         print(f"error: launch failed{where}: {prepared.get('error')}", file=sys.stderr)
         return 1
 
-    started = central_supervisor.start_supervisor(prepared["record"], root)
+    try:
+        started = backend.start(prepared["record"])
+    except BackendError as exc:
+        started = {"ok": False, "error": str(exc)}
     if not started.get("ok"):
         print(
             f"error: supervisor start failed for {coordinator_id}: {started.get('error')}",
@@ -138,21 +148,18 @@ def handle_message(args: argparse.Namespace) -> int:
     reply_to = getattr(args, "reply_to", None)
 
     try:
-        canonical = central_messages._canonical_uuid(coordinator_id)
-        registered = canonical in central_registry.load_registry(root).get("coordinators", {})
-    except central_registry.RegistryError as exc:
+        row, backend = central_controls.registered_backend(root, coordinator_id)
+    except central_controls.ControlError as exc:
         print(f"error: message failed: {exc}", file=sys.stderr)
         return 1
-    if not registered:
+    if row is None:
         print(f"error: no coordinator {coordinator_id!r} registered", file=sys.stderr)
         return 2
     try:
-        message_id = central_messages.send(
-            root,
-            coordinator_id,
-            central_messages.owner_message(coordinator_id, text, reply_to),
+        message_id = backend.send(
+            row, central_messages.owner_message(coordinator_id, text, reply_to)
         )
-    except (central_messages.MessageError, OSError) as exc:
+    except (BackendError, central_messages.MessageError, OSError) as exc:
         print(f"error: message failed: {exc}", file=sys.stderr)
         return 1
 
@@ -178,7 +185,17 @@ def handle_attach(args: argparse.Namespace) -> int:
         stdin = sys.stdin
         stdout = sys.stdout
 
-    result = central_attach.attach(root, coordinator_id, _StdTerminal(), timeout_s)
+    try:
+        row, backend = central_controls.registered_backend(root, coordinator_id)
+        if backend is None:
+            # Unregistered: the core attach reports why, as it always has.
+            result = central_attach.attach(root, coordinator_id, _StdTerminal(), timeout_s)
+        else:
+            result = backend.attach(
+                {**row, TERMINAL_KEY: _StdTerminal(), ATTACH_TIMEOUT_KEY: timeout_s}
+            )
+    except (central_controls.ControlError, BackendError) as exc:
+        result = {"ok": False, "state": "unknown", "reason": str(exc)}
     ok = result.get("ok") is True
 
     if getattr(args, "json", False):
@@ -202,14 +219,23 @@ def handle_control(args: argparse.Namespace) -> int:
     coordinator_id = args.id
     action = args.action
 
+    if action != "recover" and action not in central_controls.VALID_COMMANDS:
+        print(
+            f"error: unknown control action {action!r}; expected one of {sorted(central_controls.VALID_COMMANDS)}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Routed by the stored backend: an unusable one refuses the control, never switches.
+    try:
+        row, _backend = central_controls.registered_backend(root, coordinator_id)
+    except central_controls.ControlError as exc:
+        print(f"error: {action} failed: {exc}", file=sys.stderr)
+        return 1
+
     if action == "recover":
         # Recovery is an owner decision on the registry; controls only steer live owners.
-        try:
-            row = central_registry.load_registry(root).get("coordinators", {}).get(coordinator_id)
-        except central_registry.RegistryError as exc:
-            print(f"error: recover failed: {exc}", file=sys.stderr)
-            return 1
-        if not isinstance(row, dict):
+        if row is None:
             print(f"error: no coordinator {coordinator_id!r} registered", file=sys.stderr)
             return 2
         state = row.get("state")
@@ -232,13 +258,6 @@ def handle_control(args: argparse.Namespace) -> int:
         else:
             print(f"recovered {coordinator_id}")
         return 0
-
-    if action not in central_controls.VALID_COMMANDS:
-        print(
-            f"error: unknown control action {action!r}; expected one of {sorted(central_controls.VALID_COMMANDS)}",
-            file=sys.stderr,
-        )
-        return 2
 
     try:
         message_id = central_controls.request_control(root, coordinator_id, action)
