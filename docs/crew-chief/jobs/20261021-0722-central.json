@@ -8692,6 +8692,12 @@
       "text": "T040 self-review (coordinator fallback): diff verified against all 10 acceptance criteria. Version bumped to 0.4.1, CHANGELOG documents web/Orca/gate, tests/test_central_web_gate.py covers assets/no-CDN/orca-import/default-no-orca/stdlib-only/no-private-data/no-AI-trailers/version/changelog/three-OS-CI/smoke-docs (11 tests passing). No unwanted deletions. No reviewer available (all free executors quota/stalled), so coordinator reviewed per cost rules.",
       "at": "2026-10-22T16:50:29.395243+00:00",
       "promoted": null
+    },
+    {
+      "n": 134,
+      "text": "T038 reopened by the owner's reviewer after phase 8: commit 29f4691 had no production code (central_launch still rejected 'orca'; controls ignored the stored backend) and was self-reviewed only. Re-implemented on fix/v0.4.1-t038 (dbd54d6, plus snapshot fix ff3edb1 for accepted pieces shown as pending), merged in d385138. Independent review of the fix and of the self-reviewed T040 gate requested before release.",
+      "at": "2026-10-22T17:37:04.425262+00:00",
+      "promoted": null
     }
   ]
 }
