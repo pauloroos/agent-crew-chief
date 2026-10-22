@@ -260,6 +260,9 @@ child tree. Repeated controls are idempotent.
 supervisor can reconcile it. Applies only to terminal states; other states
 return exit code 2.
 
+`CC _supervisor` is a private entry used by detached supervisor processes;
+it is not part of the public CLI and must never be invoked directly.
+
 ## Spec-driven work
 
 Size the process to the request before you create anything:
