@@ -1,4 +1,4 @@
-"""Public central CLI commands: launch, message, attach, pause, resume, stop, recover (T019).
+"""Public central CLI commands: launch, central, message, attach, pause, resume, stop, recover (T019).
 
 This module owns the argparse handlers for the ``acc`` central subcommands.
 Each handler validates its arguments, delegates to the appropriate lifecycle
@@ -11,43 +11,47 @@ Public API
 ``handle_message(args) -> int``
 ``handle_attach(args) -> int``
 ``handle_control(args) -> int``
+``handle_central(args) -> int``
 ``add_central_subcommands(subparsers) -> None``
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from . import (
     central_attach,
+    central_config,
     central_controls,
     central_launch,
     central_messages,
+    central_recovery,
     central_registry,
+    central_screen,
     central_supervisor,
 )
 
 __all__ = [
     "add_central_subcommands",
     "handle_attach",
+    "handle_central",
     "handle_control",
     "handle_launch",
     "handle_message",
 ]
 
 
-def _project_root(args: argparse.Namespace) -> Path:
-    return Path(getattr(args, "project", ".") or ".")
+#: The released bundle this command runs from (holds install.py and skill/).
+_RELEASE_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _central_dir(args: argparse.Namespace) -> Path:
-    explicit = getattr(args, "central_dir", None)
-    if explicit:
-        return Path(explicit)
-    return _project_root(args) / ".crew-chief"
+    """``--central-dir``, else the environment, else ``~/.config/agent-crew-chief/central``."""
+    return central_config.resolve_root(getattr(args, "central_dir", None), os.environ)
 
 
 # ---------------------------------------------------------------------------
@@ -69,78 +73,48 @@ def handle_launch(args: argparse.Namespace) -> int:
         print(f"error: request file not found: {request_file}", file=sys.stderr)
         return 2
 
-    authorization: dict[str, Any] = {"mode": mode}
-    if mode == "approved-spec":
-        if not getattr(args, "approved", False):
-            print(
-                "error: --approved is required for approved-spec mode",
-                file=sys.stderr,
-            )
-            return 2
-        spec_dir = getattr(args, "spec_dir", None)
-        if not spec_dir:
-            print(
-                "error: --spec-dir is required for approved-spec mode",
-                file=sys.stderr,
-            )
-            return 2
-        authorization["spec_dir"] = str(Path(spec_dir))
-        authorization["approved"] = True
-    elif mode == "direct-spec":
-        spec_dir = getattr(args, "spec_dir", None)
-        if not spec_dir:
-            print(
-                "error: --spec-dir is required for direct-spec mode",
-                file=sys.stderr,
-            )
-            return 2
-        authorization["spec_dir"] = str(Path(spec_dir))
-    elif mode == "raw-request":
-        if not getattr(args, "authorize_raw", False):
-            print(
-                "error: --authorize-raw is required for raw-request mode",
-                file=sys.stderr,
-            )
-            return 2
-        authorization["authorize_raw"] = True
-    else:
+    spec_dir = getattr(args, "spec_dir", None)
+    if mode == "approved-spec" and not getattr(args, "approved", False):
+        print("error: --approved is required for approved-spec mode", file=sys.stderr)
+        return 2
+    if mode in ("approved-spec", "direct-spec") and not spec_dir:
+        print(f"error: --spec-dir is required for {mode} mode", file=sys.stderr)
+        return 2
+    if mode == "raw-request" and not getattr(args, "authorize_raw", False):
+        print("error: --authorize-raw is required for raw-request mode", file=sys.stderr)
+        return 2
+    if mode not in ("approved-spec", "direct-spec", "raw-request"):
         print(f"error: unknown launch mode {mode!r}", file=sys.stderr)
         return 2
 
-    cli = getattr(args, "cli", None) or "claude"
-    backend = getattr(args, "backend", None) or "default"
-    base = getattr(args, "base", None)
-    restricted = getattr(args, "restricted", False)
-    unrestricted = getattr(args, "unrestricted", False)
-    install_worktree_acc = getattr(args, "install_worktree_acc", False)
+    # An unset flag is None so preferences, not a hard-coded default, decide.
+    options: dict[str, Any] = {
+        "mode": mode,
+        "approved": bool(getattr(args, "approved", False)),
+        "authorize_raw": bool(getattr(args, "authorize_raw", False)),
+        "install_worktree_acc": bool(getattr(args, "install_worktree_acc", False)),
+        "spec_dir": spec_dir,
+        "base": getattr(args, "base", None),
+        "cli": getattr(args, "cli", None),
+        "backend": getattr(args, "backend", None),
+        "restricted": True if getattr(args, "restricted", False) else None,
+        "unrestricted": True if getattr(args, "unrestricted", False) else None,
+        "release_root": Path(getattr(args, "release_root", None) or _RELEASE_ROOT),
+    }
 
-    try:
-        record = central_launch.prepare_launch(
-            root=root,
-            repo=repo,
-            request_file=request_file,
-            mode=mode,
-            authorization=authorization,
-            cli=cli,
-            backend=backend,
-            base=base,
-            restricted=restricted,
-            unrestricted=unrestricted,
-            install_worktree_acc=install_worktree_acc,
+    prepared = central_launch.prepare_launch(repo, request_file, options, root)
+    coordinator_id = prepared.get("id")
+    if not prepared.get("ok"):
+        where = f" (coordinator {coordinator_id})" if coordinator_id else ""
+        print(f"error: launch failed{where}: {prepared.get('error')}", file=sys.stderr)
+        return 1
+
+    started = central_supervisor.start_supervisor(prepared["record"], root)
+    if not started.get("ok"):
+        print(
+            f"error: supervisor start failed for {coordinator_id}: {started.get('error')}",
+            file=sys.stderr,
         )
-    except Exception as exc:
-        print(f"error: launch failed: {exc}", file=sys.stderr)
-        return 1
-
-    coordinator_id = record.get("id")
-    if not coordinator_id:
-        print("error: launch produced no coordinator id", file=sys.stderr)
-        return 1
-
-    try:
-        central_supervisor.start_supervisor(record, root)
-    except Exception as exc:
-        print(f"error: supervisor start failed: {exc}", file=sys.stderr)
         return 1
 
     if getattr(args, "json", False):
@@ -164,12 +138,11 @@ def handle_message(args: argparse.Namespace) -> int:
 
     try:
         message_id = central_messages.send(
-            root=root,
-            coordinator_id=coordinator_id,
-            text=text,
-            reply_to=reply_to,
+            root,
+            coordinator_id,
+            central_messages.owner_message(coordinator_id, text, reply_to),
         )
-    except Exception as exc:
+    except (central_messages.MessageError, OSError) as exc:
         print(f"error: message failed: {exc}", file=sys.stderr)
         return 1
 
@@ -220,30 +193,32 @@ def handle_control(args: argparse.Namespace) -> int:
     action = args.action
 
     if action == "recover":
-        # Recovery is a registry state transition; controls only steer live owners.
+        # Recovery is an owner decision on the registry; controls only steer live owners.
         try:
-            record = central_registry.load_registry(root)
-            coordinators = record.get("coordinators", {})
-            row = coordinators.get(coordinator_id)
-            if not isinstance(row, dict):
-                print(
-                    f"error: no coordinator {coordinator_id!r} registered",
-                    file=sys.stderr,
-                )
-                return 2
-            state = row.get("state")
-            if state not in {"failed", "stopped"}:
-                print(
-                    f"error: coordinator is {state!r}; recover applies only to failed/stopped",
-                    file=sys.stderr,
-                )
-                return 2
-            central_registry.update_record(root, coordinator_id, {"state": "created"})
-        except Exception as exc:
+            row = central_registry.load_registry(root).get("coordinators", {}).get(coordinator_id)
+        except central_registry.RegistryError as exc:
             print(f"error: recover failed: {exc}", file=sys.stderr)
             return 1
+        if not isinstance(row, dict):
+            print(f"error: no coordinator {coordinator_id!r} registered", file=sys.stderr)
+            return 2
+        state = row.get("state")
+        if state not in {"failed", "stopped"}:
+            print(
+                f"error: coordinator is {state!r}; recover applies only to failed/stopped",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            result = central_recovery.recover(root, coordinator_id, "restart")
+        except central_recovery.RecoveryError as exc:
+            print(f"error: recover failed: {exc}", file=sys.stderr)
+            return 2
+        if not result.get("ok"):
+            print(f"error: recover failed: {result.get('reason')}", file=sys.stderr)
+            return 1
         if getattr(args, "json", False):
-            print(json.dumps({"ok": True, "action": "recover"}, indent=2))
+            print(json.dumps({"ok": True, "action": "recover", "state": result.get("state")}, indent=2))
         else:
             print(f"recovered {coordinator_id}")
         return 0
@@ -271,6 +246,17 @@ def handle_control(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# central (terminal screen)
+# ---------------------------------------------------------------------------
+
+
+def handle_central(args: argparse.Namespace) -> int:
+    """Open the refreshing central screen, or print one snapshot."""
+    options = {"once": args.once, "plain": args.plain, "poll": args.poll}
+    return central_screen.run_screen(_central_dir(args), options)
+
+
+# ---------------------------------------------------------------------------
 # supervisor (private entry)
 # ---------------------------------------------------------------------------
 
@@ -278,7 +264,7 @@ def handle_control(args: argparse.Namespace) -> int:
 def _handle_supervisor(args: argparse.Namespace) -> int:
     """Private entry used by detached supervisors; not part of the public CLI."""
     return central_supervisor.supervisor_main(
-        [getattr(args, "coordinator_id", ""), getattr(args, "root", "")]
+        ["--central-dir", args.root, "--coordinator", args.coordinator_id]
     )
 
 
@@ -290,10 +276,13 @@ def _handle_supervisor(args: argparse.Namespace) -> int:
 def add_central_subcommands(subparsers: Any, common: Any = None) -> None:
     """Register the central subcommands on an existing argparse subparsers group.
 
-    ``common`` is accepted for compatibility with :mod:`cli`'s call site but
-    is currently unused; central subcommands define their own arguments.
+    ``common`` (``--project``/``--json``) is shared with the other commands
+    when given.
     """
-    launch_parser = subparsers.add_parser("launch", help="start a new coordinator")
+    parents = [common] if common is not None else []
+    launch_parser = subparsers.add_parser(
+        "launch", parents=parents, help="start a new coordinator"
+    )
     launch_parser.add_argument("--repo", required=True, help="path to the source repository")
     launch_parser.add_argument(
         "--request-file", required=True, help="path to the request/spec file"
@@ -325,10 +314,29 @@ def add_central_subcommands(subparsers: Any, common: Any = None) -> None:
         action="store_true",
         help="install ACC into the worktree without prompting",
     )
+    launch_parser.add_argument(
+        "--release-root",
+        help="released ACC bundle the worktree must match (default: this one)",
+    )
     launch_parser.add_argument("--central-dir", help="override central storage directory")
     launch_parser.set_defaults(handler=handle_launch)
 
-    message_parser = subparsers.add_parser("message", help="send a message to a coordinator")
+    central_parser = subparsers.add_parser(
+        "central", parents=parents, help="watch every coordinator in one screen"
+    )
+    central_parser.add_argument(
+        "--once", action="store_true", help="print one snapshot and exit"
+    )
+    central_parser.add_argument(
+        "--plain", action="store_true", help="no colors or screen clearing"
+    )
+    central_parser.add_argument(
+        "--poll", type=float, default=1.0, help="seconds between refreshes"
+    )
+    central_parser.add_argument("--central-dir", help="override central storage directory")
+    central_parser.set_defaults(handler=handle_central)
+
+    message_parser = subparsers.add_parser("message", parents=parents, help="send a message to a coordinator")
     message_parser.add_argument("id", help="coordinator id")
     message_parser.add_argument("--text", required=True, help="message body")
     message_parser.add_argument("--reply-to", help="question id this replies to")
@@ -336,7 +344,7 @@ def add_central_subcommands(subparsers: Any, common: Any = None) -> None:
     message_parser.set_defaults(handler=handle_message)
 
     attach_parser = subparsers.add_parser(
-        "attach", help="enter a coordinator conversation interactively"
+        "attach", parents=parents, help="enter a coordinator conversation interactively"
     )
     attach_parser.add_argument("id", help="coordinator id")
     attach_parser.add_argument(
@@ -346,7 +354,7 @@ def add_central_subcommands(subparsers: Any, common: Any = None) -> None:
     attach_parser.set_defaults(handler=handle_attach)
 
     for action in ("pause", "resume", "stop", "recover"):
-        ctrl = subparsers.add_parser(action, help=f"{action} a coordinator")
+        ctrl = subparsers.add_parser(action, parents=parents, help=f"{action} a coordinator")
         ctrl.add_argument("id", help="coordinator id")
         ctrl.add_argument("--central-dir", help="override central storage directory")
         ctrl.set_defaults(handler=handle_control, action=action)

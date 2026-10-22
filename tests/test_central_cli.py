@@ -11,20 +11,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import time
 import uuid
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from crew_chief import central_registry
+from crew_chief import central_config, central_messages, central_registry, cli
 from crew_chief.central_cli import (
     add_central_subcommands,
     handle_attach,
+    handle_central,
     handle_control,
     handle_launch,
     handle_message,
 )
+from test_central_supervisor import CLAUDE_HELP, FAKE_CLI
 
 
 # ---------------------------------------------------------------------------
@@ -229,101 +233,197 @@ class TestHandleLaunchValidation:
 
 
 # ---------------------------------------------------------------------------
-# handle_message — delegates to central_messages.send
+# real subcommands through cli.main — nothing below the parser is mocked
 # ---------------------------------------------------------------------------
 
 
-class TestHandleMessage:
-    def test_success_prints_message_id(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def _main(*argv: str) -> int:
+    return cli.main(list(argv))
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def _repo_with_acc(path: Path) -> Path:
+    """A git repo whose installed ACC matches this release (0.4.0)."""
+    path.mkdir()
+    _git(path, "init")
+    _git(path, "config", "user.name", "Test User")
+    _git(path, "config", "user.email", "test@example.com")
+    init = path / ".claude" / "skills" / "crew-chief" / "scripts" / "crew_chief" / "__init__.py"
+    init.parent.mkdir(parents=True)
+    init.write_text('__version__ = "0.4.0"\n', encoding="utf-8")
+    _git(path, "add", ".")
+    _git(path, "commit", "-m", "initial commit")
+    return path
+
+
+def _wait_for(condition, timeout_s: float = 30.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.1)
+    return False
+
+
+class TestRealSubcommands:
+    def test_launch_prepares_and_starts_a_supervisor(
+        self, tmp_path: Path, fake_bin, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fake_bin("claude", FAKE_CLI.replace("__HELP__", repr(CLAUDE_HELP)))
+        repo = _repo_with_acc(tmp_path / "repo")
+        request = tmp_path / "req.md"
+        request.write_text("# request\n\nSay hello.\n", encoding="utf-8")
+        root = tmp_path / "central"
+
+        rc = _main(
+            "launch", "--json", "--repo", str(repo), "--request-file", str(request),
+            "--mode", "raw-request", "--authorize-raw", "--cli", "claude",
+            "--central-dir", str(root),
+        )
+
+        captured = capsys.readouterr()
+        assert rc == 0, captured.err
+        coordinator_id = json.loads(captured.out)["coordinator_id"]
+        coord = root / "coordinators" / coordinator_id
+        assert (coord / "request.md").read_bytes() == request.read_bytes()
+
+        # The detached supervisor runs one fake round and releases its lease.
+        def state() -> str:
+            return central_registry.load_registry(root)["coordinators"][coordinator_id]["state"]
+
+        assert _wait_for(lambda: state() == "completed")
+        assert _wait_for(lambda: not (coord / "supervisor.lock").exists())
+
+    def test_launch_failure_is_reported_not_raised(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo = tmp_path / "not-git"
+        repo.mkdir()
+        request = tmp_path / "req.md"
+        request.write_text("run", encoding="utf-8")
+        rc = _main(
+            "launch", "--repo", str(repo), "--request-file", str(request),
+            "--mode", "raw-request", "--authorize-raw", "--cli", "claude",
+            "--central-dir", str(tmp_path / "central"),
+        )
+        assert rc == 1
+        assert "launch failed" in capsys.readouterr().err
+
+    def test_message_lands_in_the_inbox(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         root, record = _prepared(tmp_path)
-        sent: dict[str, Any] = {}
-
-        def fake_send(*, root: Path, coordinator_id: str, text: str, reply_to: str | None) -> str:
-            sent.update({"root": root, "id": coordinator_id, "text": text, "reply_to": reply_to})
-            return "msg-1"
-
-        monkeypatch.setattr("crew_chief.central_cli.central_messages.send", fake_send)
-        args = _parse(["message", record["id"], "--text", "hello"])
-        args.project = str(root.parent)
-        args.central_dir = str(root)
-        rc = handle_message(args)
+        rc = _main("message", record["id"], "--text", "hello", "--json",
+                   "--central-dir", str(root))
         assert rc == 0
-        assert sent["text"] == "hello"
-        assert "msg-1" in capsys.readouterr().out
+        message_id = json.loads(capsys.readouterr().out)["message_id"]
+        stored = central_messages.pending(root, record["id"], "in")
+        assert [(m["id"], m["kind"], m["body"]) for m in stored] == [
+            (message_id, "message", "hello")
+        ]
 
-    def test_json_output(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_message_reply_answers_a_stored_question(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         root, record = _prepared(tmp_path)
-        monkeypatch.setattr(
-            "crew_chief.central_cli.central_messages.send",
-            lambda **kw: "msg-2",
-        )
-        args = _parse(["--json", "message", record["id"], "--text", "hi"])
-        args.project = str(root.parent)
-        args.central_dir = str(root)
-        rc = handle_message(args)
-        assert rc == 0
-        payload = json.loads(capsys.readouterr().out)
-        assert payload == {"ok": True, "message_id": "msg-2"}
+        question = central_messages.send(root, record["id"], {
+            "direction": "out", "kind": "question", "body": "which db?",
+        })
+        rc = _main("message", record["id"], "--text", "sqlite",
+                   "--reply-to", question, "--central-dir", str(root))
+        assert rc == 0, capsys.readouterr().err
+        answers = [m for m in central_messages.pending(root, record["id"], "in")
+                   if m["kind"] == "answer"]
+        assert answers[0]["reply_to"] == question
 
-
-# ---------------------------------------------------------------------------
-# handle_attach — delegates to central_attach.attach
-# ---------------------------------------------------------------------------
-
-
-class TestHandleAttach:
-    def test_success_returns_0(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-        root, record = _prepared(tmp_path, state="paused")
-        monkeypatch.setattr(
-            "crew_chief.central_cli.central_attach.attach",
-            lambda *a, **kw: {"ok": True, "state": "attached"},
-        )
-        args = _parse(["attach", record["id"]])
-        args.project = str(root.parent)
-        args.central_dir = str(root)
-        rc = handle_attach(args)
-        assert rc == 0
-        assert "attached to" in capsys.readouterr().out
-
-    def test_failure_returns_1(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_message_reply_to_unknown_question_fails(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         root, record = _prepared(tmp_path)
-        monkeypatch.setattr(
-            "crew_chief.central_cli.central_attach.attach",
-            lambda *a, **kw: {"ok": False, "state": "running", "reason": "busy"},
-        )
-        args = _parse(["attach", record["id"]])
-        args.project = str(root.parent)
-        args.central_dir = str(root)
-        rc = handle_attach(args)
+        rc = _main("message", record["id"], "--text", "x",
+                   "--reply-to", str(uuid.uuid4()), "--central-dir", str(root))
         assert rc == 1
-        assert "busy" in capsys.readouterr().err
+        assert "message failed" in capsys.readouterr().err
+
+    def test_attach_falls_back_without_an_interactive_terminal(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        root, record = _prepared(tmp_path, state="paused")
+        rc = _main("attach", record["id"], "--central-dir", str(root))
+        assert rc == 1
+        assert "non-interactive" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("action", ["pause", "resume", "stop"])
+    def test_controls_write_a_durable_control_file(
+        self, tmp_path: Path, action: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        root, record = _prepared(tmp_path)
+        rc = _main(action, record["id"], "--json", "--central-dir", str(root))
+        assert rc == 0
+        control_id = json.loads(capsys.readouterr().out)["control_id"]
+        path = root / "coordinators" / record["id"] / "control" / f"{control_id}.json"
+        assert json.loads(path.read_text(encoding="utf-8"))["command"] == action
+
+    def test_central_once_prints_one_snapshot(
+        self, tmp_path: Path, capfd: pytest.CaptureFixture[str]
+    ) -> None:
+        root, _ = _prepared(tmp_path)
+        rc = _main("central", "--once", "--central-dir", str(root))
+        assert rc == 0
+        assert "Central terminal" in capfd.readouterr().out
+
+    def test_central_routes_to_the_screen(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: dict[str, Any] = {}
+
+        def fake_loop(root, options=None, io=None, clock=None):
+            seen.update(root=root, options=options)
+            return 0
+
+        monkeypatch.setattr("crew_chief.central_cli.central_screen.run_screen", fake_loop)
+        args = cli.build_parser().parse_args(
+            ["central", "--plain", "--poll", "2", "--central-dir", str(tmp_path)]
+        )
+        assert args.handler is handle_central
+        assert args.handler(args) == 0
+        assert seen == {"root": tmp_path, "options": {"once": False, "plain": True, "poll": 2.0}}
+
+    def test_private_supervisor_entry_reaches_the_supervisor(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        root, record = _prepared(tmp_path, state="failed")
+        rc = _main("_supervisor", "--coordinator-id", record["id"], "--root", str(root))
+        # Exit 1 comes from supervise(); a malformed argv would exit 2.
+        assert rc == 1
+        assert "expected --central-dir" not in capsys.readouterr().err
+
+    def test_default_root_is_the_user_config_dir_from_any_cwd(
+        self, tmp_path: Path, home_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv(central_config.CENTRAL_DIR_ENV, raising=False)
+        root = home_dir / ".config" / "agent-crew-chief" / "central"
+        record = _record_for(tmp_path)
+        central_registry.register(root, record)
+        for name in ("a", "b"):
+            cwd = tmp_path / name
+            cwd.mkdir()
+            monkeypatch.chdir(cwd)
+            assert _main("pause", record["id"]) == 0
+            assert not (cwd / ".crew-chief").exists()
+        controls = list((root / "coordinators" / record["id"] / "control").glob("*.json"))
+        assert len(controls) == 2
 
 
 # ---------------------------------------------------------------------------
-# handle_control — pause/resume/stop via controls, recover via registry
+# handle_control — recover via central_recovery
 # ---------------------------------------------------------------------------
 
 
 class TestHandleControl:
-    def test_pause_writes_control(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-        root, record = _prepared(tmp_path)
-        written: dict[str, str] = {}
-
-        def fake_request(r: Path, cid: str, action: str) -> str:
-            written.update({"action": action, "cid": cid})
-            return "ctrl-1"
-
-        monkeypatch.setattr("crew_chief.central_cli.central_controls.request_control", fake_request)
-        args = _parse(["pause", record["id"]])
-        args.project = str(root.parent)
-        args.central_dir = str(root)
-        rc = handle_control(args)
-        assert rc == 0
-        assert written["action"] == "pause"
-        assert "pause requested" in capsys.readouterr().out
-
     def test_recover_resets_failed_state(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:

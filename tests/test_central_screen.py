@@ -186,8 +186,8 @@ def test_message_key_sends():
 
     sent_messages: list[dict] = []
 
-    def fake_send(root, coordinator_id, text, reply_to=None):
-        sent_messages.append({"cid": coordinator_id, "text": text, "reply_to": reply_to})
+    def fake_send(root, coordinator_id, envelope):
+        sent_messages.append({"cid": coordinator_id, **envelope})
         return "msg-1"
 
     keys = ["m", "q"]
@@ -201,6 +201,7 @@ def test_message_key_sends():
     assert len(sent_messages) == 1
     assert sent_messages[0]["cid"] == "c1"
     assert sent_messages[0]["reply_to"] == "q1"
+    assert sent_messages[0]["kind"] == "answer"
 
 
 # --- SC-005: p toggles pause/resume ----------------------------------------

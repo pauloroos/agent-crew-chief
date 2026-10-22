@@ -53,7 +53,7 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import central_cli, economy, records, setup, spend
+from . import __version__, central_cli, economy, records, setup, spend
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
 from .config import (
@@ -1467,6 +1467,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="crew-chief", description="Coordinate several executor CLIs."
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     discover_parser = subcommands.add_parser(

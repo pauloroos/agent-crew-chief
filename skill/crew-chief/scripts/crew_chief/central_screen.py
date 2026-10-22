@@ -67,8 +67,14 @@ class _IO(Protocol):
 
 
 class _StdIO:
-    stdin = sys.stdin
-    stdout = sys.stdout
+    # Read at use time: the streams may be replaced after import.
+    @property
+    def stdin(self) -> Any:
+        return sys.stdin
+
+    @property
+    def stdout(self) -> Any:
+        return sys.stdout
 
 
 def _snapshot(root: Path, now: Any) -> dict:
@@ -144,7 +150,7 @@ def _handle_message(root: Path, snap: dict, selected: int, io: _IO) -> None:
                 reply_to = q.get("id")
                 break
     try:
-        central_messages.send(root=root, coordinator_id=str(cid), text="ack", reply_to=reply_to)
+        central_messages.send(root, str(cid), central_messages.owner_message(str(cid), "ack", reply_to))
     except Exception:
         pass
 

@@ -28,6 +28,7 @@ __all__ = [
     "ENVELOPE_READ_MAX_BYTES",
     "MessageError",
     "acknowledge",
+    "owner_message",
     "pending",
     "questions",
     "send",
@@ -437,6 +438,17 @@ def _ack(path: Path) -> dict:
     except (ValueError, TypeError, AttributeError) as exc:
         raise MessageError(f"{path}: invalid ack time") from exc
     return value
+
+
+def owner_message(coordinator_id: str, body: str, reply_to: str | None = None) -> dict:
+    """The inbound envelope for an owner's text; a reply answers a stored question."""
+    return {
+        "coordinator_id": coordinator_id,
+        "direction": "in",
+        "kind": "answer" if reply_to else "message",
+        "reply_to": reply_to,
+        "body": body,
+    }
 
 
 def send(root: Path, coordinator_id: str, envelope: dict) -> str:
