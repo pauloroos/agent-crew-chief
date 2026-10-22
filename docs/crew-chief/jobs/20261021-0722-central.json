@@ -5443,17 +5443,226 @@
           "role": "review"
         }
       ],
-      "next_attempt": 8
+      "next_attempt": 8,
+      "accepted": {
+        "attempt": 6,
+        "branch": "crew/20261021-0722-central-31-self",
+        "at": "2026-10-22T12:54:12.551776+00:00"
+      }
     },
     {
       "n": 32,
       "title": "T032 Build public dashboard cards charts and history in tests/test_central_web_assets.py, skill/crew-chief/web/index.html, skill/crew-chief/web/central.css, skill/crew-chief/web/central.js; depends on T031",
       "type": "code",
       "risk": "medium",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode-go/beam-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T12:54:28.669674+00:00",
+          "duration_s": 241.7,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "read\":66432,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792673889489,\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"part\":{\"id\":\"prt_163b0bcd10012QvDj1wOzYIYGw\",\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"messageID\":\"msg_163b0b99b001NgmZWXcAjrm0SB\",\"type\":\"step-start\",\"snapshot\":\"1e4b1c3d6d1cee61a9b8e88bbe1d5dddea17b41d\"}}\n{\"type\":\"tool_use\",\"timestamp\":1792673890331,\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"part\":{\"partID\":\"prt_163b0bd5d001WhJF3e9Rh8J59d\",\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"messageID\":\"msg_163b0b99b001NgmZWXcAjrm0SB\",\"type\":\"tool\",\"id\":\"call-6a6d89e3-7cb4-41e9-998c-68da17bb9647\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-32-1\\\" && (node --check skill/crew-chief/web/central.js && echo \\\"JS OK\\\") 2>&1 | tail; (python -c \\\"import html.parser\\\" && echo py ok)\"},\"output\":\"JS OK\\npy ok\\n\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"exit\":0},\"content\":[{\"type\":\"text\",\"text\":\"JS OK\\npy ok\\n\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\": \\\"cd \\\\\\\"E:\\\\\\\\DEV\\\\\\\\acc-v041.crew\\\\\\\\20261021-0722-central-32-1\\\\\\\" && (node --check skill/crew-chief/web/central.js && echo \\\\\\\"JS OK\\\\\\\") 2>&1 | tail; (python -c \\\\\\\"import html.parser\\\\\\\" && echo py ok)\\\"}\"},\"time\":{\"start\":1792673889629,\"end\":1792673890331}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792673890389,\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"part\":{\"id\":\"prt_163b0c055001u65ie0MSg5ly7k\",\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"messageID\":\"msg_163b0b99b001NgmZWXcAjrm0SB\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"1e4b1c3d6d1cee61a9b8e88bbe1d5dddea17b41d\",\"cost\":0,\"tokens\":{\"input\":193,\"output\":87,\"reasoning\":40,\"cache\":{\"read\":68480,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792673891185,\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"part\":{\"id\":\"prt_163b0c371001DKD1EkOa2KsqkY\",\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"messageID\":\"msg_163b0c07f001f4UO1gM9nQr8zK\",\"type\":\"step-start\",\"snapshot\":\"1e4b1c3d6d1cee61a9b8e88bbe1d5dddea17b41d\"}}\n{\"type\":\"tool_use\",\"timestamp\":1792673893804,\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"part\":{\"partID\":\"prt_163b0c394002c8IiYGf02lYCJX\",\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"messageID\":\"msg_163b0c07f001f4UO1gM9nQr8zK\",\"type\":\"tool\",\"id\":\"call-1ec947fa-91c1-42ad-b466-16d644bbd143\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-32-1\\\" && python -m pytest tests/test_central_web.py -q 2>&1 | tail -15\"},\"output\":\".....................s.......                                            [100%]\\r\\n28 passed, 1 skipped in 0.87s\\r\\n\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"exit\":0},\"content\":[{\"type\":\"text\",\"text\":\".....................s.......                                            [100%]\\r\\n28 passed, 1 skipped in 0.87s\\r\\n\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\": \\\"cd \\\\\\\"E:\\\\\\\\DEV\\\\\\\\acc-v041.crew\\\\\\\\20261021-0722-central-32-1\\\\\\\" && python -m pytest tests/test_central_web.py -q 2>&1 | tail -15\\\"}\"},\"time\":{\"start\":1792673891220,\"end\":1792673893804}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792673893867,\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"part\":{\"id\":\"prt_163b0cdeb0012ay4z523xIQKqG\",\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"messageID\":\"msg_163b0c07f001f4UO1gM9nQr8zK\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"1e4b1c3d6d1cee61a9b8e88bbe1d5dddea17b41d\",\"cost\":0,\"tokens\":{\"input\":145,\"output\":69,\"reasoning\":21,\"cache\":{\"read\":68672,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792673895440,\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"part\":{\"id\":\"prt_163b0d410001X7C449g5rdjxfs\",\"sessionID\":\"ses_e9c529ccbffeutiqWE2UmU7njE\",\"messageID\":\"msg_163b0cdfa001vxKuJnKfodvlpW\",\"type\":\"step-start\",\"snapshot\":\"1e4b1c3d6d1cee61a9b8e88bbe1d5dddea17b41d\"}}\n",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/web/central.css",
+              "added": 71,
+              "deleted": 0
+            },
+            {
+              "file": "skill/crew-chief/web/central.js",
+              "added": 385,
+              "deleted": 0
+            },
+            {
+              "file": "skill/crew-chief/web/index.html",
+              "added": 68,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_web_assets.py",
+              "added": 173,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-32-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-32-1",
+          "base": null,
+          "steps": 46,
+          "tokens_in": 2087270,
+          "tokens_out": 13847,
+          "tokens_total": 2101117,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "8688b83ea04775be44a7e2a80a1ba2d31fb4770f",
+          "end_sha": "adfc37f16171e894bde92fe8e2243cb17ab81c8d"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode/glm-5.3-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T12:58:45.734333+00:00",
+          "duration_s": 6.2,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-32-2",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-32-2",
+          "base": null,
+          "steps": 1,
+          "tokens_in": 1409,
+          "tokens_out": 29,
+          "tokens_total": 1438,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false,
+          "start_sha": "8688b83ea04775be44a7e2a80a1ba2d31fb4770f",
+          "end_sha": "8688b83ea04775be44a7e2a80a1ba2d31fb4770f"
+        },
+        {
+          "n": 3,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T13:01:18.822251+00:00",
+          "duration_s": 0,
+          "note": "Salvaged Beam adfc37f after two free failures, retained all four allowed files. Added executable Node DOM tests: red2/green12; strengthened vacuous assertion, fixed unknown/chart dedup, responsive focus, working synthetic --smoke entry. No old baseline files/assertions deleted. Full reviewed diff starts at8688b83. No browser available; Node DOM/HTTP proof12 passed, node --check passed.",
+          "branch": "crew/20261021-0722-central-32-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-32-self",
+          "start_sha": "adfc37f16171e894bde92fe8e2243cb17ab81c8d",
+          "end_sha": "498bdc99e773d164f7d22341a4a5bb80aee5507a",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web_assets.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 4,
+          "executor": "antigravity:claude-opus-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:01:47.004298+00:00",
+          "duration_s": 47.0,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Review of T032. HEAD was 498bdc9 at the start and is still 498bdc9 at the end. I made no edits and the working tree is clean.\n\n**Proof:** `python -m pytest tests/test_central_web_assets.py -q` gave 12 passed. Node was installed, so the DOM tests ran instead of skipping.\n\n**Scope:** The task diff `8688b83..HEAD` adds only the 4 allowed files (+817 lines) and deletes nothing. The 3 web assets are tracked under `skill/crew-chief/web`.\n\n**Spec verdict**\n- FR-016: done for T032's part. Cards, pieces, questions, history, charts, scoreboard and totals all render from `/api/snapshot`. The POST buttons are disabled, as intended until T033. Making the CLI is T034's job.\n- FR-021: done. The fixtures are synthetic, use a temp directory and patch the snapshot. No personal paths, client names or credentials appear.\n- SC-009 (T032's part): done. Escaping is checked with a Node DOM fake that throws if `innerHTML` is used and confirms no `img` or `script` elements are created. Snapshot parity and empty states are tested. The rest belongs to T031 and T033.\n- US5/AC1: done. All sections read from the one snapshot API, and the tests confirm the only request is `/api/snapshot`.\n- extra:\n  - The `--smoke` demo server inside the test file. The brief asks for it, so it's acceptable.\n  - Responsive and focus CSS.\n\n**Quality verdict**\n- Critical: none.\n- Important: in `central.js` around lines 252–263, `renderCharts` still builds `rows` from every coordinator, then throws them away when `totals.models` exists. The loop is dead code in that case, and the leftover comment \"Also totals-level model chart… none.\" is stale. If `totals.models` is missing, it falls back to per-coordinator rows and double-counts again.\n- Minor:\n  - `test_xss_text_not_markup` checks the content type with a second request through `headers_content_type`. That's a pointless extra round trip.\n  - The `__main__`/`--smoke` block sits in the middle of the module, before `test_socket_released`. It works, but it's hard to spot. Putting it at the end would read better.\n  - The `.catch(function (err)` in `load()` never uses `err`.\n  - The fallback bar width `Math.max(2, …)` still runs for bars that are hidden.\n  - The new Node tests skip quietly when Node isn't installed, so CI without Node loses the DOM coverage.\n\nFinal verdict: accept T032, with one Important cleanup in `renderCharts`.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 151278,
+          "tokens_out": 2200,
+          "tokens_total": 46856,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 5,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T13:03:28.722728+00:00",
+          "duration_s": 0,
+          "note": "Final T032 correction after independent Opus: red1 failed, green13 passed. Aggregate missing across multiple coordinators is explicit unknown; no duplicate guessed chart. Review full8688b83..HEAD, retain all Beam and prior fixes.",
+          "branch": "crew/20261021-0722-central-32-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-32-self",
+          "start_sha": "498bdc99e773d164f7d22341a4a5bb80aee5507a",
+          "end_sha": "9f1b89e541a85fc7290097a9ae54bbc754d3e346",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web_assets.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 6,
+          "executor": "antigravity:gemini-3.8-flash-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:03:51.488032+00:00",
+          "duration_s": 44.9,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "HEAD confirmed: 9f1b89e\n\n## Proof\n`python -m pytest tests/test_central_web_assets.py -q` -> 13 passed in 0.42s.\n\n## Spec verdict\n- FR-016: done. Dashboard packaged static assets (cards, charts, history, scoreboard, questions, controlled terminal placeholder) provided cleanly.\n- FR-021: done. No private data, paths, client names, or real configs. Uses synthetic node/python fixtures.\n- SC-009: done. Tests verify DOM snapshot parity, escaping/XSS prevention, error fallbacks, and multi-coordinator handling without live coordinators.\n- US5/AC1: done. Cards, pieces, job history, token charts, scoreboard, and questions align with standard snapshot schema.\n- extra: none. Responsive keyboard CSS and smoke fixture fall strictly within dashboard boundary.\n\n## Quality verdict\n- Critical: none.\n- Important: none. (Chart aggregation fallback issue from prior review is properly resolved and verified with regression test `test_multi_coordinator_chart_does_not_guess_missing_aggregate`).\n- Minor: none. Clean vanilla JS/CSS/HTML implementation, proper textContent escaping, zero runtime dependencies.\n\nHEAD confirmed: 9f1b89e\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 105717,
+          "tokens_out": 623,
+          "tokens_total": 106340,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Salvaged timeout work had vacuous XSS assertion and two proved DOM defects: unknown token totals rendered as zero and duplicated model rows ignored deduplicated shared aggregate. Red 2 failed/10 passed; strengthened existing assertions and fixed both, green12. Browser smoke command repaired to actually serve synthetic snapshots with cleanup.",
+          "executor": "opencode:opencode-go/beam-free",
+          "at": "2026-10-22T13:01:18.611455+00:00"
+        },
+        {
+          "reason": "Free Opus review requested explicit behavior for missing aggregate with multiple coordinators and removal of discarded chart loop. Red1 failed; prefer shared aggregate, allow unambiguous single-coordinator fallback only, otherwise show aggregate unavailable. Green13.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T13:03:28.461948+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode-go/beam-free": {
+          "score": 60,
+          "explain": "adherence 3/4 → 75; 1 correction −15; 0 extra; penalties none → 60",
+          "corrections": 1,
+          "done": 3,
+          "missing": 1,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/beam-free",
+          "graded_at": "2026-10-22T13:05:06.234285+00:00"
+        },
+        "coordinator:self": {
+          "score": 85,
+          "explain": "adherence 4/4 → 100; 1 correction −15; 0 extra; penalties none → 85",
+          "corrections": 1,
+          "done": 4,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:self",
+          "graded_at": "2026-10-22T13:05:06.498566+00:00"
+        }
+      },
       "ref": "T032",
       "task_text": "Build public dashboard cards charts and history in tests/test_central_web_assets.py, skill/crew-chief/web/index.html, skill/crew-chief/web/central.css, skill/crew-chief/web/central.js; depends on T031",
       "picks": [
@@ -5466,8 +5675,26 @@
           "pick": "opencode:opencode-go/beam-free",
           "reason": "best score 59.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free",
           "at": "2026-10-22T12:47:05.730698+00:00"
+        },
+        {
+          "pick": "opencode:opencode/glm-5.3-flash-free",
+          "reason": "best score 53.1 (opencode:opencode/glm-5.3-flash-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-22T12:58:37.532760+00:00"
+        },
+        {
+          "pick": "antigravity:claude-opus-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-opus-5-5-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:01:28.946512+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "antigravity:gemini-3.8-flash-low",
+          "reason": "unrated, no history (antigravity:gemini-3.8-flash-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:03:35.793697+00:00",
+          "role": "review"
         }
-      ]
+      ],
+      "next_attempt": 7
     },
     {
       "n": 33,
@@ -5479,7 +5706,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T033",
-      "task_text": "Authorize web messages replies and lifecycle actions in tests/test_central_web_actions.py, skill/crew-chief/scripts/crew_chief/central_web.py, skill/crew-chief/web/central.js; depends on T031, T032"
+      "task_text": "Authorize web messages replies and lifecycle actions in tests/test_central_web_actions.py, skill/crew-chief/scripts/crew_chief/central_web.py, skill/crew-chief/web/central.js; depends on T031, T032",
+      "picks": [
+        {
+          "pick": "opencode:opencode/mimo-v2.6-flash-free",
+          "reason": "unrated, no history (opencode:opencode/mimo-v2.6-flash-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free",
+          "at": "2026-10-22T13:02:20.885743+00:00"
+        }
+      ]
     },
     {
       "n": 34,
@@ -6570,6 +6804,18 @@
       "n": 104,
       "text": "T031 final free Gemini low review confirms 4e837d4 and full task diff 9294385..4e837d4, proof 28 passed/1 skipped, all 7 boundary-scoped refs done, no extras or Critical/Important/Minor findings. Earlier Sonnet auth_token finding proved/fixed; claim slash labels corrupted disproved by regression. UI/actions/CLI belong to T032/T033/T034. Final diff adds only two allowed files, no existing deletions. Accept T031 and rerun branch proof. Coordinator work cost/tokens unknown, no paid executor.",
       "at": "2026-10-22T12:54:11.563133+00:00",
+      "promoted": null
+    },
+    {
+      "n": 105,
+      "text": "T032 two free failures: Beam opencode-go timeout240 (four allowed files produced at adfc37f but no final proof verdict) and GLM free quota. Coordinator will salvage Beam attempt1 rather than redo assets, run/strengthen proof, fix verified gaps, and obtain independent free review. No failed evidence removed and no paid executor. Any synthetic browser smoke procedure goes in test module and coordinator phase report, avoiding task-scope expansion.",
+      "at": "2026-10-22T12:59:13.743395+00:00",
+      "promoted": null
+    },
+    {
+      "n": 106,
+      "text": "T032 final free Gemini3.8 low review confirms9f1b89e, proof13 passed including Node DOM (no runtime skips), refs4/4 done/no extras/no findings. Full8688b83..HEAD adds exactly4 allowed files, zero baseline deletions. Beam work salvaged, red regressions fixed rather than assertions weakened; responsive/focus CSS and synthetic smoke are inherent dashboard scope. Accept and repeat branch proof. No installed browser/Playwright available, so no claim of physical browser smoke; exact synthetic procedure preserved for report.",
+      "at": "2026-10-22T13:05:06.747629+00:00",
       "promoted": null
     }
   ]
