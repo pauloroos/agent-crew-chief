@@ -6669,11 +6669,262 @@
           "cost_known": true,
           "start_sha": "23651b303660e61b84cf7e3c52673c5b1bb3ce66",
           "end_sha": "3c3d69f50aff5d6e0ca097e4e9a5b3049c50bc33"
+        },
+        {
+          "n": 3,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T14:40:11.862862+00:00",
+          "duration_s": null,
+          "note": "After2failed free attempts, replaced unsafe unaccepted Beam design with actual Orca command-schema probe and checkout-only transport. Core lifecycle/session/authorization/messages/attach retained; worktree_creator injection scoped before edits in ruling123. Own initial red1failed10errors missing module; request-option red1/11pass and source-checkout red1 reproduced before guards. Fixed fake Git cwd. Final57passed44.05s across Orca/launch/default proofs. Actual Python fake-executable processes and temporary Git only; no live model/Orca in tests. No deleted existing tests; only tiny core seam, no Phase8.",
+          "branch": "crew/20261021-0722-central-37-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-37-self",
+          "start_sha": "f25a931",
+          "end_sha": "808d7d7fbb9b23a92b8d31540dc5bb919d665a81",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_orca.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 4,
+          "executor": "opencode:opencode/mimo-v2.6-flash-free",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T14:40:17.593525+00:00",
+          "duration_s": 5.0,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 1020,
+          "tokens_out": 29,
+          "tokens_total": 1049,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 5,
+          "executor": "opencode:opencode/nemotron-3.5-lightning-free",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T14:41:51.785732+00:00",
+          "duration_s": 81.8,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "l review.\n\n\n## Review Summary: T037 Adapt probed Orca capabilities to the backend contract\n\n**HEAD confirmed:** `808d7d7` ✓\n\n---\n\n### Acceptance Criteria Verdicts\n\n| Criterion | Verdict | Reasoning |\n|-----------|---------|-----------|\n| **FR-017** | **done** | Orca backend provides `create`, `start`, `send`, `attach`, `state` with the same core contract. Default mode never needs Orca — the `prepare_launch` gate `if backend != _BACKEND and not (backend == \"orca\" and worktree_creator is not None)` ensures the default path is unaffected. |\n| **FR-020** | **done** | No pty/curses/tmux/ConPTY. `_invoke` uses `subprocess.run(shell=False)` with temp-file-backed stdout/stderr. Windows‑safe interactive entry through the actual terminal and persisted session. |\n| **FR-021** | **done** | Tests use `tmp_path`, `monkeypatch` with `FAKE_ORCA_LOG`, `FAKE_ORCA_WT`, `AGENT_CREW_CHIEF_CENTRAL_DIR` — all temporary. No `~/.config`, no live CLI invocations, no client names or credentials in artifacts. |\n| **SC-010** | **done** | 13 tests cover: supported probe, missing binary, incompatible modes (`version`/`schema`/`flags`), partial creation, source checkout rejection, failed preflight preserving worktrees, session/message identity, explicit backend refusal, bad request diagnostics. |\n| **US6/AC3** | **done** | When probe succeeds, `create` integrates with core launch via `worktree_creator`. Incompatibility (`test_incompatible_probe_prevents_any_creation`) fails without switching backend mid‑launch. Worktree/terminal/message behavior meets the same backend contract. |\n\n---\n\n### Extra / Deletions\n\n- No extraneous code. Every change in the diff directly serves at least one criterion.\n- The `worktree_creator` parameter in `prepare_launch` is an explicitly documented backend seam (\"replaces only checkout creation; all validation, authorization and persistence below remain shared\"), not bloat.\n- No abstractions, wrappers, or \"for later\" code introduced.\n\n---\n\n### Quality Verdict\n\n| Category | Finding | File / Line |\n|----------|---------|-------------|\n| **Critical** | None | — |\n| **Important** | None | — |\n| **Minor** | The `_FLAGS` check uses `_FLAGS <= set(flags)` which is a superset check — if Orca registers extra flags beyond the required set, they are silently tolerated. This is intentional and correct for the acceptance criteria, but worth noting as a design choice. | `central_orca.py:73` |\n\n---\n\n**Final result:** All five acceptance criteria are **done**. The implementation is clean, test‑covered, and introduces no bloat or risk to the default (non‑orca) code path. The 13‑test suite passes cleanly.\n\nExtra: nothing. Deletions: none.\n\n\n## Review Complete: T037 — Adapt probed Orca capabilities to the backend contract\n\nAll acceptance criteria evaluated against the `f25a931..HEAD` diff (3 files, 347 insertions, 3 deletions), with HEAD confirmed at `808d7d7`.\n\n| Criterion | Verdict |\n|-----------|---------|\n| **FR-017** | **done** — Optional Orca backend with full launch/message/state/attach contract; default mode never needs Orca. |\n| **FR-020** | **done** — No pty/curses/tmux/ConPTY; `subprocess.run(shell=False)` + temp-file I/O. |\n| **FR-021** | **done** — Tests use `tmp_path`, `monkeypatch` env vars; no `~/.config`, no live CLIs, no private data. |\n| **SC-010** | **done** — 13 tests cover supported/missing/incompatible cases, session/message identity, Orca-independent defaults. |\n| **US6/AC3** | **done** — Probe-succeed path meets same backend contract; incompatibility fails without mid‑launch backend switch. |\n\n**Quality:** No Critical/Important findings. One Minor note: `_FLAGS` superset check at `central_orca.py:73` silently tolerates extra Orca flags (by design, correct for the criteria).\n\n**All 13 pytest tests pass.** No extra code, no bloat, no modifications to any file.\n\nExtra: nothing. Deletions: none.\n\n\nThe review is complete. All acceptance criteria are **done**, all 13 tests pass, and no files were modified. Returning to normal mode.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 9,
+          "tokens_in": 246242,
+          "tokens_out": 5319,
+          "tokens_total": 251561,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true
+        },
+        {
+          "n": 6,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T14:44:59.941911+00:00",
+          "duration_s": null,
+          "note": "T037 final full implementation after real read-only response shape correction. Preserved initial successful attempt and independent review. New actual red1 before nested-worktree fix; final focused14passed13.85s/diffcheck clean. No new real Orca resources/models; no existing tests deleted.",
+          "branch": "crew/20261021-0722-central-37-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-37-self",
+          "start_sha": "f25a931",
+          "end_sha": "e4df08447b2b74848adebdab907765c7b5a44331",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_orca.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 7,
+          "executor": "opencode:opencode/nemotron-3.5-super-vl-free",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T14:45:04.549294+00:00",
+          "duration_s": 5.2,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 963,
+          "tokens_out": 29,
+          "tokens_total": 992,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 8,
+          "executor": "opencode:opencode-go/muse-spark-1.2-contributor",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T14:46:22.543491+00:00",
+          "duration_s": 56.0,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Reading your crew brief — will carry out the review exactly as specified.\n\nHEAD confirmed: e4df084\n\nFR-017 done — `central_orca.py:39` OrcaBackend extends DefaultBackend, same launch/message/state/attach contract (`create/start/send/attach/state`); `central_backend.py:195` default_backend never resolves Orca.\nFR-020 done — no pty/curses/tmux/ConPTY; `central_orca.py:24` subprocess+TemporaryFile+timeout 30, stdlib only.\nFR-021 done — no private paths in artifacts; `tests/test_central_orca.py:10` tmp HOME/central, fake CLI `tmp_path/fake orca` with unicode/spaces, never `~/.config`.\nSC-010 done — fake-executable covers supported (`test_probe_and_backend_contract`), missing (`test_missing_binary_is_explicit`), incompatible version/schema/flags (`test_incompatible_probe_...`), session/message identity (`test_start_send...`), default independence implicit via DefaultBackend probe.\nUS6/AC3 done — explicit `backend==\"orca\"` probe succeeds then core preflight/auth/registry; incompatibility fails without mid-launch switch (`central_orca.py:81,110`, `central_launch.py:156`).\n\nextra: `central_launch.py:93` `worktree_creator` seam only — allowed per Ruling123, no other options/wrappers; no deletions.\n\nQuality: Critical — none. Important — none (seam minimal, not bloat; no fallback/cleanup per spec `central_orca.py:111`). Minor — `central_orca.py:101` lambda `common` reuses `_git` without explicit error trim; `central_orca.py:35` OSError bare path message could leak tmp path ( bounded to 700 via probe).\n\nProof `python -m pytest tests/test_central_orca.py -q` 14 passed.\n\nHEAD confirmed: e4df084\n\nSkipped full T036 prerequisite audit, live Orca binary check. Risk: Orca 1.4.237 schema assumed stable; future flag set change breaks `_FLAGS` probe.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 11,
+          "tokens_in": 330134,
+          "tokens_out": 1240,
+          "tokens_total": 331374,
+          "tokens_estimated": false,
+          "cost_usd": 0.004462532,
+          "cost_known": true
+        },
+        {
+          "n": 9,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T14:48:42.386312+00:00",
+          "duration_s": null,
+          "note": "Final T037 completion after additional red1 false-success JSON regression; explicit ok:true required, partial worktree retained without registration/fallback. All15 focused tests pass. Previous exact-HEAD free reviews preserved; new final-HEAD confirmation required. All3 allowed files, no preexisting tests deleted.",
+          "branch": "crew/20261021-0722-central-37-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-37-self",
+          "start_sha": "f25a931",
+          "end_sha": "95772cd8873a9a287a32e88b9d313101d398f1e8",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_orca.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 10,
+          "executor": "opencode:opencode-go/muse-spark-1.2-contributor",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T14:48:46.637095+00:00",
+          "duration_s": 67.0,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Crew-chief brief received — reading your instructions to execute the review.\n\nHEAD confirmed: 95772cd\nproof: python -m pytest tests/test_central_orca.py -q => 15 passed\nFR-017 done - OrcaBackend optional, probe-gated, DefaultBackend untouched; prepare_launch only allows orca with worktree_creator\nFR-020 done - _invoke uses subprocess.run shell=False TemporaryFile timeout 30 no pty/curses/tmux\nFR-021 done - tests use tmp_path central dir, fake CLI \"fake orca & unicode á.py\", never touches ~/.config\nSC-010 done - 15 fake-executable tests: supported/missing/incompatible probe, session/message identity, default independence, partial+logical-error preservation\nUS6/AC3 done - probe success => same create/start/send/attach/state contract; incompatibility/missing fails before worktree create, no fallback (WorktreeError preserved)\nextra: none - diff limited to 3 allowed files; central_launch.py:90 worktree_creator seam is declared core seam per ruling, central_orca transport validates version/schema/flags/full-id::path/common-dir/HEAD per spec\nQuality: Critical none; Important none (no bloat abstraction/dependency/wrapper); Minor central_orca.py:103 common lambda inline reduces readability; Minor central_orca.py:57 type() is not int strict bool handling intentional but obscure\nHEAD confirmed: 95772cd\n\nSkipped: full repo audit outside T037 boundary and live Orca binary check (fake only). Risk: none for this seam; Orca re-probes on every start/send/attach/state (correct but adds 3 subprocesses per call).",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 13,
+          "tokens_in": 418106,
+          "tokens_out": 3514,
+          "tokens_total": 421620,
+          "tokens_estimated": false,
+          "cost_usd": 0.0035568320000000002,
+          "cost_known": true
         }
       ],
-      "corrections": [],
+      "corrections": [
+        {
+          "reason": "Real read-only response shape result.worktree reproduced parser rejection; normalize nested worktree and retain full-ID variant. Red1 before fix, final14passed.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T14:44:59.663966+00:00"
+        },
+        {
+          "reason": "Coordinator boundary red1: exit0 with JSON ok:false and partial worktree was falsely successful; require explicit ok:true, preserve partial checkout, no fallback. Final15passed.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T14:48:42.184249+00:00"
+        },
+        {
+          "reason": "Partial code starts interactive agent before authorized core preflight and confuses terminal handle with model session; rewrite needed, successful focused fake proof did not establish real contract.",
+          "executor": "opencode:opencode-go/beam-free",
+          "at": "2026-10-22T14:49:22.514724+00:00"
+        },
+        {
+          "reason": "Own initial implementation request_file missing option raised TypeError, reproduced before diagnostic guard; preserve red/green evidence.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T14:49:23.069306+00:00"
+        },
+        {
+          "reason": "Own initial implementation accepted source checkout as new Orca worktree, reproduced red1 before source guard; preserve red/green evidence.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T14:49:24.107700+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode-go/minimax-m3.1-flash-free": {
+          "score": 0,
+          "explain": "adherence 0/5 → 0; 0 corrections; 0 extra; penalties none → 0",
+          "corrections": 0,
+          "done": 0,
+          "missing": 5,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "graded_at": "2026-10-22T14:49:22.235192+00:00"
+        },
+        "opencode:opencode-go/beam-free": {
+          "score": 0,
+          "explain": "adherence 1/5 → 20; 2 corrections −30; 0 extra; penalties none → 0",
+          "corrections": 2,
+          "done": 1,
+          "missing": 4,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/beam-free",
+          "graded_at": "2026-10-22T14:49:22.777419+00:00"
+        },
+        "coordinator:self": {
+          "score": 40,
+          "explain": "adherence 5/5 → 100; 4 corrections −60; 0 extra; penalties none → 40",
+          "corrections": 4,
+          "done": 5,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:self",
+          "graded_at": "2026-10-22T14:50:12.314986+00:00"
+        }
+      },
       "ref": "T037",
       "task_text": "Adapt probed Orca capabilities to the backend contract in skill/crew-chief/scripts/crew_chief/central_orca.py, tests/test_central_orca.py; depends on T036",
       "picks": [
@@ -6686,9 +6937,33 @@
           "pick": "opencode:opencode-go/beam-free",
           "reason": "best score 58.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
           "at": "2026-10-22T14:26:09.903109+00:00"
+        },
+        {
+          "pick": "opencode:opencode/mimo-v2.6-flash-free",
+          "reason": "unrated, no history (opencode:opencode/mimo-v2.6-flash-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-22T14:39:31.222936+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode/nemotron-3.5-lightning-free",
+          "reason": "unrated, no history (opencode:opencode/nemotron-3.5-lightning-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T14:41:43.111610+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode/nemotron-3.5-super-vl-free",
+          "reason": "unrated, no history (opencode:opencode/nemotron-3.5-super-vl-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T14:44:27.462772+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode-go/muse-spark-1.2-contributor",
+          "reason": "unrated, no history (opencode:opencode-go/muse-spark-1.2-contributor); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T14:45:44.935163+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 3
+      "next_attempt": 11
     },
     {
       "n": 38,
@@ -7845,6 +8120,24 @@
       "n": 123,
       "text": "T037 two failed free execs: MiniMax361.4s/no diff; Beam362.7s partial oversized adapter/tests. Reject unsafe partial design: agent launch before preflight, terminal handle treated as model session, unsupported registry field. No owned executor remains. Coordinator now implements narrow adapter: Orca creates worktrees using actual schema/argv; accepted core retains authorized preflight, headless supervisor, durable message IDs, actual-session attach and state. Terminal runtime handles are never model sessions; no second model writer. Routine dependency injection into central_launch is needed to reuse accepted preparation without global monkeypatches/duplicated authorization. Add central_launch to T037 allowed files before code, import spec; T038 still owns public routing. No spec/plan architecture change, no paid executor.",
       "at": "2026-10-22T14:33:18.685753+00:00",
+      "promoted": null
+    },
+    {
+      "n": 124,
+      "text": "T037 free NemotronLightning review confirms808d7d7,13passed/all5refs/no Critical/Important. Before accept coordinator read-only Orca worktree-show for this checkout captured response shape result.worktree (only shape shared, no private data/artifacts). Synthetic executable now uses that shape; actual red1 confirmed parser rejected it. Add exact nested-worktree normalization plus retain documented full-ID variant; proof/new independent review required at new HEAD. No live resources created, model/session state untouched.",
+      "at": "2026-10-22T14:44:06.542032+00:00",
+      "promoted": null
+    },
+    {
+      "n": 125,
+      "text": "T038 preparation only: existing accepted launch/default-backend tests use Orca as unsupported case. Public routing would otherwise discover live installed Orca during full suite. Add tests/conftest.py to T038 scope to fence ORCA_CLI_COMMAND to missing temporary path, plus central_backend.py to keep DefaultBackend.create immutable and refuse explicit Orca even once public prepare_launch supports it. This is caller/test maintenance for T038, no later-phase work or removed assertions; executor must never run live Orca/model CLIs. Existing unsupported test must keep failed/backend diagnostic via safe unavailable fake, new tests prove supported explicit path.",
+      "at": "2026-10-22T14:49:55.648035+00:00",
+      "promoted": null
+    },
+    {
+      "n": 126,
+      "text": "T037 final free Muse1.2 review confirms95772cd twice,15passed/all5refs/no Critical/Important/extras; only minor readability notes. Coordinator checked full3-file diff, preserved every existing test and accepted core preparation; initial own missing-request/source guards plus nested-response/JSON-failure corrections all accounted (4), no pending code fix. Accept final attempt then branchproof. All executor/review/test processes finished. Actual Orca probes/show were read-only; no live resources/models. T038 only remaining phase7 piece; no Phase8.",
+      "at": "2026-10-22T14:50:12.099678+00:00",
       "promoted": null
     }
   ]
