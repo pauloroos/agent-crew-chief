@@ -402,7 +402,10 @@ def test_screen_actions_route_by_the_stored_backend_like_the_cli(tmp_path, monke
 
     snap = _make_snap(rows=[_row(orca["id"]), _row(mystery["id"])])
     keys = ["m", "p", "enter", "down", "m", "p", "enter", "q"]
-    with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap),          patch("crew_chief.central_screen.read_key", side_effect=keys),          patch("crew_chief.central_attach.attach", side_effect=fake_attach),          patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
+    with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap), \
+         patch("crew_chief.central_screen.read_key", side_effect=keys), \
+         patch("crew_chief.central_attach.attach", side_effect=fake_attach), \
+         patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
         assert run_screen(root, options={}, io=FakeIO(is_tty=True), clock=FakeClock()) == 0
 
     assert [m["body"] for m in central_messages.pending(root, orca["id"], "in")] == ["ack"]
