@@ -3,7 +3,7 @@
 
 Usage::
 
-    python install.py <project> [--force-snippet]
+    python install.py <project> [--force-snippet] [--no-ponytail]
     python install.py --command [--bin-dir DIR]
 
 What it does:
@@ -21,7 +21,12 @@ What it does:
 3. Creates ``docs/crew-chief/preferences.toml`` from the example only if it is
    missing, plus ``docs/crew-chief/jobs/.gitkeep``.
 4. Never touches an existing ``preferences.toml``, ``jobs/``,
-   ``scoreboard.md`` or ``models-seen.json``, and never edits other skills.
+   ``scoreboard.md`` or ``models-seen.json``, and never edits other skills,
+   including a Ponytail it did not install.
+5. Copies the vendored Ponytail skills (``vendor/ponytail/skills/``) into the
+   same two roots, each marked with ``.installed-by-agent-crew-chief``; a
+   Ponytail without that marker is left alone. ``--no-ponytail`` skips the
+   step.
 
 ``--command`` installs only the user-scoped ``acc`` wrapper for this released
 bundle (Windows ``acc.cmd``, Linux/macOS executable ``acc``) into
@@ -59,6 +64,11 @@ PREFS_SOURCE = SKILL_SOURCE / "templates" / "preferences.example.toml"
 #: Name of the installed skill directory and the roots it is copied into.
 SKILL_NAME = "crew-chief"
 SKILL_ROOTS = (Path(".claude") / "skills", Path(".agents") / "skills")
+
+#: The vendored Ponytail skills and the marker put in every copy we install.
+PONYTAIL_SOURCE = REPO_ROOT / "vendor" / "ponytail" / "skills"
+PONYTAIL_SKILLS = ("ponytail", "ponytail-review")
+PONYTAIL_MARKER = ".installed-by-agent-crew-chief"
 
 #: Project-relative paths the installer creates (never overwrites).
 PREFS_RELATIVE = Path("docs") / "crew-chief" / "preferences.toml"
@@ -213,7 +223,28 @@ def _install_data(project: Path) -> list[str]:
     return report
 
 
-def install(project: Path, force: bool) -> list[str]:
+def _install_ponytail(project: Path) -> list[str]:
+    """Copy the vendored Ponytail skills, replacing only copies we made."""
+    report: list[str] = []
+    for root in SKILL_ROOTS:
+        for name in PONYTAIL_SKILLS:
+            destination = project / root / name
+            relative = (root / name).as_posix()
+            if destination.exists() and not (destination / PONYTAIL_MARKER).is_file():
+                report.append(
+                    f"ponytail: {relative} exists and was not installed by "
+                    "agent-crew-chief, left alone"
+                )
+                continue
+            if destination.exists():
+                shutil.rmtree(destination)
+            shutil.copytree(PONYTAIL_SOURCE / name, destination, ignore=_COPY_IGNORE)
+            _write(destination / PONYTAIL_MARKER, "")
+            report.append(f"copied {name} to {relative}")
+    return report
+
+
+def install(project: Path, force: bool, ponytail: bool = True) -> list[str]:
     """Install or update the skill in ``project`` and return the report lines."""
     destinations = [project / root / SKILL_NAME for root in SKILL_ROOTS]
     installed = any(destination.is_dir() for destination in destinations)
@@ -222,6 +253,9 @@ def install(project: Path, force: bool) -> list[str]:
     for root, destination in zip(SKILL_ROOTS, destinations):
         _copy_skill(destination)
         report.append(f"copied skill to {(root / SKILL_NAME).as_posix()}")
+
+    if ponytail:
+        report.extend(_install_ponytail(project))
 
     block = _block(_read(SNIPPET_SOURCE).strip("\n"))
 
@@ -290,6 +324,11 @@ def main(argv: list[str] | None = None) -> int:
         help="re-insert the snippet even if the markers were removed",
     )
     parser.add_argument(
+        "--no-ponytail",
+        action="store_true",
+        help="do not install the vendored Ponytail skills",
+    )
+    parser.add_argument(
         "--command",
         action="store_true",
         help="install only the user-scoped `acc` wrapper for this bundle",
@@ -308,13 +347,19 @@ def main(argv: list[str] | None = None) -> int:
     if not SKILL_SOURCE.is_dir():
         print(f"install.py: skill source not found at {SKILL_SOURCE}", file=sys.stderr)
         return 2
+    if args.project and not args.no_ponytail and not PONYTAIL_SOURCE.is_dir():
+        print(
+            f"install.py: ponytail source not found at {PONYTAIL_SOURCE}",
+            file=sys.stderr,
+        )
+        return 2
 
     project = Path(args.project).expanduser() if args.project else None
     if project is not None and not project.is_dir():
         print(f"{project}: no such directory", file=sys.stderr)
         return 2
 
-    report = install(project, args.force_snippet) if project else []
+    report = install(project, args.force_snippet, not args.no_ponytail) if project else []
     if args.command:
         if not (SCRIPTS_DIR / "crew_chief").is_dir():
             print(

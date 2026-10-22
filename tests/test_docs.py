@@ -95,6 +95,27 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
+def test_changelog_keeps_the_0_3_5_section():
+    """Bumping the version must not rewrite the released section."""
+    text = _read(CHANGELOG)
+    section = text.split("## [0.3.5]", 1)[1].split("\n## [", 1)[0]
+    for needle in (
+        "ponytail_level",
+        "--no-ponytail",
+        "v5.3.2",
+        "MIT",
+        "0.3.5",
+    ):
+        assert needle in section, needle
+
+
+def test_readmes_credit_ponytail():
+    for path in (README, README_PT):
+        text = _read(path)
+        assert "DietrichGebert/ponytail" in text, path.name
+        assert "MIT" in text, path.name
+
+
 def test_version_is_current_and_changelog_has_its_section():
     """T030: version is 0.4.0 and CHANGELOG has both current and historical entries."""
     assert __version__ == "0.4.0"
@@ -146,7 +167,7 @@ def test_install_pins_the_current_release():
     for path in (README, README_PT, TUTORIAL_01, TUTORIAL_01_PT):
         text = _read(path)
         assert "v0.4.0" in text, f"{path.name} must pin v0.4.0"
-        assert "v0.3.3" not in text, path.name
+        assert "v0.3.5" not in text, path.name
 
 
 def test_changelog_keeps_the_0_3_2_section():

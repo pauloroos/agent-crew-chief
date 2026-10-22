@@ -16,6 +16,39 @@ STATUS_LINE = "End with one status line: DONE | DONE_WITH_CONCERNS | BLOCKED | N
 NOT_RESTRICTED = "Not restricted — keep the change minimal"
 TRUST_LINE = "Do not trust the executor's report; read the diff."
 
+#: Ponytail style rules, copied verbatim from ``vendor/ponytail``; the brief
+#: carries ``PONYTAIL_RULES[level] + PONYTAIL_COMMON`` and nothing for ``off``.
+PONYTAIL_COMMON = [
+    "Never cut validation at trust boundaries, error handling that prevents data loss, or security.",
+    "End your report with one line: what you skipped or did not check.",
+    "Full rules: .agents/skills/ponytail/SKILL.md (if present).",
+]
+PONYTAIL_RULES = {
+    "lite": ["Build exactly what was asked; if a smaller option exists, name it in one line in your report."],
+    "full": [
+        "Make the smallest change that fully solves the task; reuse what the codebase, the standard library or installed dependencies already have.",
+        "No abstraction, wrapper, option, config or \"for later\" code nobody asked for. Deletion beats addition.",
+        "Never add a dependency for a few lines.",
+        "Be lazy about the solution, never about the change: update every caller, test and fixture your change breaks.",
+    ],
+}
+PONYTAIL_RULES["ultra"] = PONYTAIL_RULES["full"] + [
+    "Before building, name in your report any part of the task the need does not justify; still deliver every acceptance criterion.",
+]
+PONYTAIL_REVIEW_LINE = "Bloat is a finding: an abstraction, option, dependency, wrapper or \"for later\" code no criterion needs is `Important`."
+
+
+def _style_section(level: str) -> list[str]:
+    """The ``## Style`` lines for ``level``; none when the level is ``off``."""
+    rules = PONYTAIL_RULES.get(level)
+    if not rules:
+        return []
+    return [
+        f"## Style (ponytail {level})",
+        *(f"- {rule}" for rule in rules + PONYTAIL_COMMON),
+        "",
+    ]
+
 
 def _bullets(items: list[str], empty: str) -> list[str]:
     return [f"- {item}" for item in items] if items else [f"- {empty}"]
@@ -35,6 +68,7 @@ def render_exec_brief(
     refs: list[str],
     constraints: list[str],
     feature: str,
+    ponytail_level: str = "full",
 ) -> str:
     """The brief an executor receives for ``task``.
 
@@ -65,7 +99,7 @@ def render_exec_brief(
             lines.append(f"Expect: {meta.expect}")
     else:
         lines.append("No proof command — say how you checked your work.")
-    lines += ["", "## Report", STATUS_LINE]
+    lines += ["", *_style_section(ponytail_level), "## Report", STATUS_LINE]
     return "\n".join(lines) + "\n"
 
 
@@ -77,6 +111,7 @@ def render_review_brief(
     worktree: str = "",
     start: str = "",
     end: str = "",
+    ponytail_level: str = "full",
 ) -> str:
     """The brief a reviewer receives: two separate verdicts, no trust in the report.
 
@@ -122,6 +157,8 @@ def render_review_brief(
         "List findings as `Critical | Important | Minor`, each with file and line.",
         "Judge the code, not the spec: bugs, edge cases, tests, readability.",
     ]
+    if ponytail_level != "off":
+        lines.append(PONYTAIL_REVIEW_LINE)
     return "\n".join(lines) + "\n"
 
 

@@ -225,6 +225,34 @@ Se as skills do [superpowers](https://github.com/obra/superpowers) também estã
 instaladas, use-as para conversar e desenhar; use o crew-chief para executar o
 plano. O trecho instalado diz isso numa linha.
 
+## Ponytail
+
+O [Ponytail](https://github.com/DietrichGebert/ponytail) (MIT, de DietrichGebert)
+v5.3.2 vem dentro do crew-chief: as duas skills `ponytail` e `ponytail-review`,
+incluídas em `vendor/ponytail/`. Ponytail é o conjunto de regras do "dev sênior
+preguiçoso" — a menor mudança que resolve a tarefa por inteiro, sem opção que
+ninguém pediu.
+
+O `install.py` copia as duas skills para `.claude/skills/` e `.agents/skills/` e
+marca cada pasta com `.installed-by-agent-crew-chief`. Uma pasta `ponytail` sem
+essa marca é de outra pessoa: fica como está e o instalador avisa. `--no-ponytail`
+pula a cópia e nunca remove uma pasta que já existe:
+
+```bash
+python install.py /caminho/do/projeto --no-ponytail
+```
+
+Quanto disso chega ao brief é a preferência `ponytail_level`:
+
+- `lite` — construa o que foi pedido; cite uma opção menor em uma linha.
+- `full` (padrão) — a menor mudança completa.
+- `ultra` — questione também o pedido e conteste o que ele não justifica; pode
+  fazer um modelo barato discutir em vez de construir.
+- `off` — nenhum Ponytail em brief nenhum.
+
+Um brief de execução ganha uma seção `## Style (ponytail <level>)`, e um brief de
+revisão conta inchaço como achado `Important`; `off` remove os dois.
+
 ## Instalação
 
 ```bash
@@ -232,7 +260,7 @@ git clone --branch v0.4.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe o `agent-crew-chief-v0.3.4.zip` da
+Sem git? Baixe o `agent-crew-chief-v0.4.0.zip` da
 [última release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 descompacte e rode `python install.py /caminho/do/projeto` de dentro da pasta.
 Fixe uma tag (`--branch vX.Y.Z`) para nunca instalar código no meio de uma mudança;
@@ -583,6 +611,9 @@ O fluxo guiado por especificação se inspira no [spec-kit](https://github.com/g
 (MIT), cujo layout `specs/` e formato de `tasks.md` ele lê, e no
 [superpowers](https://github.com/obra/superpowers) (MIT), cujos hábitos de
 desenho e revisão ele segue. Nenhum código ou template foi copiado de nenhum dos dois.
+
+O [Ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 (MIT, de
+DietrichGebert) vem vendorizado em `vendor/ponytail/`, com a sua `LICENSE`.
 
 ## Licença
 

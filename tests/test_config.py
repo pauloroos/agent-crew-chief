@@ -393,3 +393,35 @@ def test_lone_setup_marker_is_just_a_comment(tmp_path):
     g.write_text('# >>> acc setup >>>\nexplore_rate = 0.4\n', encoding="utf-8")
     prefs = load_prefs(tmp_path, g)
     assert prefs.explore_rate == 0.4 and prefs.setup_models == []
+
+
+# --- ponytail ----------------------------------------------------------------
+
+
+def test_ponytail_level_defaults_to_full(tmp_path):
+    proj = tmp_path
+    (proj / "docs/crew-chief").mkdir(parents=True)
+    (proj / "docs/crew-chief/preferences.toml").write_text(
+        "explore_rate = 0.2\n", encoding="utf-8")
+    assert load_prefs(proj, proj / "n.toml").ponytail_level == "full"
+
+
+def test_ponytail_level_project_overrides_global(tmp_path):
+    g = tmp_path / "g.toml"
+    g.write_text('ponytail_level = "lite"\n', encoding="utf-8")
+    proj = tmp_path / "proj"
+    (proj / "docs/crew-chief").mkdir(parents=True)
+    (proj / "docs/crew-chief/preferences.toml").write_text(
+        'ponytail_level = "off"\n', encoding="utf-8")
+    assert load_prefs(proj, g).ponytail_level == "off"
+
+
+@pytest.mark.parametrize("value", ['"FULL"', "3"])
+def test_ponytail_level_rejects_unknown_value(tmp_path, value):
+    (tmp_path / "docs/crew-chief").mkdir(parents=True)
+    (tmp_path / "docs/crew-chief/preferences.toml").write_text(
+        f"ponytail_level = {value}\n", encoding="utf-8")
+    with pytest.raises(PrefsError) as excinfo:
+        load_prefs(tmp_path, tmp_path / "n.toml")
+    message = str(excinfo.value)
+    assert "ponytail_level" in message and "preferences.toml" in message

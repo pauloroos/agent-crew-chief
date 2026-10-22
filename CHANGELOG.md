@@ -17,6 +17,15 @@ All notable changes to this project are documented here. Versions follow
 - Commits omit AI co-author trailers while preserving executor accounting in records (FR-023).
 - `__version__` is `0.4.0`.
 
+## [0.3.5] - 2026-10-21
+
+### Added
+- **Ponytail ships with crew-chief:** [Ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 (MIT, by DietrichGebert) is vendored in `vendor/ponytail/` as the two skills `ponytail` and `ponytail-review` — the "lazy senior dev" rules: the smallest change that fully solves the task. `install.py` copies both into `.claude/skills/` and `.agents/skills/`, each folder marked with `.installed-by-agent-crew-chief`; a Ponytail folder without that marker was installed by someone else and is left alone with a warning, and `--no-ponytail` skips the copy without removing an existing one.
+- **`ponytail_level` preference:** how much Ponytail reaches a brief — `lite` (build what was asked, name a smaller option in one line), `full` (the smallest complete change, the default), `ultra` (also question the request and push back on what it does not justify) or `off`. Executor briefs get a `## Style (ponytail <level>)` section and review briefs count bloat as an `Important` finding; `off` removes both. `ultra` can make a cheap model argue instead of building.
+
+### Changed
+- `__version__` is `0.3.5`.
+
 ## [0.3.4] - 2026-10-20
 
 ### Fixed

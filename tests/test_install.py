@@ -14,9 +14,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import install
 from crew_chief.config import classify, load_prefs
 
 INSTALL = Path(__file__).resolve().parents[1] / "install.py"
+VENDOR = Path(__file__).resolve().parents[1] / "vendor" / "ponytail"
 
 BEGIN = "<!-- BEGIN:agent-crew-chief -->"
 END = "<!-- END:agent-crew-chief -->"
@@ -200,6 +202,71 @@ def test_gemini_and_cursor_only_when_present(tmp_path):
     assert rule.count(BEGIN) == 1
 
 
+# --- the vendored Ponytail -------------------------------------------------
+
+
+def test_vendor_ponytail_is_pinned_and_licensed():
+    assert "MIT" in _read(VENDOR / "LICENSE")
+    assert _read(VENDOR / "VERSION").splitlines()[0] == "v5.3.2"
+    for skill in install.PONYTAIL_SKILLS:
+        assert (VENDOR / "skills" / skill / "SKILL.md").is_file()
+
+
+def test_install_adds_ponytail_with_marker(tmp_path):
+    project = _project(tmp_path)
+
+    result = _run(project)
+
+    assert result.returncode == 0, result.stderr
+    for root in (".claude/skills", ".agents/skills"):
+        for skill in install.PONYTAIL_SKILLS:
+            destination = project / root / skill
+            assert (destination / "SKILL.md").is_file()
+            assert (destination / install.PONYTAIL_MARKER).is_file()
+    assert not (project / ".claude" / "skills" / "crew-chief" / "vendor").exists()
+
+
+def test_install_updates_own_ponytail(tmp_path):
+    project = _project(tmp_path)
+    assert _run(project).returncode == 0
+
+    installed = project / ".claude" / "skills" / "ponytail" / "SKILL.md"
+    installed.write_text("stale\n", encoding="utf-8")
+
+    assert _run(project).returncode == 0
+
+    assert _read(installed) == _read(VENDOR / "skills" / "ponytail" / "SKILL.md")
+
+
+def test_install_leaves_foreign_ponytail_alone(tmp_path):
+    project = _project(tmp_path)
+    mine = project / ".claude" / "skills" / "ponytail" / "SKILL.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("mine", encoding="utf-8")
+
+    result = _run(project)
+
+    assert result.returncode == 0, result.stderr
+    assert _read(mine) == "mine"
+    left_alone = [line for line in result.stdout.splitlines() if "left alone" in line]
+    assert any("ponytail" in line for line in left_alone)
+    assert (project / ".agents" / "skills" / "ponytail" / "SKILL.md").is_file()
+
+
+def test_no_ponytail_skips_and_keeps_existing(tmp_path):
+    project = _project(tmp_path)
+
+    assert _run(project, "--no-ponytail").returncode == 0
+    assert not (project / ".claude" / "skills" / "ponytail").exists()
+    assert not (project / ".agents" / "skills" / "ponytail").exists()
+
+    assert _run(project).returncode == 0
+    assert _run(project, "--no-ponytail").returncode == 0
+
+    assert (project / ".claude" / "skills" / "ponytail" / "SKILL.md").is_file()
+    assert (project / ".agents" / "skills" / "ponytail" / "SKILL.md").is_file()
+
+
 # --- the installed preferences template ------------------------------------
 
 
@@ -275,6 +342,20 @@ def test_missing_project_exits_2_with_one_line(tmp_path):
     assert result.returncode == 2
     assert len(result.stderr.strip().splitlines()) == 1
     assert "nope" in result.stderr
+
+
+def test_missing_ponytail_source_exits_2_unless_no_ponytail(
+    tmp_path, monkeypatch, capsys
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr(install, "PONYTAIL_SOURCE", tmp_path / "broken-vendor")
+
+    assert install.main([str(project)]) == 2
+    stderr = capsys.readouterr().err.strip().splitlines()
+    assert len(stderr) == 1
+    assert "broken-vendor" in stderr[0]
+
+    assert install.main([str(project), "--no-ponytail"]) == 0
 
 
 # --- snippet ---------------------------------------------------------------
