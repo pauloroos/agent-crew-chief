@@ -346,7 +346,7 @@ Proof: `python -m pytest tests/test_central_backend_cli.py -q`.
 
 ## Phase 8: Web and Orca release gate (v0.4.1)
 
-- [ ] T039 [P] [US6] Document browser and optional Orca operation in tests/test_central_web_docs.py, README.md, docs/tutorials/04-central.md; depends on T035, T038
+- [X] T039 [P] [US6] Document browser and optional Orca operation in tests/test_central_web_docs.py, README.md, docs/tutorials/04-central.md; depends on T035, T038
 - [ ] T040 [US6] Gate the v0.4.1 web and Orca release in tests/test_central_web_gate.py, skill/crew-chief/scripts/crew_chief/__init__.py, CHANGELOG.md; depends on T035, T038, T039
 
 ### T039: verification boundary
