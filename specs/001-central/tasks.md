@@ -201,7 +201,7 @@ Proof: `python -m pytest tests/test_central_handoff.py -q`.
 - [X] T023 [P] [US3] Read terminal keys and restore OS terminal state in skill/crew-chief/scripts/crew_chief/central_keys.py, tests/test_central_keys.py; depends on T001
 - [X] T024 [P] [US3] Render coordinator rows questions and details in skill/crew-chief/scripts/crew_chief/central_terminal.py, tests/test_central_terminal.py; depends on T022
 - [x] T025 [US3] Run the refreshing terminal and route its actions in skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_screen.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py; depends on T017, T019, T022, T023, T024
-- [ ] T026 [US2] Teach coordinators the bounded central round workflow in tests/test_central_skill.py, skill/crew-chief/SKILL.md, skill/crew-chief/templates/snippet.md; depends on T005, T019, T025
+- [x] T026 [US2] Teach coordinators the bounded central round workflow in tests/test_central_skill.py, skill/crew-chief/SKILL.md, skill/crew-chief/templates/snippet.md; depends on T005, T019, T025
 
 ### T021: verification boundary
 
