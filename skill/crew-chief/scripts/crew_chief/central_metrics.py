@@ -28,14 +28,6 @@ def _number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _int_or_none(value: Any) -> int | None:
-    if not _number(value):
-        return None
-    if isinstance(value, float) and not value.is_integer():
-        return None
-    return int(value)
-
-
 def _pref(prefs: Any, name: str, default: Any = None) -> Any:
     if prefs is None:
         return default
@@ -95,19 +87,27 @@ def _dedup_jobs(jobs: Iterable[Any]) -> list[dict]:
 
 
 def _attempt_stable_id(attempt: dict, job: dict, piece: dict) -> str | None:
+    """Return a stable identity for an attempt, scoped to its job+piece.
+
+    Uses the first available identifier field.  Returns ``None`` when no
+    usable identifier exists (the caller must not dedup such attempts).
+    """
     for key in (
+        "central_event_id",
+        "event_id",
         "id",
         "attempt_id",
         "attempt_uuid",
-        "central_event_id",
-        "event_id",
         "stable_id",
         "uuid",
         "key",
     ):
         value = attempt.get(key)
         if value is not None and str(value).strip() != "":
-            return str(value).strip()
+            # Scope to job+piece so identical IDs in different jobs don't collide.
+            job_id = str(job.get("id", "")) if job.get("id") is not None else ""
+            piece_n = str(piece.get("n", "")) if piece.get("n") is not None else ""
+            return f"{job_id}:{piece_n}:{str(value).strip()}"
     return None
 
 
@@ -122,15 +122,14 @@ def _tier_tokens_empty() -> dict[str, int]:
     return {tier: 0 for tier in _TIERS}
 
 
-def _safe_total_tokens(attempt: dict) -> int | None:
-    value = attempt.get("tokens_total")
-    if _number(value):
-        return int(value)
-    ti = attempt.get("tokens_in")
-    to = attempt.get("tokens_out")
-    if _number(ti) and _number(to):
-        return int(ti) + int(to)
-    return None
+def _finite_int(value: Any) -> int | None:
+    """Return ``int(value)`` only when *value* is a finite number."""
+    if not _number(value):
+        return None
+    f = float(value)
+    if not math.isfinite(f):
+        return None
+    return int(f)
 
 
 def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: object) -> dict:
@@ -197,9 +196,8 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
 
     scores: list[float] = []
 
-    # wall / execution durations
-    wall_starts: list[datetime] = []
-    wall_ends: list[datetime] = []
+    # wall / execution durations — per-job wall spans, summed
+    per_job_wall_seconds = 0.0
     execution_seconds = 0.0
 
     # model grouping
@@ -220,6 +218,11 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
             jobs_with_usage += 1
         else:
             missing_usage_jobs += 1
+
+        # Per-job wall span accumulator
+        job_wall_starts: list[datetime] = []
+        job_wall_ends: list[datetime] = []
+
         for piece in _pieces(job):
             pieces_total += 1
             attempts = _attempts(piece)
@@ -236,11 +239,22 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
                 if aid is not None:
                     seen_attempt_ids.add(aid)
                 all_attempts += 1
+
+                # --- Single canonical token path ---
+                # Prefer tokens_total when finite; fall back to in+out.
+                raw_total = attempt.get("tokens_total")
+                tt = _finite_int(raw_total)
+                ti_raw = attempt.get("tokens_in")
+                to_raw = attempt.get("tokens_out")
+                ti = _finite_int(ti_raw)
+                to = _finite_int(to_raw)
+                if tt is None and ti is not None and to is not None:
+                    tt = ti + to
+
                 tier = attempt.get("cost")
-                if tier in tier_tokens:
-                    tokens = attempt.get("tokens_total")
-                    if _number(tokens):
-                        tier_tokens[tier] += int(tokens)
+                if tier in tier_tokens and tt is not None:
+                    tier_tokens[tier] += tt
+
                 if tier in ("cheap", "paid"):
                     if attempt.get("cost_known") is False:
                         cost_unknown = True
@@ -277,42 +291,41 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
                     },
                 )
                 grp["attempts"] += 1
-                raw_total = attempt.get("tokens_total")
-                tt = int(raw_total) if _number(raw_total) else None
                 if tt is not None:
                     grp["tokens_total"] += tt
                     grp["_has_total"] = True
                 else:
                     grp["_missing_total"] = True
-                ti = attempt.get("tokens_in")
-                to = attempt.get("tokens_out")
-                if _number(ti):
-                    grp["tokens_in"] = (grp["tokens_in"] or 0) + int(ti)
+                if ti is not None:
+                    grp["tokens_in"] = (grp["tokens_in"] or 0) + ti
                     grp["_has_in"] = True
-                if _number(to):
-                    grp["tokens_out"] = (grp["tokens_out"] or 0) + int(to)
+                if to is not None:
+                    grp["tokens_out"] = (grp["tokens_out"] or 0) + to
                     grp["_has_out"] = True
                 if attempt.get("tokens_estimated") is True:
                     grp["estimated"] = True
-                # exec top-level (all attempt tokens)
+
+                # exec top-level (all attempt tokens) — same canonical path
                 if tt is not None:
                     exec_tokens_total += tt
                     exec_has_total = True
-                if _number(ti):
-                    exec_tokens_in += int(ti)
+                if ti is not None:
+                    exec_tokens_in += ti
                     exec_has_in = True
-                if _number(to):
-                    exec_tokens_out += int(to)
+                if to is not None:
+                    exec_tokens_out += to
                     exec_has_out = True
 
                 # durations for all attempts
                 started = _parse_iso(attempt.get("started"), local_tz)
                 if started is not None:
                     duration = attempt.get("duration_s")
-                    dur = float(duration) if _number(duration) else 0.0
+                    dur = float(duration) if _number(duration) and math.isfinite(float(duration)) else 0.0
+                    if dur < 0:
+                        dur = 0.0
                     end = started + timedelta(seconds=dur)
-                    wall_starts.append(started)
-                    wall_ends.append(end)
+                    job_wall_starts.append(started)
+                    job_wall_ends.append(end)
                     execution_seconds += dur
 
             # free piece share
@@ -332,6 +345,27 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
                 if _number(score):
                     scores.append(float(score))
 
+        # Per-job wall span: max(end) - min(start) within this job only
+        if job_wall_starts and job_wall_ends:
+            span = (max(job_wall_ends) - min(job_wall_starts)).total_seconds()
+            if span > 0:
+                per_job_wall_seconds += span
+
+        # active job wall time — extend this job's span to now
+        active = False
+        if job.get("active") is True:
+            active = True
+        if job.get("state") in ("running", "active", "started", "in_progress"):
+            active = True
+        if job.get("status") in ("running", "active", "in_progress"):
+            active = True
+        if active:
+            created = _parse_iso(job.get("created"), local_tz)
+            if created is not None:
+                active_span = (now_dt - created).total_seconds()
+                if active_span > 0:
+                    per_job_wall_seconds += active_span
+
         # job usage entries
         usage = [u for u in job_usage if isinstance(u, dict)]
         deduped_usage: list[dict] = []
@@ -345,51 +379,48 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
                 recorded_event_ids.add(eid.strip())
             deduped_usage.append(u)
         usage = deduped_usage
-        recorded_usage = [u for u in usage if _number(u.get("tokens_total"))]
-        if recorded_usage:
-            jobs_with_usage += 0  # already counted above
-        if not recorded_usage:
-            missing_usage_jobs += 0
 
         for u in usage:
             role = u.get("role")
+            # Only bucket known roles; unknown/non-null roles are skipped
+            # from coordinator/central totals but still appear in models.
             if role not in ("coordinator", "central"):
-                # default unknown role to coordinator? keep as is but bucket coordinator
-                role = "coordinator" if role is None else role
-            eid = u.get("central_event_id")
-            if isinstance(eid, str) and eid.strip():
-                if eid.strip() in recorded_event_ids:
-                    pass  # already counted in set; still count this entry once
+                if role is None:
+                    role = "coordinator"
+                # else: keep original role string for model grouping,
+                # but do NOT add to coordinator_tokens or central_tokens.
+
             tokens_total = u.get("tokens_total")
-            tt = int(tokens_total) if _number(tokens_total) else None
-            ti = u.get("tokens_in")
-            to = u.get("tokens_out")
+            tt = _finite_int(tokens_total)
+            ti = _finite_int(u.get("tokens_in"))
+            to = _finite_int(u.get("tokens_out"))
             estimated = u.get("estimated") is True
             model = u.get("model")
             if role == "coordinator":
                 if tt is not None:
                     coordinator_tokens += tt
-                if _number(ti):
-                    usage_tokens_in_coord += int(ti)
+                if ti is not None:
+                    usage_tokens_in_coord += ti
                     coord_has_in = True
-                if _number(to):
-                    usage_tokens_out_coord += int(to)
+                if to is not None:
+                    usage_tokens_out_coord += to
                     coord_has_out = True
             elif role == "central":
                 if tt is not None:
                     central_tokens += tt
-                if _number(ti):
-                    usage_tokens_in_central += int(ti)
+                if ti is not None:
+                    usage_tokens_in_central += ti
                     central_has_in = True
-                if _number(to):
-                    usage_tokens_out_central += int(to)
+                if to is not None:
+                    usage_tokens_out_central += to
                     central_has_out = True
-            # model grouping for usage
-            key = (role if role in ("coordinator", "central") else "coordinator", model, None)
+            # model grouping for usage — use actual role (even if unknown)
+            model_role = role if role in ("coordinator", "central") else role
+            key = (model_role, model, None)
             grp = models.setdefault(
                 key,
                 {
-                    "role": key[0],
+                    "role": model_role,
                     "model": model if isinstance(model, str) else None,
                     "tier": None,
                     "tokens_in": None,
@@ -408,29 +439,14 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
                 grp["_has_total"] = True
             else:
                 grp["_missing_total"] = True
-            if _number(ti):
-                grp["tokens_in"] = (grp["tokens_in"] or 0) + int(ti)
+            if ti is not None:
+                grp["tokens_in"] = (grp["tokens_in"] or 0) + ti
                 grp["_has_in"] = True
-            if _number(to):
-                grp["tokens_out"] = (grp["tokens_out"] or 0) + int(to)
+            if to is not None:
+                grp["tokens_out"] = (grp["tokens_out"] or 0) + to
                 grp["_has_out"] = True
             if estimated:
                 grp["estimated"] = True
-
-        # active job wall time
-        active = False
-        if job.get("active") is True:
-            active = True
-        if job.get("state") in ("running", "active", "started", "in_progress"):
-            active = True
-        if job.get("status") in ("running", "active", "in_progress"):
-            active = True
-        if active:
-            created = _parse_iso(job.get("created"), local_tz)
-            if created is not None:
-                wall_starts.append(created)
-                wall_ends.append(now_dt)
-            # execution time for active? leave as attempts
 
     # --- pending usage ------------------------------------------------------
     # dedup pending by event_id and against recorded events
@@ -454,35 +470,33 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
     for pu in pending_list:
         role = pu.get("role")
         if role not in ("coordinator", "central"):
-            role = "coordinator" if role is None else str(role)
-            if role not in ("coordinator", "central"):
+            if role is None:
                 role = "coordinator"
-        eid = pu.get("event_id")
-        if not isinstance(eid, str):
-            eid = pu.get("central_event_id")
+            # else keep as-is for model grouping; don't force to coordinator
+
         tokens_total = pu.get("tokens_total")
-        tt = int(tokens_total) if _number(tokens_total) else None
-        ti = pu.get("tokens_in")
-        to = pu.get("tokens_out")
+        tt = _finite_int(tokens_total)
+        ti = _finite_int(pu.get("tokens_in"))
+        to = _finite_int(pu.get("tokens_out"))
         estimated = pu.get("estimated") is True
         model = pu.get("model")
         if role == "coordinator":
             if tt is not None:
                 coordinator_tokens += tt
-            if _number(ti):
-                usage_tokens_in_coord += int(ti)
+            if ti is not None:
+                usage_tokens_in_coord += ti
                 coord_has_in = True
-            if _number(to):
-                usage_tokens_out_coord += int(to)
+            if to is not None:
+                usage_tokens_out_coord += to
                 coord_has_out = True
         elif role == "central":
             if tt is not None:
                 central_tokens += tt
-            if _number(ti):
-                usage_tokens_in_central += int(ti)
+            if ti is not None:
+                usage_tokens_in_central += ti
                 central_has_in = True
-            if _number(to):
-                usage_tokens_out_central += int(to)
+            if to is not None:
+                usage_tokens_out_central += to
                 central_has_out = True
         key = (role, model, None)
         grp = models.setdefault(
@@ -507,11 +521,11 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
             grp["_has_total"] = True
         else:
             grp["_missing_total"] = True
-        if _number(ti):
-            grp["tokens_in"] = (grp["tokens_in"] or 0) + int(ti)
+        if ti is not None:
+            grp["tokens_in"] = (grp["tokens_in"] or 0) + ti
             grp["_has_in"] = True
-        if _number(to):
-            grp["tokens_out"] = (grp["tokens_out"] or 0) + int(to)
+        if to is not None:
+            grp["tokens_out"] = (grp["tokens_out"] or 0) + to
             grp["_has_out"] = True
         if estimated:
             grp["estimated"] = True
@@ -548,10 +562,7 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
         model_list.append(grp)
 
     # --- wall duration ------------------------------------------------------
-    if wall_starts and wall_ends:
-        wall_seconds = max(0.0, (max(wall_ends) - min(wall_starts)).total_seconds())
-    else:
-        wall_seconds = None
+    wall_seconds = per_job_wall_seconds if per_job_wall_seconds > 0 else None
 
     # --- ratios -------------------------------------------------------------
     free_tokens = tier_tokens["free"]
@@ -571,9 +582,6 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
     exec_tokens_in_val = exec_tokens_in if exec_has_in else None
     exec_tokens_out_val = exec_tokens_out if exec_has_out else None
     exec_tokens_total_val = exec_tokens_total if exec_has_total else None
-    coord_tokens_in_val = (usage_tokens_in_coord + usage_tokens_in_central) if (coord_has_in or central_has_in) else None
-    coord_tokens_out_val = (usage_tokens_out_coord + usage_tokens_out_central) if (coord_has_out or central_has_out) else None
-    # but separate:
     coord_in_val = usage_tokens_in_coord if coord_has_in else None
     coord_out_val = usage_tokens_out_coord if coord_has_out else None
     central_in_val = usage_tokens_in_central if central_has_in else None
@@ -594,18 +602,18 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
     # --- alerts -------------------------------------------------------------
     alerts: list[str] = []
     limit = _pref(prefs, "alert_coordinator_share", None)
-    if limit and coordinator_share is not None and coordinator_share > limit:
+    if limit is not None and limit > 0 and coordinator_share is not None and coordinator_share > limit:
         alerts.append(
             f"coordinator spent {coordinator_share:.0%} of the tokens "
             f"(limit {limit:.0%})"
         )
     limit = _pref(prefs, "alert_attempts_per_piece", None)
-    if limit and attempts_per_piece is not None and attempts_per_piece > limit:
+    if limit is not None and limit > 0 and attempts_per_piece is not None and attempts_per_piece > limit:
         alerts.append(
             f"{attempts_per_piece:.1f} attempts per piece (limit {limit:.1f})"
         )
     limit = _pref(prefs, "alert_job_minutes", None)
-    if limit and wall_seconds is not None and (wall_seconds / 60.0) > limit:
+    if limit is not None and limit > 0 and wall_seconds is not None and (wall_seconds / 60.0) > limit:
         alerts.append(f"job took {wall_seconds / 60.0:.0f} min (limit {limit:.0f})")
     budget = _pref(prefs, "cheap_budget_usd_day", 0)
     if isinstance(budget, bool):
@@ -636,82 +644,47 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
             "numerator": accepted_free_pieces,
             "denominator": accepted_pieces,
             "value": free_piece_share,
-            "num": accepted_free_pieces,
-            "den": accepted_pieces,
-            "ratio": free_piece_share,
         },
         "free_token_share": {
             "numerator": free_tokens,
             "denominator": total_tokens,
             "value": free_token_share,
-            "num": free_tokens,
-            "den": total_tokens,
-            "ratio": free_token_share,
         },
         "coordinator_share": {
             "numerator": usage_tokens,
             "denominator": total_tokens,
             "value": coordinator_share,
-            "num": usage_tokens,
-            "den": total_tokens,
-            "ratio": coordinator_share,
         },
         "central_share": {
             "numerator": central_tokens,
             "denominator": total_tokens,
             "value": central_share,
-            "num": central_tokens,
-            "den": total_tokens,
-            "ratio": central_share,
         },
         "attempts_per_piece": {
             "numerator": attempts_counted,
             "denominator": attempted_pieces,
             "value": attempts_per_piece,
-            "num": attempts_counted,
-            "den": attempted_pieces,
-            "ratio": attempts_per_piece,
         },
         "mean_score": {
             "numerator": sum(scores) if scores else None,
             "denominator": len(scores),
             "value": mean_score,
-            "num": sum(scores) if scores else None,
-            "den": len(scores),
-            "ratio": mean_score,
         },
     }
 
     result = {
         "jobs": len(unique_jobs),
-        "job_count": len(unique_jobs),
-        "unique_jobs": len(unique_jobs),
-        "deduped_jobs": len(unique_jobs),
         "models": model_list,
-        "model_totals": model_list,
         "tokens": {
             "free": free_tokens,
-            "free_tokens": free_tokens,
             "paid_exec": paid_exec_tokens,
-            "paid_exec_tokens": paid_exec_tokens,
-            "paid": paid_exec_tokens,
-            "paid_tokens": paid_exec_tokens,
             "coordinator": coordinator_tokens,
-            "coordinator_tokens": coordinator_tokens,
             "central": central_tokens,
-            "central_tokens": central_tokens,
             "usage": usage_tokens,
-            "usage_tokens": usage_tokens,
             "exec": exec_tokens,
-            "exec_tokens": exec_tokens,
             "total": total_tokens,
-            "total_tokens": total_tokens,
             "tier_tokens": tokens_by_tier,
-            "tiers": tokens_by_tier,
-            "tokens_by_tier": tokens_by_tier,
-            "by_tier": tokens_by_tier,
             "tokens_by_role": tokens_by_role,
-            "by_role": tokens_by_role,
             "exec_tokens_in": exec_tokens_in_val,
             "exec_tokens_out": exec_tokens_out_val,
             "exec_tokens_total": exec_tokens_total_val,
@@ -723,26 +696,20 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
             "paid_usd": paid_usd,
             "cost_unknown": cost_unknown,
         },
-        "tiers": tokens_by_tier,
-        "tier_tokens": tokens_by_tier,
         "tokens_by_tier": tokens_by_tier,
         "tokens_by_role": tokens_by_role,
         "free_tokens": free_tokens,
         "paid_exec_tokens": paid_exec_tokens,
-        "paid_tokens": paid_exec_tokens,
         "coordinator_tokens": coordinator_tokens,
         "central_tokens": central_tokens,
         "usage_tokens": usage_tokens,
         "exec_tokens": exec_tokens,
         "total_tokens": total_tokens,
         "pieces": pieces_total,
-        "pieces_total": pieces_total,
         "accepted_pieces": accepted_pieces,
         "accepted_free_pieces": accepted_free_pieces,
-        "pieces_with_attempts": attempted_pieces,
         "attempted_pieces": attempted_pieces,
         "attempts": attempts_counted,
-        "attempts_total": attempts_counted,
         "all_attempts": all_attempts,
         "attempts_per_piece": attempts_per_piece,
         "free_piece_share": free_piece_share,
@@ -752,47 +719,27 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
         "mean_score": mean_score,
         "scores": scores,
         "grade_count": len(scores),
-        "scores_count": len(scores),
         "durations": {
             "wall_seconds": wall_seconds,
-            "wall_duration_s": wall_seconds,
-            "wall_time_s": wall_seconds,
-            "wall_minutes": (wall_seconds / 60.0) if wall_seconds is not None else None,
             "execution_seconds": execution_seconds,
-            "execution_time_s": execution_seconds,
-            "execution_time": execution_seconds,
-            "execution_minutes": execution_seconds / 60.0,
         },
         "wall_seconds": wall_seconds,
-        "wall_duration_s": wall_seconds,
-        "wall_time_s": wall_seconds,
-        "wall_minutes": (wall_seconds / 60.0) if wall_seconds is not None else None,
         "execution_seconds": execution_seconds,
-        "execution_time_s": execution_seconds,
-        "execution_time": execution_seconds,
-        "execution_minutes": execution_seconds / 60.0,
         "estimates": {
             "has_estimates": estimated_any,
-            "estimated": estimated_any,
             "estimated_models": sum(1 for m in model_list if m.get("estimated")),
-            "estimated_any": estimated_any,
         },
         "estimated": estimated_any,
-        "has_estimates": estimated_any,
         "coverage": {
             "label": coverage_label,
-            "coverage_label": coverage_label,
             "measured_models": sum(1 for m in model_list if m.get("coverage") == "measured"),
             "estimated_models": sum(1 for m in model_list if m.get("coverage") == "estimated"),
             "unknown_models": sum(1 for m in model_list if m.get("coverage") == "unknown"),
             "incomplete_models": sum(1 for m in model_list if m.get("coverage") == "incomplete"),
             "missing_usage_jobs": missing_usage_jobs,
             "jobs_with_usage": jobs_with_usage,
-            "unknown": any(m.get("coverage") in ("unknown", "incomplete") for m in model_list),
-            "incomplete": any(m.get("coverage") in ("unknown", "incomplete") for m in model_list),
         },
         "coverage_label": coverage_label,
-        "missing_usage": missing_usage_jobs,
         "missing_usage_jobs": missing_usage_jobs,
         "jobs_with_usage": jobs_with_usage,
         "alerts": alerts,
@@ -803,47 +750,9 @@ def aggregate(jobs: list[dict], pending_usage: list[dict], prefs: object, now: o
             "cheap_budget_usd_day": _pref(prefs, "cheap_budget_usd_day", 0),
         },
         "metrics": metrics,
-        "ratios": metrics,
-        "totals": {
-            "jobs": len(unique_jobs),
-            "free_tokens": free_tokens,
-            "paid_exec_tokens": paid_exec_tokens,
-            "coordinator_tokens": coordinator_tokens,
-            "central_tokens": central_tokens,
-            "usage_tokens": usage_tokens,
-            "exec_tokens": exec_tokens,
-            "total_tokens": total_tokens,
-            "tier_tokens": tokens_by_tier,
-            "tokens_by_tier": tokens_by_tier,
-            "tokens_by_role": tokens_by_role,
-            "pieces": pieces_total,
-            "pieces_total": pieces_total,
-            "accepted_pieces": accepted_pieces,
-            "accepted_free_pieces": accepted_free_pieces,
-            "attempted_pieces": attempted_pieces,
-            "attempts": attempts_counted,
-            "attempts_total": attempts_counted,
-            "all_attempts": all_attempts,
-            "attempts_per_piece": attempts_per_piece,
-            "free_piece_share": free_piece_share,
-            "free_token_share": free_token_share,
-            "coordinator_share": coordinator_share,
-            "central_share": central_share,
-            "mean_score": mean_score,
-            "grade_count": len(scores),
-            "wall_seconds": wall_seconds,
-            "execution_seconds": execution_seconds,
-            "cheap_usd": cheap_usd,
-            "paid_usd": paid_usd,
-            "cost_unknown": cost_unknown,
-            "missing_usage_jobs": missing_usage_jobs,
-            "jobs_with_usage": jobs_with_usage,
-            "coverage_label": coverage_label,
-            "estimated": estimated_any,
-        },
     }
 
-    # clean up model entries: drop helper attempt count? keep attempts for exec models
+    # clean up model entries: drop helper attempt count for non-exec
     for m in model_list:
         if m.get("role") != "exec" and "attempts" in m:
             m.pop("attempts", None)
