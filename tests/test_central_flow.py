@@ -97,7 +97,7 @@ def _make_release(root: Path, version: str, log: Path) -> Path:
             "project = Path(sys.argv[1])",
             "init = project / '.claude' / 'skills' / 'crew-chief' / 'scripts' / 'crew_chief' / '__init__.py'",
             "init.parent.mkdir(parents=True, exist_ok=True)",
-            f"init.write_text({f'__version__ = \"{version}\"\\n'!r}, encoding='utf-8')",
+            f"init.write_text({init.read_text(encoding='utf-8')!r}, encoding='utf-8')",
         ]),
         encoding="utf-8",
     )
