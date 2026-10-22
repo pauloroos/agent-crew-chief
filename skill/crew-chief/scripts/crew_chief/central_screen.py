@@ -225,10 +225,22 @@ def _drain_attach_intents(root, server, io):
         return
     for _ in range(16):
         try:
-            cid = server.attach_intents.get_nowait()
+            cid, attach_id = server.attach_intents.get_nowait()
         except queue.Empty:
             return
-        _attach(root, cid, io)
+        try:
+            result = _attach(root, cid, io)
+        except Exception as exc:
+            result = {"ok": False, "reason": str(exc) or type(exc).__name__}
+        if result.get("ok") is True:
+            server.attach_results[attach_id] = {"state": "opened"}
+        else:
+            # The browser shows why, with the command to run by hand (FR-020).
+            server.attach_results[attach_id] = {
+                "state": "failed",
+                "reason": central_web._public(str(result.get("reason") or "attach failed")),
+                "command": central_web.attach_command(cid, getattr(server, "central_dir", None)),
+            }
 
 
 def run_screen(

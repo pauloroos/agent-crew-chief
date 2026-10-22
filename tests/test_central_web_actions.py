@@ -142,7 +142,7 @@ def test_attach_is_intent_or_copyable_fallback(tmp_path, monkeypatch):
         payload = {"action_id": str(uuid.uuid4())}
         assert exchange(server, "/api/attach", payload)[1]["queued"] is True
         assert exchange(server, "/api/attach", payload)[1]["queued"] is True
-        assert server.attach_intents.get_nowait() == CID
+        assert server.attach_intents.get_nowait() == (CID, payload["action_id"])
         assert server.attach_intents.empty()
 
 

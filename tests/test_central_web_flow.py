@@ -154,7 +154,7 @@ def test_http_attach_consumed_only_by_terminal_loop(live, monkeypatch):
     monkeypatch.setattr(central_screen, "terminal_input", lambda **kw: nullcontext())
     monkeypatch.setattr(central_screen, "read_key", key)
     # The registered default backend reaches the core attach, as `acc attach` does.
-    monkeypatch.setattr(central_attach, "attach", lambda root, cid, io, *a, **kw: attached.append((root, cid, io)))
+    monkeypatch.setattr(central_attach, "attach", lambda root, cid, io, *a, **kw: attached.append((root, cid, io)) or {"ok": True})
     assert central_screen.run_screen(server.root, io=terminal_io, web_server=server) == 0
     assert len(attached) == 1 and attached[0] == (server.root, CID, terminal_io)
     assert not server.attach_bridge_active
@@ -203,3 +203,47 @@ def test_traversal_html_and_private_text_through_http(live):
     assert "Private Person" not in text and "beta gamma" not in text and str(server.root) not in text
     js = http(server, "/central.js")[1].decode()
     assert "textContent" in js and "innerHTML" not in js
+
+
+@pytest.mark.parametrize("outcome", ["opened", "refused", "raised"])
+def test_browser_attach_result_is_correlated_and_surfaced(live, monkeypatch, outcome):
+    """A queued browser attach reports opened or failed (with the fallback), never silence."""
+    server, _, _ = live
+    class Stream(io.StringIO):
+        def isatty(self):
+            return True
+    terminal_io = type("IO", (), {"stdin": Stream(), "stdout": Stream()})()
+    queued = {}
+    def key(**kwargs):
+        if not queued:
+            queued.update(http(server, "/api/attach", {})[1])
+            status, data = http(server, "/api/attach/" + queued["attach_id"])
+            assert (status, data["state"]) == (200, "queued")
+            return None
+        return "q"
+    def attach(root, cid, terminal, timeout):
+        if outcome == "raised":
+            raise OSError("session vanished at /home/someone/secret")
+        return {"ok": outcome == "opened", "state": "paused", "reason": "resume failed: timeout"}
+    monkeypatch.setattr(central_screen, "terminal_input", lambda **kw: nullcontext())
+    monkeypatch.setattr(central_screen, "read_key", key)
+    monkeypatch.setattr(central_attach, "attach", attach)
+    assert central_screen.run_screen(server.root, io=terminal_io, web_server=server) == 0
+    assert queued["queued"] is True
+    status, result = http(server, "/api/attach/" + queued["attach_id"])
+    assert status == 200
+    if outcome == "opened":
+        assert result == {"state": "opened"}
+    else:
+        assert result["state"] == "failed" and result["command"] == "acc attach " + CID
+        assert result["reason"] == ("resume failed: timeout" if outcome == "refused" else "[redacted]")
+    assert http(server, "/api/attach/" + str(uuid.uuid4()))[0] == 404
+
+
+def test_http_stop_writes_one_stop_control(live):
+    server, _, _ = live
+    payload = {"action_id": str(uuid.uuid4())}
+    first = http(server, "/api/stop", payload)
+    assert first[0] == 200 and http(server, "/api/stop", payload) == first
+    controls = list((server.root / "coordinators" / CID / "control").glob("*.json"))
+    assert len(controls) == 1 and json.loads(controls[0].read_text(encoding="utf-8"))["command"] == "stop"

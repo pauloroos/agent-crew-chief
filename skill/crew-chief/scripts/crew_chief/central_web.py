@@ -171,6 +171,11 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._reply(200, {"csrf_token": self.server.csrf_token})
             return
+        if self.path.startswith("/api/attach/"):
+            attach_id = central_registry._canonical_uuid(self.path[len("/api/attach/"):])
+            result = self.server.attach_results.get(attach_id) if attach_id else None
+            self._reply(200, result) if result is not None else self._reply(404, {"error": "unknown attach"})
+            return
         if self.path not in _ASSETS:
             self._reply(404, {"error": "route not found"})
             return
@@ -191,7 +196,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._guard():
             return
-        routes = {"/api/message", "/api/answer", "/api/pause", "/api/resume", "/api/attach"}
+        routes = {"/api/message", "/api/answer", "/api/pause", "/api/resume", "/api/stop", "/api/attach"}
         if self.path not in routes:
             self._reply(404, {"error": "route not found"})
             return
@@ -272,11 +277,13 @@ class _Handler(BaseHTTPRequestHandler):
             envelope = central_messages.owner_message(cid, body["text"], body.get("question_id"))
             envelope["id"] = body["action_id"]
             return {"ok": True, "message_id": backend.send(row, envelope)}
-        if self.path in ("/api/pause", "/api/resume"):
+        if self.path in ("/api/pause", "/api/resume", "/api/stop"):
             return {"ok": True, "control_id": central_controls.request_control(self.server.root, cid, self.path.rsplit("/", 1)[1])}
         if self.server.attach_bridge_active:
-            self.server.attach_intents.put_nowait(cid)
-            return {"ok": True, "queued": True}
+            attach_id = body["action_id"]
+            self.server.attach_intents.put_nowait((cid, attach_id))
+            self.server.attach_results[attach_id] = {"state": "queued"}
+            return {"ok": True, "queued": True, "attach_id": attach_id}
         return {"ok": True, "queued": False, "command": attach_command(cid, self.server.central_dir)}
 
 
@@ -313,6 +320,8 @@ def create_server(root: Path, assets: Path, port: int = 0, *, attach_bridge_acti
     server.csrf_token = secrets.token_urlsafe(32)
     server.action_ids = {}
     server.attach_intents = queue.Queue(maxsize=16)
+    # Outcome of each queued attach, by its action id; bounded like action_ids.
+    server.attach_results = {}
     server.action_ids_lock = threading.Lock()
     server.attach_bridge_active = bool(attach_bridge_active)
     server.central_dir = None  # an explicit --central-dir, echoed by the attach fallback

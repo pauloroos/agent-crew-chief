@@ -28,6 +28,7 @@ class FakeServer:
         self.server_address = ("127.0.0.1", port)
         self.attach_bridge_active = False
         self.attach_intents = __import__("queue").Queue(maxsize=16)
+        self.attach_results = {}
         self.closed = False
         self.served = False
         self.ready = threading.Event()
@@ -105,7 +106,7 @@ def test_startup_url_port_fallback_and_cleanup(tmp_path, capsys):
 def test_terminal_bridge_handoff(tmp_path):
     fake = FakeServer(port=54322)
     import queue
-    fake.attach_intents.put("11111111-1111-4111-8111-111111111111")
+    fake.attach_intents.put(("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"))
     calls = []
 
     def fake_attach(root, cid, io):
@@ -159,7 +160,7 @@ def test_server_runs_before_browser_opens(tmp_path, monkeypatch):
 
 def test_redirected_screen_never_consumes_attach_intents(tmp_path, monkeypatch):
     fake = FakeServer()
-    fake.attach_intents.put("11111111-1111-4111-8111-111111111111")
+    fake.attach_intents.put(("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"))
     calls = []
     monkeypatch.setattr(central_screen, "_attach", lambda *a, **k: calls.append(a))
     monkeypatch.setattr(central_screen, "_snapshot", lambda *a: {})
