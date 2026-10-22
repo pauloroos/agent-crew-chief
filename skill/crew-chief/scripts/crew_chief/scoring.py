@@ -30,7 +30,7 @@ import random
 import re
 import statistics
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1111,6 +1111,26 @@ def _tokens_cell(value: float | None, estimated: bool) -> str:
     return f"{'~' if estimated else ''}{round(value)}"
 
 
+def _by_type(stats: dict[tuple[str, str], Stat]) -> list[tuple[str, list[Stat]]]:
+    """Work types in :data:`WORK_TYPES` order, executors by score descending (unrated last)."""
+    by_type: dict[str, list[Stat]] = {}
+    for stat in stats.values():
+        by_type.setdefault(stat.type, []).append(stat)
+    # Fixed vocabulary first, then any stray type a hand-edited record uses.
+    ordered_types = [*WORK_TYPES, *sorted(set(by_type) - set(WORK_TYPES))]
+    return [
+        (work_type, sorted(by_type[work_type], key=lambda stat: (
+            float("inf") if stat.score is None else -stat.score, stat.executor)))
+        for work_type in ordered_types if by_type.get(work_type)
+    ]
+
+
+def scoreboard_rows(project: Path, now: datetime | None = None) -> list[dict]:
+    """The rows of :func:`render_scoreboard` as data, in the same order."""
+    stats, _skipped = _collect(Path(project), DEFAULT_HALF_LIFE_DAYS, now)
+    return [asdict(stat) for _type, entries in _by_type(stats) for stat in entries]
+
+
 def render_scoreboard(project: Path, now: datetime | None = None) -> str:
     """Render the committed ``scoreboard.md`` text.
 
@@ -1122,27 +1142,13 @@ def render_scoreboard(project: Path, now: datetime | None = None) -> str:
     scoreboard.
     """
     stats, skipped = _collect(Path(project), DEFAULT_HALF_LIFE_DAYS, now)
-
-    by_type: dict[str, list[Stat]] = {}
-    for stat in stats.values():
-        by_type.setdefault(stat.type, []).append(stat)
+    grouped = _by_type(stats)
 
     lines: list[str] = ["# Scoreboard", ""]
-    if not by_type:
+    if not grouped:
         lines.extend(["_No graded pieces yet._", ""])
 
-    # Fixed vocabulary first, then any stray type a hand-edited record uses.
-    ordered_types = [*WORK_TYPES, *sorted(set(by_type) - set(WORK_TYPES))]
-    for work_type in ordered_types:
-        entries = by_type.get(work_type)
-        if not entries:
-            continue
-        entries.sort(
-            key=lambda stat: (
-                float("inf") if stat.score is None else -stat.score,
-                stat.executor,
-            )
-        )
+    for work_type, entries in grouped:
         lines.append(f"## {work_type}")
         lines.append("")
         lines.append(

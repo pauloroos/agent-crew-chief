@@ -2057,3 +2057,24 @@ def test_exec_failures_alone_do_not_climb_while_the_tier_has_executors():
                      _Rng(0.9), job=job, piece=1)
 
     assert chosen is y
+
+
+def test_scoreboard_rows_are_the_rendered_table_as_data(tmp_path):
+    from crew_chief.scoring import scoreboard_rows
+
+    project = _project(
+        tmp_path,
+        [
+            {"type": "docs", "grade": _g("claude:d", 90, NOW)},
+            {"type": "code", "grade": _g("opencode:low", 40, NOW)},
+            {"type": "code", "grade": _g("opencode:high", 95, NOW)},
+        ],
+    )
+
+    rows = scoreboard_rows(project, now=NOW)
+
+    assert [(r["type"], r["executor"], r["score"], r["n"]) for r in rows] == [
+        ("code", "opencode:high", 95, 1), ("code", "opencode:low", 40, 1), ("docs", "claude:d", 90, 1)]
+    assert set(rows[0]) == {"type", "executor", "score", "n", "attempts_per_pass", "mean_steps",
+                            "mean_tokens", "tokens_estimated", "mean_duration_s", "last"}
+    assert scoreboard_rows(tmp_path / "nothing", now=NOW) == []

@@ -247,3 +247,10 @@ def test_http_stop_writes_one_stop_control(live):
     assert first[0] == 200 and http(server, "/api/stop", payload) == first
     controls = list((server.root / "coordinators" / CID / "control").glob("*.json"))
     assert len(controls) == 1 and json.loads(controls[0].read_text(encoding="utf-8"))["command"] == "stop"
+
+
+def test_snapshot_carries_the_scoreboard_as_rows(live):
+    server, _, _ = live
+    row = http(server, "/api/snapshot")[1]["coordinators"][0]
+    assert isinstance(row["scoreboard_rows"], list)
+    assert row["scoreboard"] is None or isinstance(row["scoreboard"], str)

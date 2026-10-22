@@ -247,6 +247,7 @@ def _unavailable_row(record: dict[str, Any], now_dt: datetime, error: str, workt
         "metrics": metrics.get("metrics", {}),
         "models": [],
         "scoreboard": None,
+        "scoreboard_rows": [],
         "last_error": error if error else record.get("last_error"),
         "continuity": continuity,
     }
@@ -334,13 +335,14 @@ def _build_row(
         metrics_result = central_metrics.aggregate([], [], None, now_dt)
         diagnostics.append({"record": str(coord_id), "message": str(exc)})
 
-    scoreboard = None
+    scoreboard, scoreboard_rows = None, []
     try:
         from . import scoring
 
         scoreboard = scoring.render_scoreboard(worktree_path, now=now_dt)
+        scoreboard_rows = scoring.scoreboard_rows(worktree_path, now=now_dt)
     except Exception:
-        scoreboard = None
+        scoreboard, scoreboard_rows = None, []
 
     continuity = record.get("continuity")
     if not isinstance(continuity, dict):
@@ -361,6 +363,7 @@ def _build_row(
         "metrics": metrics_result.get("metrics", {}),
         "models": metrics_result.get("models", []),
         "scoreboard": scoreboard,
+        "scoreboard_rows": scoreboard_rows,
         "last_error": record.get("last_error"),
         "continuity": continuity,
     }
