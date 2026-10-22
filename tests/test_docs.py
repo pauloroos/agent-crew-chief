@@ -117,12 +117,12 @@ def test_readmes_credit_ponytail():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    """T040: version is 0.4.1 and CHANGELOG has both current and historical entries."""
-    assert __version__ == "0.4.1"
+    """T040: version is 0.4.2 and CHANGELOG has both current and historical entries."""
+    assert __version__ == "0.4.2"
     text = _read(CHANGELOG)
     # Current release entry exists with web/Orca/gate content.
-    assert "## [0.4.1]" in text
-    current_section = text.split("## [0.4.1]", 1)[1].split("\n## [", 1)[0]
+    assert "## [0.4.2]" in text
+    current_section = text.split("## [0.4.2]", 1)[1].split("\n## [", 1)[0]
     assert "web" in current_section.lower() or "Web" in current_section
     # Historical 0.3.4 section preserved intact.
     assert "## [0.3.4]" in text
@@ -163,10 +163,10 @@ def test_changelog_keeps_the_0_3_3_section():
 
 
 def test_install_pins_the_current_release():
-    """T040: install commands pin the current release tag (v0.4.1), not an older one."""
+    """T040: install commands pin the current release tag (v0.4.2), not an older one."""
     for path in (README, README_PT, TUTORIAL_01, TUTORIAL_01_PT):
         text = _read(path)
-        assert "v0.4.1" in text, f"{path.name} must pin v0.4.1"
+        assert "v0.4.2" in text, f"{path.name} must pin v0.4.2"
         assert "v0.3.5" not in text, path.name
 
 

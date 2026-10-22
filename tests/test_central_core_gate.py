@@ -24,7 +24,7 @@ TUTORIAL_01_EN = REPO_ROOT / "docs" / "tutorials" / "01-first-job.md"
 TUTORIAL_01_PT = REPO_ROOT / "docs" / "tutorials" / "01-first-job.pt-BR.md"
 VERSION_FILE = SCRIPTS_DIR / "crew_chief" / "__init__.py"
 
-CURRENT_VERSION = "0.4.1"
+CURRENT_VERSION = "0.4.2"
 
 
 def _read(path: Path) -> str:
@@ -43,7 +43,7 @@ def test_version_is_current():
 
 
 def test_changelog_has_current_release_entry():
-    """SC-011: CHANGELOG contains a 0.4.1 entry with web/Orca/gate content."""
+    """SC-011: CHANGELOG contains a 0.4.2 entry with web content."""
     text = _read(CHANGELOG)
     assert f"## [{CURRENT_VERSION}]" in text
     section_start = text.index(f"## [{CURRENT_VERSION}]")

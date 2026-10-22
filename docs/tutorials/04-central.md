@@ -190,11 +190,16 @@ coordinator disappears, the page asks you to choose again. Each question
 has its own Reply, and Stop asks for confirmation naming the coordinator.
 
 Terminal entry is controlled: Attach queues an intent for an active
-terminal view, which performs the same handoff as `Enter`, and the page
-then shows whether the session opened or why it failed. With no
-available terminal bridge, or after a failure, the page shows a copyable
-instruction instead (with `--central-dir` when you started the view with
-one):
+terminal view, which performs the same handoff as `Enter`. The page shows
+the request as queued (it may wait while another session is open), then
+open while you work in the terminal, then closed with the session's exit
+code, or why it failed. With no available terminal bridge, or after a
+failure, the page shows a copyable instruction instead, quoted for your
+shell (PowerShell on Windows). When you started the view with
+`--central-dir`, the instruction carries the same directory as an
+absolute path: under your home it is shown as `~/...`; outside your home
+it is shown in full, because without it the command would open another
+registry, and the page is served only to your own loopback browser:
 
 ```bash
 acc attach COORDINATOR_ID

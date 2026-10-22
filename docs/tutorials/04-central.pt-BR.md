@@ -195,10 +195,16 @@ Cada pergunta tem o seu próprio botão Reply, e Stop pede confirmação dizendo
 qual coordenadora vai parar.
 
 A entrada pelo terminal é controlada: Attach enfileira um pedido para uma
-tela de terminal ativa, que faz a mesma passagem de controle do `Enter`, e a
-página mostra depois se a sessão abriu ou por que falhou. Sem ponte de
-terminal disponível, ou depois de uma falha, a página mostra uma instrução
-para copiar (com `--central-dir` quando você abriu a visão com essa opção):
+tela de terminal ativa, que faz a mesma passagem de controle do `Enter`. A
+página mostra o pedido na fila (ele pode esperar enquanto outra sessão está
+aberta), depois aberto enquanto você trabalha no terminal, depois encerrado
+com o código de saída da sessão, ou por que falhou. Sem ponte de terminal
+disponível, ou depois de uma falha, a página mostra uma instrução para
+copiar, com as aspas do seu shell (PowerShell no Windows). Quando você abriu
+a visão com `--central-dir`, a instrução leva a mesma pasta como caminho
+absoluto: dentro da sua home ela aparece como `~/...`; fora dela aparece
+inteira, porque sem ela o comando abriria outro registro, e a página só é
+servida para o seu próprio navegador no loopback:
 
 ```bash
 acc attach COORDINATOR_ID

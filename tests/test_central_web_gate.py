@@ -390,9 +390,9 @@ def test_no_ai_coauthor_trailers_in_release_docs():
 # ---------------------------------------------------------------------------
 
 
-def test_version_is_041():
+def test_version_is_042():
     from crew_chief import __version__
-    assert __version__ == "0.4.1", f"expected 0.4.1, got {__version__}"
+    assert __version__ == "0.4.2", f"expected 0.4.2, got {__version__}"
 
 
 def test_changelog_has_041_entry():

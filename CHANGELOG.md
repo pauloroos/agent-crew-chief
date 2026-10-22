@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [0.4.2] - 2026-10-22
+
+### Fixed
+- **Web view attach:** the page now says the session is open as soon as it starts in the terminal, then that it closed, with its exit code. In 0.4.1 the page reported "opened" only after the session had already ended, gave up after about two minutes with "The terminal view has not taken the attach request yet" while the session was still open, and called a session left with Ctrl-C a failed attach. A request waiting in the queue is no longer reported as an error.
+- **Web view attach:** a failure reported by the terminal right away is no longer replaced by "queued", so its reason and command reach the page.
+- **Web view replies:** Reply and the alert Stop buttons are disabled while another action is running, and Reply no longer asks for text it cannot send. If an answer cannot be sent, the page keeps the typed text on screen to copy instead of dropping it.
+- **Web view refresh:** a snapshot request that times out is now cancelled, so only one request is ever pending. In 0.4.1 the late request kept running next to the next refresh.
+- **Web view attach command:** the copyable `acc attach` line uses the central directory `acc` actually opens: `~` is expanded first (a literal `~/central` no longer becomes `~/project/~/central`), a relative `--central-dir` is resolved, and the path is quoted for the shell (POSIX, or PowerShell on Windows), including `$`, `&` and quotes. A directory under home is shown as `~/...`; one outside home is shown in full, because the command needs it and the page is served only to the local browser.
+- **Web view announcements:** several new alerts and questions in one refresh are announced together instead of each replacing the last.
+- **Web view privacy:** credentials written as escaped JSON (`{\"password\": ...}`), `Authorization` values (`Token ...`, `Basic ...`), private keys (`private_key`, `private-key`) and passphrases are redacted in questions and diagnostics.
+- **Release gate cleanup:** the gate stops the web view and the smoke server with their child processes and waits for the port to be released, so it also passes from a Windows virtual environment, where `python.exe` is a launcher. Supervisors are registered for cleanup before the gate waits for them and are waited for on failure. In 0.4.1 the gate could leave these processes running there.
+- The Stop confirmation dialog is now tested as a real dialog: it names the coordinator, focuses Cancel and returns focus to the button.
+- `__version__` is `0.4.2`.
+
 ## [0.4.1] - 2026-10-22
 
 ### Added
