@@ -56,13 +56,15 @@ def _native_wrapper() -> str:
 
 
 def _release(tmp_path: Path, name: str = "release") -> Path:
-    """A released bundle: ``install.py`` next to the real ``skill/crew-chief``."""
+    """A released bundle: ``install.py``, the real ``skill/crew-chief`` and ``vendor``."""
     root = tmp_path / name
     root.mkdir(parents=True)
     shutil.copy2(INSTALL, root / "install.py")
     shutil.copytree(
         LEGACY_SKILL, root / "skill" / "crew-chief", ignore=IGNORE
     )
+    # A project install also copies the vendored Ponytail skills.
+    shutil.copytree(INSTALL.parent / "vendor", root / "vendor", ignore=IGNORE)
     return root
 
 
