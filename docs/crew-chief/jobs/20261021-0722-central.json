@@ -4610,7 +4610,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T015",
-      "task_text": "Supervise coordinator rounds without idle model calls in skill/crew-chief/scripts/crew_chief/central_supervisor.py, tests/test_central_supervisor.py; depends on T011, T012, T014"
+      "task_text": "Supervise coordinator rounds without idle model calls in skill/crew-chief/scripts/crew_chief/central_supervisor.py, tests/test_central_supervisor.py; depends on T011, T012, T014",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-22T00:30:11.994759+00:00"
+        }
+      ]
     },
     {
       "n": 16,
@@ -4922,7 +4929,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T041",
-      "task_text": "Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002"
+      "task_text": "Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002",
+      "picks": [
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-22T00:30:22.657444+00:00"
+        }
+      ]
     },
     {
       "n": 42,
