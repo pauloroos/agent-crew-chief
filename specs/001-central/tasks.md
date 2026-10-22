@@ -196,7 +196,7 @@ Proof: `python -m pytest tests/test_central_handoff.py -q`.
 
 ## Phase 4: Metrics and terminal (v0.4.0)
 
-- [ ] T021 [P] [US4] Aggregate raw economy counts with coverage labels in skill/crew-chief/scripts/crew_chief/central_metrics.py, tests/test_central_metrics.py; depends on T014, T020
+- [X] T021 [P] [US4] Aggregate raw economy counts with coverage labels in skill/crew-chief/scripts/crew_chief/central_metrics.py, tests/test_central_metrics.py; depends on T014, T020
 - [ ] T022 [P] [US3] Read one shared snapshot from live worktree records in skill/crew-chief/scripts/crew_chief/central_snapshot.py, tests/test_central_snapshot.py; depends on T003, T004, T018, T021
 - [ ] T023 [P] [US3] Read terminal keys and restore OS terminal state in skill/crew-chief/scripts/crew_chief/central_keys.py, tests/test_central_keys.py; depends on T001
 - [ ] T024 [P] [US3] Render coordinator rows questions and details in skill/crew-chief/scripts/crew_chief/central_terminal.py, tests/test_central_terminal.py; depends on T022
