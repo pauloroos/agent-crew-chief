@@ -379,8 +379,11 @@ def _apply_job(
 
     try:
         return bool(records.update_job(worktree, job_id, change))
-    except records.RecordError:
-        return None
+    except (records.RecordError, OSError) as exc:
+        if isinstance(exc, records.RecordError) and isinstance(exc.__cause__, FileNotFoundError):
+            return None
+        detail = " ".join(str(exc).split())[:500]
+        raise UsageError(f"cannot record usage for job {job_id!r}: {detail}") from exc
 
 
 # --- the recording ----------------------------------------------------------

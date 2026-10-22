@@ -617,3 +617,31 @@ def test_concurrent_first_bind_cannot_charge_two_jobs(tmp_path, worktree, monkey
         first.join(10)
         if second.ident is not None:
             second.join(10)
+
+
+def test_corrupt_job_is_reported_and_history_is_kept(tmp_path, worktree):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    job_path = make_job(worktree, "job-1")
+    job_path.write_text("{corrupt", encoding="utf-8")
+    round_id, path = write_round(root, record, active_job_id="job-1")
+    with pytest.raises(UsageError, match="job"):
+        central_usage.record_round_usage(root, record, round_result(round_id))
+    with pytest.warns(UserWarning, match="job"):
+        central_usage.backfill_usage(root, record)
+    assert job_path.read_text(encoding="utf-8") == "{corrupt"
+    assert read_round(path)["usage_event"]["state"] == "pending"
+
+
+def test_job_lock_failure_is_not_reported_as_an_absent_job(tmp_path, worktree, monkeypatch):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    make_job(worktree, "job-1")
+    round_id, _ = write_round(root, record, active_job_id="job-1")
+
+    def unavailable(*args, **kwargs):
+        raise records.JobLockTimeout("fake job lock timeout")
+
+    monkeypatch.setattr(records, "update_job", unavailable)
+    with pytest.raises(UsageError, match="job"):
+        central_usage.record_round_usage(root, record, round_result(round_id))
