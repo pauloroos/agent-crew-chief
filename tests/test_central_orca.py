@@ -43,7 +43,8 @@ elif args[:2] == ['worktree', 'create']:
     if mode == 'partial':
         print('creation reply lost; worktree preserved', file=sys.stderr)
         raise SystemExit(1)
-    print(json.dumps({'ok':True,'result':{'id':'repo-fixture::'+wt}}))
+    row = {'id':'repo-fixture::'+wt}
+    print(json.dumps({'ok':True,'result': row if mode == 'flat' else {'worktree':row}}))
 else:
     raise SystemExit('unexpected command: '+repr(args))
 ''', encoding="utf-8")
@@ -193,3 +194,9 @@ def test_source_checkout_cannot_be_registered_as_new_worktree(fixture, monkeypat
     result = backend.create(repo, options)
     assert not result["ok"] and "source" in result["error"]
     assert not central_registry.load_registry(backend.root)["coordinators"]
+
+
+def test_flat_documented_full_id_is_also_normalized(fixture, monkeypatch):
+    monkeypatch.setenv("FAKE_ORCA_MODE", "flat")
+    row = create(fixture)
+    assert row["session_id"] is None and row["backend"] == "orca"

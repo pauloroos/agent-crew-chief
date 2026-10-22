@@ -87,6 +87,8 @@ class OrcaBackend(DefaultBackend):
             # The documented full ID is repo-id::absolute-worktree-path. Obtain
             # Git identity from Git itself, not guessed Orca response fields.
             result = payload.get("result") if isinstance(payload, dict) else None
+            if isinstance(result, dict) and "worktree" in result:
+                result = result["worktree"]
             full_id = result.get("id") if isinstance(result, dict) else None
             if not isinstance(full_id, str) or "::" not in full_id:
                 raise BackendError("Orca reply lacks the full worktree id")
