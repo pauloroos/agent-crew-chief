@@ -203,10 +203,12 @@ def _control_command(path: Path) -> str:
     return command
 
 
-def _control_paths(control_dir: Path) -> list[Path]:
+def _control_paths(control_dir: Path, seen: set[str] | None = None) -> list[Path]:
     """The bounded control files, in the order they were requested."""
     items: list[tuple[int, str, Path]] = []
     for path in control_dir.glob("*.json"):
+        if seen and path.name in seen:
+            continue
         try:
             mtime = path.stat().st_mtime_ns
         except OSError:
@@ -334,7 +336,7 @@ class _Status:
     def consume(self, control_dir: Path) -> str | None:
         """Apply each durable control file once; the newest command wins."""
         requested = None
-        for path in _control_paths(control_dir):
+        for path in _control_paths(control_dir, self._seen):
             if path.name in self._seen:
                 continue
             self._seen.add(path.name)

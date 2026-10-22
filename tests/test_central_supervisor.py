@@ -759,3 +759,14 @@ def test_bootstrap_uses_isolated_python_even_with_hostile_pythonpath(tmp_path, m
     result = start_supervisor(record, root)
     assert result['ok']
     assert result['argv'][1] == '-I'
+
+
+def test_processed_control_history_cannot_starve_later_stop(tmp_path):
+    root, record, coord = prepared(tmp_path)
+    for index in range(central_supervisor.MAX_CONTROLS):
+        send_control(coord, 'pause', index)
+    send_control(coord, 'stop', central_supervisor.MAX_CONTROLS + 1)
+    status = central_supervisor._Status(root, record['id'], coord, FakeClock(), 'test-owner')
+    assert status.consume(coord / 'control') == 'pause'
+    assert status.consume(coord / 'control') == 'stop'
+    assert len(list((coord / 'control').glob('*.json'))) == central_supervisor.MAX_CONTROLS + 1
