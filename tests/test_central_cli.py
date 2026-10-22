@@ -246,14 +246,14 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def _repo_with_acc(path: Path) -> Path:
-    """A git repo whose installed ACC matches this release (0.4.0)."""
+    """A git repo whose installed ACC matches this release (0.4.1)."""
     path.mkdir()
     _git(path, "init")
     _git(path, "config", "user.name", "Test User")
     _git(path, "config", "user.email", "test@example.com")
     init = path / ".claude" / "skills" / "crew-chief" / "scripts" / "crew_chief" / "__init__.py"
     init.parent.mkdir(parents=True)
-    init.write_text('__version__ = "0.4.0"\n', encoding="utf-8")
+    init.write_text('__version__ = "0.4.1"\n', encoding="utf-8")
     _git(path, "add", ".")
     _git(path, "commit", "-m", "initial commit")
     return path
