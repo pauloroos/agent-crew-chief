@@ -284,6 +284,28 @@ def test_attach_without_a_terminal_shows_the_copyable_command():
     """)
 
 
+def test_attach_waits_through_a_long_queue_and_session_then_reports_it_closed():
+    _run(r"""
+    respond('/api/csrf', { csrf_token: 'tok' });
+    respond('/api/snapshot', snap([row(A)]));
+    run(); await settle();
+    respond('/api/attach', { ok: true, queued: true, attach_id: 'att-1' });
+    respond('/api/snapshot', snap([row(A)]));
+    elements['btn-attach'].click(); await settle();
+    // Far longer than two minutes queued, then open: never reported as an error.
+    for (let i = 0; i < 150; i++) { respond('/api/attach/att-1', { state: 'queued' }); await fire(t => t.ms === 1000); }
+    assert.match(text('feedback'), /queued/i);
+    for (let i = 0; i < 150; i++) { respond('/api/attach/att-1', { state: 'opened' }); await fire(t => t.ms === 1000); }
+    assert.match(text('feedback'), /open in the terminal/i);
+    assert(!/error/.test(document.getElementById('feedback').className));
+    respond('/api/attach/att-1', { state: 'closed', exit_code: 130 });
+    await fire(t => t.ms === 1000);
+    assert.match(text('feedback'), /closed.*130/);
+    assert(!/error/.test(document.getElementById('feedback').className));
+    assert.equal(timers.filter(t => t.ms === 1000).length, 0);
+    """)
+
+
 def test_cards_are_compact_and_details_are_not_repeated():
     _run(r"""
     respond('/api/csrf', { csrf_token: 'tok' });

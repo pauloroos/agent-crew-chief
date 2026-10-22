@@ -11,7 +11,7 @@ without starting a substitute session.
 
 Public API
 ----------
-``attach(root, coordinator_id, terminal, timeout_s)``
+``attach(root, coordinator_id, terminal, timeout_s, on_open)``
     Request exclusive ownership of ``coordinator_id`` for ``terminal``.
     Returns a result dict with at least ``{"ok": bool, "state": str}``.
 """
@@ -89,6 +89,7 @@ def attach(
     coordinator_id: str,
     terminal: object | None = None,
     timeout_s: float = 30.0,
+    on_open: Any = None,
 ) -> dict:
     """Yield exclusive ownership to ``terminal`` for interactive resume.
 
@@ -105,6 +106,9 @@ def attach(
     timeout_s:
         Maximum seconds to wait for the supervisor to yield before
         returning ``busy``.
+    on_open:
+        Optional callable, called with the ``attached`` result once the
+        session process has started and while it still runs.
 
     Returns
     -------
@@ -196,10 +200,17 @@ def attach(
     # capture), then always restore background eligibility.
     try:
         argv = central_launch.adapter_for(cli).interactive(record)
-        completed = subprocess.run(argv, cwd=record.get("worktree"))
-        result["exit_code"] = completed.returncode
-        if completed.returncode != 0:
-            result.update(ok=False, reason=f"{cli} exited with code {completed.returncode}")
+        with subprocess.Popen(argv, cwd=record.get("worktree")) as process:
+            try:
+                if on_open is not None:
+                    on_open(dict(result))
+                returncode = process.wait()
+            except BaseException:
+                process.kill()  # as subprocess.run does: no session outlives the attach
+                raise
+        result["exit_code"] = returncode
+        if returncode != 0:
+            result.update(ok=False, reason=f"{cli} exited with code {returncode}")
     except (ValueError, RuntimeError, OSError) as exc:
         # AdapterError is a ValueError, CodexError a RuntimeError.
         result.update(

@@ -571,23 +571,31 @@
       if (!result) return;
       if (result.queued) {
         feedback("Attach requested; queued for the terminal view.", "pending");
-        pollAttach(result.attach_id, 0);
+        pollAttach(result.attach_id, 0, "queued");
       } else {
         showCommand("The browser cannot open the session. Run this in your terminal:", result.command);
       }
     });
   }
 
-  function pollAttach(id, count) {
-    if (count >= ATTACH_POLLS) { feedback("The terminal view has not taken the attach request yet.", "error"); return; }
+  // A request may wait queued while another session runs, and a session may stay
+  // open for hours: only consecutive unanswered polls give up.
+  function pollAttach(id, misses, last) {
+    if (misses >= ATTACH_POLLS) { feedback("Lost track of the attach request; check the terminal view.", "error"); return; }
     setTimeout(function () {
       fetch("/api/attach/" + encodeURIComponent(id), { credentials: "same-origin", cache: "no-store" })
         .then(function (response) { return response.ok ? response.json() : null; })
         .then(function (result) {
-          if (!result || result.state === "queued") return pollAttach(id, count + 1);
-          if (result.state === "opened") feedback("The session was opened in the terminal.", "ok");
-          else showCommand("Attach failed: " + text(result.reason) + ". Run this in your terminal instead:", result.command, "error");
-        }, function () { pollAttach(id, count + 1); });
+          if (!result) return pollAttach(id, misses + 1, last);
+          if (result.state === "queued" || result.state === "opened") {
+            if (result.state === "opened" && last !== "opened") feedback("The session is open in the terminal.", "ok");
+            return pollAttach(id, 0, result.state);
+          }
+          if (result.state === "closed") {
+            var code = typeof result.exit_code === "number" && result.exit_code !== 0 ? " (exit code " + result.exit_code + ")" : "";
+            feedback("The terminal session closed" + code + ".", "ok");
+          } else showCommand("Attach failed: " + text(result.reason) + ". Run this in your terminal instead:", result.command, "error");
+        }, function () { pollAttach(id, misses + 1, last); });
     }, ATTACH_POLL_MS);
   }
 

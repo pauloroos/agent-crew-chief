@@ -307,14 +307,23 @@ def test_enter_opens_the_real_session_and_restores_state(tmp_path, fake_bin):
     root, record = _prepared(tmp_path, state="paused", session_id="s42")
     runs: list[tuple] = []
 
-    def fake_run(argv, cwd=None):
-        runs.append((argv, cwd))
-        return types.SimpleNamespace(returncode=0)
+    class FakeSession:
+        def __init__(self, argv, cwd=None):
+            runs.append((argv, cwd))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def wait(self):
+            return 0
 
     snap = _make_snap(rows=[_row(record["id"], state="paused")])
     with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap), \
          patch("crew_chief.central_screen.read_key", side_effect=["enter", "q"]), \
-         patch("crew_chief.central_attach.subprocess", types.SimpleNamespace(run=fake_run)), \
+         patch("crew_chief.central_attach.subprocess", types.SimpleNamespace(Popen=FakeSession)), \
          patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
         exit_code = run_screen(root, options={}, io=_FakeTerminal(), clock=FakeClock())
 
@@ -396,7 +405,7 @@ def test_screen_actions_route_by_the_stored_backend_like_the_cli(tmp_path, monke
         central_registry.register(root, row)
     attached: list[str] = []
 
-    def fake_attach(root, cid, terminal, timeout_s):
+    def fake_attach(root, cid, terminal, timeout_s, on_open=None):
         attached.append(cid)
         return {"ok": True, "state": "attached"}
 

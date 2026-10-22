@@ -109,7 +109,7 @@ def test_terminal_bridge_handoff(tmp_path):
     fake.attach_intents.put(("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"))
     calls = []
 
-    def fake_attach(root, cid, io):
+    def fake_attach(root, cid, io, on_open=None):
         calls.append((str(root), cid))
         return {"ok": True}
 

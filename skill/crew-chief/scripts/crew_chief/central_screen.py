@@ -31,7 +31,7 @@ from . import (
     central_snapshot,
     central_terminal,
 )
-from .central_backend import ATTACH_TIMEOUT_KEY, TERMINAL_KEY
+from .central_backend import ATTACH_TIMEOUT_KEY, ON_OPEN_KEY, TERMINAL_KEY
 from .central_keys import (
     KEY_DETAILS,
     KEY_DOWN,
@@ -144,9 +144,9 @@ def _registered(root: Path, cid: str):
     return row, backend
 
 
-def _attach(root: Path, cid: str, io: Any) -> dict:
+def _attach(root: Path, cid: str, io: Any, on_open: Any = None) -> dict:
     row, backend = _registered(root, cid)
-    return backend.attach({**row, TERMINAL_KEY: io, ATTACH_TIMEOUT_KEY: 5.0})
+    return backend.attach({**row, TERMINAL_KEY: io, ATTACH_TIMEOUT_KEY: 5.0, ON_OPEN_KEY: on_open})
 
 
 def _handle_message(root: Path, snap: dict, selected: int, io: _IO) -> None:
@@ -228,12 +228,17 @@ def _drain_attach_intents(root, server, io):
             cid, attach_id = server.attach_intents.get_nowait()
         except queue.Empty:
             return
+
+        def opened(_result, attach_id=attach_id):
+            server.attach_results[attach_id] = {"state": "opened"}
+
         try:
-            result = _attach(root, cid, io)
+            result = _attach(root, cid, io, opened)
         except Exception as exc:
             result = {"ok": False, "reason": str(exc) or type(exc).__name__}
-        if result.get("ok") is True:
-            server.attach_results[attach_id] = {"state": "opened"}
+        if server.attach_results.get(attach_id, {}).get("state") == "opened":
+            # The session ran: how it ended (Ctrl-C included) is not a failed open.
+            server.attach_results[attach_id] = {"state": "closed", "exit_code": result.get("exit_code")}
         else:
             # The browser shows why, with the command to run by hand (FR-020).
             server.attach_results[attach_id] = {

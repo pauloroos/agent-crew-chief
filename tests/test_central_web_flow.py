@@ -221,10 +221,14 @@ def test_browser_attach_result_is_correlated_and_surfaced(live, monkeypatch, out
             assert (status, data["state"]) == (200, "queued")
             return None
         return "q"
-    def attach(root, cid, terminal, timeout):
+    def attach(root, cid, terminal, timeout, on_open=None):
         if outcome == "raised":
             raise OSError("session vanished at /home/someone/secret")
-        return {"ok": outcome == "opened", "state": "paused", "reason": "resume failed: timeout"}
+        if outcome == "opened":
+            on_open({"ok": True, "state": "attached"})
+            assert http(server, "/api/attach/" + queued["attach_id"])[1] == {"state": "opened"}
+            return {"ok": True, "state": "paused", "exit_code": 0}
+        return {"ok": False, "state": "paused", "reason": "resume failed: timeout"}
     monkeypatch.setattr(central_screen, "terminal_input", lambda **kw: nullcontext())
     monkeypatch.setattr(central_screen, "read_key", key)
     monkeypatch.setattr(central_attach, "attach", attach)
@@ -233,7 +237,7 @@ def test_browser_attach_result_is_correlated_and_surfaced(live, monkeypatch, out
     status, result = http(server, "/api/attach/" + queued["attach_id"])
     assert status == 200
     if outcome == "opened":
-        assert result == {"state": "opened"}
+        assert result == {"state": "closed", "exit_code": 0}
     else:
         assert result["state"] == "failed" and result["command"] == "acc attach " + CID
         assert result["reason"] == ("resume failed: timeout" if outcome == "refused" else "[redacted]")

@@ -158,7 +158,7 @@ def test_start_send_attach_and_state_preserve_core_session_and_ids(fixture, monk
                         lambda r, root: {"ok": True, "coordinator_id": r["id"]})
     assert backend.start(row)["coordinator_id"] == row["id"]
     terminal = object()
-    def attach(root, cid, term, timeout):
+    def attach(root, cid, term, timeout, on_open=None):
         assert term is terminal and timeout == 2
         assert central_registry.load_registry(root)["coordinators"][cid]["session_id"] == "model-session-42"
         return {"ok": True, "session_id": "model-session-42"}

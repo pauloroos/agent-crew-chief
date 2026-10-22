@@ -3,9 +3,12 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from http.client import HTTPConnection
 import json
+import os
 from pathlib import Path
 import threading
+import time
 import uuid
+import shlex
 import shutil
 import subprocess
 
@@ -262,6 +265,60 @@ def test_attach_queue_bounded_and_no_error_paths_leak(tmp_path, monkeypatch):
         monkeypatch.setattr(central_messages, "send", fail)
         status, data = exchange(server, "/api/message", {"text": "hello"})
         assert status == 400 and str(tmp_path) not in json.dumps(data) and "abc" not in json.dumps(data)
+
+
+#: A claude whose interactive session stays open until the test releases it.
+LONG_SESSION_CLAUDE = """
+import os, sys, time
+args = sys.argv[1:]
+if "--version" in args:
+    print("1.2.3 (Claude Code)")
+    raise SystemExit(0)
+if "--help" in args:
+    print(__HELP__)
+    raise SystemExit(0)
+while not os.path.exists(os.environ["FAKE_SESSION_RELEASE"]):
+    time.sleep(0.05)
+raise SystemExit(130)  # the owner leaves with Ctrl-C
+"""
+
+
+def _until(predicate, timeout_s=30.0):
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return predicate()
+
+
+def test_browser_attach_is_opened_while_the_session_runs_then_closed(tmp_path, fake_bin, monkeypatch):
+    """The browser sees "opened" during a long session, then "closed" with its exit code."""
+    from crew_chief import central_screen
+    from test_central_attach import _FakeTerminal, _prepared
+    from test_central_supervisor import CLAUDE_HELP
+
+    fake_bin("claude", LONG_SESSION_CLAUDE.replace("__HELP__", repr(CLAUDE_HELP)))
+    release = tmp_path / "release"
+    monkeypatch.setenv("FAKE_SESSION_RELEASE", str(release))
+    root, record = _prepared(tmp_path, state="paused", session_id="s42")
+    with serving(root, tmp_path) as server:
+        server.attach_bridge_active = True
+        aid = str(uuid.uuid4())
+        assert exchange(server, "/api/attach", {"coordinator_id": record["id"], "action_id": aid})[1]["queued"] is True
+        bridge = threading.Thread(target=central_screen._drain_attach_intents, args=(root, server, _FakeTerminal()))
+        bridge.start()
+        try:
+            assert _until(lambda: exchange(server, "/api/attach/" + aid, method="GET")[1] == {"state": "opened"}), \
+                server.attach_results
+            assert bridge.is_alive(), "the session is still open"
+        finally:
+            release.touch()
+            bridge.join(30)
+        assert not bridge.is_alive()
+        # Leaving with Ctrl-C is a closed session, not a failed open.
+        assert exchange(server, "/api/attach/" + aid, method="GET")[1] == {"state": "closed", "exit_code": 130}
+    assert central_registry.load_registry(root)["coordinators"][record["id"]]["state"] == "paused"
 
 
 def test_browser_enables_only_after_token_and_reuses_retry_id():

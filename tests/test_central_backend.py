@@ -311,7 +311,7 @@ def test_attach_forwards_the_terminal_and_preserves_the_core_result(
     terminal = object()
     seen = {}
 
-    def fake_attach(attach_root, coordinator_id, term, timeout_s):
+    def fake_attach(attach_root, coordinator_id, term, timeout_s, on_open=None):
         seen["root"] = attach_root
         seen["id"] = coordinator_id
         seen["terminal"] = term

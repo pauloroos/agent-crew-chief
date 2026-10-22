@@ -39,6 +39,7 @@ __all__ = [
     "BackendError",
     "DEFAULT_BACKEND",
     "DefaultBackend",
+    "ON_OPEN_KEY",
     "TERMINAL_KEY",
     "default_backend",
 ]
@@ -50,6 +51,8 @@ DEFAULT_BACKEND = "default"
 #: never persisted: a registry row refuses unknown fields.
 TERMINAL_KEY = "terminal"
 ATTACH_TIMEOUT_KEY = "attach_timeout_s"
+#: A callable told when the interactive session has started (the browser attach).
+ON_OPEN_KEY = "on_open"
 
 #: Default bounded wait for the supervisor to yield ownership.
 ATTACH_TIMEOUT_S = 30.0
@@ -84,8 +87,8 @@ class Backend(Protocol):
     def attach(self, record: dict[str, Any]) -> dict[str, Any]:
         """Yield exclusive ownership of a coordinator to a terminal.
 
-        The record may carry the transient keys :data:`TERMINAL_KEY` and
-        :data:`ATTACH_TIMEOUT_KEY`; they are never persisted.
+        The record may carry the transient keys :data:`TERMINAL_KEY`,
+        :data:`ATTACH_TIMEOUT_KEY` and :data:`ON_OPEN_KEY`; they are never persisted.
         """
 
     def state(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -172,7 +175,8 @@ class DefaultBackend:
         timeout_s = record.get(ATTACH_TIMEOUT_KEY)
         if timeout_s is None:
             timeout_s = ATTACH_TIMEOUT_S
-        return central_attach.attach(self.root, coordinator_id, terminal, timeout_s)
+        return central_attach.attach(self.root, coordinator_id, terminal, timeout_s,
+                                     record.get(ON_OPEN_KEY))
 
     def state(self, record: dict[str, Any]) -> dict[str, Any]:
         """Report the stored state of one coordinator."""
