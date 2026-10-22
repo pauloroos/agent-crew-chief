@@ -5277,7 +5277,7 @@
           "cost": "unknown",
           "status": "ok",
           "started": "2026-10-22T12:46:29.067866+00:00",
-          "duration_s": 0,
+          "duration_s": null,
           "note": "Owner exception after two free failures; focused red 28 failed (missing feature), green 27 passed/1 skipped (Windows symlink permission). Loopback-only readonly transport/public sanitized snapshot. No old files or assertions deleted; tests joined all threads and released socket. Coordinator tokens unavailable, cost unknown; no paid executor dispatch.",
           "branch": "crew/20261021-0722-central-31-self",
           "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-31-self",
@@ -5290,7 +5290,8 @@
           "proof": {
             "command": "python -m pytest tests/test_central_web.py -q",
             "status": "passed"
-          }
+          },
+          "duration_known": false
         },
         {
           "n": 4,
@@ -5349,7 +5350,7 @@
           "cost": "unknown",
           "status": "ok",
           "started": "2026-10-22T12:51:11.729851+00:00",
-          "duration_s": 0,
+          "duration_s": null,
           "note": "T031 corrected after independent review: credential-key regression red 1 failed; green 28 passed/1 skipped; provider/model, a/b and slash dates preserved. Review concerns about T032 UI/T033 actions/T034 CLI are deferred owners, not T031 gaps. Prior correction commit retained, no deletions.",
           "branch": "crew/20261021-0722-central-31-self",
           "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-31-self",
@@ -5362,7 +5363,8 @@
           "proof": {
             "command": "python -m pytest tests/test_central_web.py -q",
             "status": "passed"
-          }
+          },
+          "duration_known": false
         },
         {
           "n": 7,
@@ -5538,7 +5540,7 @@
           "cost": "unknown",
           "status": "ok",
           "started": "2026-10-22T13:01:18.822251+00:00",
-          "duration_s": 0,
+          "duration_s": null,
           "note": "Salvaged Beam adfc37f after two free failures, retained all four allowed files. Added executable Node DOM tests: red2/green12; strengthened vacuous assertion, fixed unknown/chart dedup, responsive focus, working synthetic --smoke entry. No old baseline files/assertions deleted. Full reviewed diff starts at8688b83. No browser available; Node DOM/HTTP proof12 passed, node --check passed.",
           "branch": "crew/20261021-0722-central-32-self",
           "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-32-self",
@@ -5551,7 +5553,8 @@
           "proof": {
             "command": "python -m pytest tests/test_central_web_assets.py -q",
             "status": "passed"
-          }
+          },
+          "duration_known": false
         },
         {
           "n": 4,
@@ -5585,7 +5588,7 @@
           "cost": "unknown",
           "status": "ok",
           "started": "2026-10-22T13:03:28.722728+00:00",
-          "duration_s": 0,
+          "duration_s": null,
           "note": "Final T032 correction after independent Opus: red1 failed, green13 passed. Aggregate missing across multiple coordinators is explicit unknown; no duplicate guessed chart. Review full8688b83..HEAD, retain all Beam and prior fixes.",
           "branch": "crew/20261021-0722-central-32-self",
           "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-32-self",
@@ -5598,7 +5601,8 @@
           "proof": {
             "command": "python -m pytest tests/test_central_web_assets.py -q",
             "status": "passed"
-          }
+          },
+          "duration_known": false
         },
         {
           "n": 6,
@@ -5774,7 +5778,7 @@
           "cost": "unknown",
           "status": "ok",
           "started": "2026-10-22T13:15:01.412404+00:00",
-          "duration_s": 0,
+          "duration_s": null,
           "note": "T033 completed after two free failures, salvaged backend9612370. Proof37 passed; combined accepted web78 passed1symlinkskip. Node fake DOM tests assert controls stay disabled until token and network retries reuse UUID; no browser available. Full task diff1a9addf..HEAD; existing tests/assertions preserved.",
           "branch": "crew/20261021-0722-central-33-self",
           "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-33-self",
@@ -5787,7 +5791,8 @@
           "proof": {
             "command": "python -m pytest tests/test_central_web_actions.py -q",
             "status": "passed"
-          }
+          },
+          "duration_known": false
         },
         {
           "n": 4,
@@ -5846,7 +5851,7 @@
           "cost": "unknown",
           "status": "ok",
           "started": "2026-10-22T13:28:49.524722+00:00",
-          "duration_s": 0,
+          "duration_s": null,
           "note": "Narrow privacy correction based on accepted67b5d9c, no task reset. Red1 labelled multiword secret left fragments, fixed by masking whole text field, combined79passed1skip. Review this exact2-file correction and focused38 proof before landing. No paid executor.",
           "branch": "crew/20261021-0722-central-33-privacy",
           "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-33-self",
@@ -5859,7 +5864,8 @@
           "proof": {
             "command": "python -m pytest tests/test_central_web_actions.py -q",
             "status": "passed"
-          }
+          },
+          "duration_known": false
         },
         {
           "n": 7,
@@ -5958,9 +5964,9 @@
       ],
       "next_attempt": 8,
       "accepted": {
-        "attempt": 3,
-        "branch": "crew/20261021-0722-central-33-self",
-        "at": "2026-10-22T13:20:31.142689+00:00"
+        "attempt": 6,
+        "branch": "crew/20261021-0722-central-33-privacy",
+        "at": "2026-10-22T13:30:22.481771+00:00"
       }
     },
     {
@@ -6011,11 +6017,128 @@
           "cost_known": true,
           "start_sha": "67b5d9c45df3ae5518db00a14c27b2b54dab27b4",
           "end_sha": "03590fc093974e1e1287f6d92c46fe00e0d2f98d"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode/nemotron-3-ultra-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T13:26:49.982741+00:00",
+          "duration_s": 241.7,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "amp\":1792675817336,\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"part\":{\"partID\":\"prt_163ce229f001Ku99vyKdXdX3Ki\",\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"messageID\":\"msg_163cdef4a001PmHAf0oYnzGocm\",\"type\":\"tool\",\"id\":\"call-6cb78382-36fe-4992-905b-df9d6f97de79\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-34-2\\\" && python -m pytest tests/test_central_web_cli.py -q --timeout=10 2>&1\"},\"output\":\"ERROR: usage: python -m pytest [options] [file_or_dir] [file_or_dir] [...]\\r\\npython -m pytest: error: unrecognized arguments: --timeout=10\\r\\n  inifile: E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-34-2\\\\pyproject.toml\\r\\n  rootdir: E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-34-2\\r\\n\\r\\n\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"exit\":4},\"content\":[{\"type\":\"text\",\"text\":\"ERROR: usage: python -m pytest [options] [file_or_dir] [file_or_dir] [...]\\r\\npython -m pytest: error: unrecognized arguments: --timeout=10\\r\\n  inifile: E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-34-2\\\\pyproject.toml\\r\\n  rootdir: E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-34-2\\r\\n\\r\\n\"},{\"type\":\"text\",\"text\":\"Exited with code 4\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\":\\\"cd \\\\\\\"E:\\\\\\\\DEV\\\\\\\\acc-v041.crew\\\\\\\\20261021-0722-central-34-2\\\\\\\" && python -m pytest tests/test_central_web_cli.py -q --timeout=10 2>&1\\\"}\"},\"time\":{\"start\":1792675816095,\"end\":1792675817336}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792675817398,\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"part\":{\"id\":\"prt_163ce27b60016UHRoXcSy9KmEK\",\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"messageID\":\"msg_163cdef4a001PmHAf0oYnzGocm\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"ece7b14718a00a78a75ccd9a425a01bef2c18083\",\"cost\":0,\"tokens\":{\"input\":10527,\"output\":66,\"reasoning\":123,\"cache\":{\"read\":60480,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792675821069,\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"part\":{\"id\":\"prt_163ce360d001DCkFwETx7vpNTZ\",\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"messageID\":\"msg_163ce27ca001NeYVX5VOQqwRw5\",\"type\":\"step-start\",\"snapshot\":\"ece7b14718a00a78a75ccd9a425a01bef2c18083\"}}\n{\"type\":\"tool_use\",\"timestamp\":1792675838296,\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"part\":{\"partID\":\"prt_163ce3cbc001Kfk7oNhjO9PEBw\",\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"messageID\":\"msg_163ce27ca001NeYVX5VOQqwRw5\",\"type\":\"tool\",\"id\":\"call-30eec249-298c-48eb-b86d-b85b3c380a8d\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-34-2\\\" && timeout 15 python -m pytest tests/test_central_web_cli.py -q 2>&1 || echo \\\"Exit code: $?\\\"\"},\"output\":\".......Exit code: 124\\n\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"exit\":0},\"content\":[{\"type\":\"text\",\"text\":\".......Exit code: 124\\n\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\":\\\"cd \\\\\\\"E:\\\\\\\\DEV\\\\\\\\acc-v041.crew\\\\\\\\20261021-0722-central-34-2\\\\\\\" && timeout 15 python -m pytest tests/test_central_web_cli.py -q 2>&1 || echo \\\\\\\"Exit code: $?\\\\\\\"\\\"}\"},\"time\":{\"start\":1792675822780,\"end\":1792675838296}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792675838629,\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"part\":{\"id\":\"prt_163ce7aa5001A4HUL0wCDm59zf\",\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"messageID\":\"msg_163ce27ca001NeYVX5VOQqwRw5\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"6fe3bf1cbdf0ed7b724c3e4d1a2e0c4adf77136e\",\"cost\":0,\"tokens\":{\"input\":6547,\"output\":84,\"reasoning\":25,\"cache\":{\"read\":64800,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792675842518,\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"part\":{\"id\":\"prt_163ce89d6001h4U94jdw5fhFqZ\",\"sessionID\":\"ses_e9c34fbd4ffe5xPSwPQmaTaimo\",\"messageID\":\"msg_163ce7ab7001r00g4ValbMSXka\",\"type\":\"step-start\",\"snapshot\":\"6fe3bf1cbdf0ed7b724c3e4d1a2e0c4adf77136e\"}}\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-34-2",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-34-2",
+          "base": {
+            "attempt": 1,
+            "branch": "crew/20261021-0722-central-34-1"
+          },
+          "steps": 14,
+          "tokens_in": 674292,
+          "tokens_out": 1389,
+          "tokens_total": 675681,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "03590fc093974e1e1287f6d92c46fe00e0d2f98d",
+          "end_sha": "03590fc093974e1e1287f6d92c46fe00e0d2f98d"
+        },
+        {
+          "n": 3,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T13:36:01.639157+00:00",
+          "duration_s": null,
+          "note": "T034 complete after two failed free attempts. Salvaged Beam CLI/tests, no Nemotron code diff. Red2/green19 task, affected legacy screen33 passed. Real loopback HTTP within fake opener, socket/thread closure on Ctrl-C/screen/browser errors and start failure. Review full67b5d9c..HEAD, only3 allowed files, no old tests/assertions removed.",
+          "branch": "crew/20261021-0722-central-34-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-34-self",
+          "start_sha": "03590fc093974e1e1287f6d92c46fe00e0d2f98d",
+          "end_sha": "70c4c0bbfe29fcfaac11cd73f3d9766c6ec197a0",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web_cli.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 4,
+          "executor": "antigravity:gemini-3.8-flash-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:36:24.245924+00:00",
+          "duration_s": 42.9,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "### Spec verdict\n\n- **FR-016**: `done` — `acc central --web` starts loopback `http.server` on an ephemeral/specified port with packaged static assets (`skill/crew-chief/web`), serves UI components (cards, charts, history, scoreboard, questions, controlled attach entry), and shuts down cleanly.\n- **FR-026**: `done` — Shares identical read-only terminal/web snapshot contract (`central_snapshot.snapshot`) sourcing live worktrees/registry metadata without mutable metrics DB or viewing side effects.\n- **SC-009**: `done` — 19 focused tests in [test_central_web_cli.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-34-self/tests/test_central_web_cli.py) verify startup sequence, snapshot parity, actions, escaping, Origin/token, traversal refusal, loopback binding, and lifecycle cleanup without live coordinators.\n- **US5/AC1**: `done` — `run_web` spins up server, confirms socket readiness before opening browser, and provides snapshot parity with terminal.\n- **US5/AC4**: `done` — `attach_bridge_active` is only set active inside interactive terminal loop via `_web_bridge`. Redirected mode and standalone runs keep bridge inactive; web endpoint returns copyable fallback command without claiming terminal was opened.\n\n**extra**:\n- None. Redundant alias declarations in [central_cli.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-34-self/skill/crew-chief/scripts/crew_chief/central_cli.py) were pruned and internal dispatch in [central_screen.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-34-self/skill/crew-chief/scripts/crew_chief/central_screen.py) was streamlined directly to criteria.\n\n---\n\n### Quality verdict\n\n- **Findings**: None (no `Critical`, `Important`, or `Minor` defects found).\n- **Architecture & Lifecycle**: Clean lifecycle management in `run_web` using `try/finally` blocks ensuring `server.server_close()` is always reached. Thread startup failures do not trigger deadlock on `server.shutdown()`.\n- **Concurrency & Safety**: Sockets bind to loopback, threads marked `daemon=True`, non-interactive / redirected mode avoids draining attach intents, and terminal screen cleanly restores bridge state.\n- **Verification**: `python -m pytest tests/test_central_web_cli.py -q` passes (19 passed). HEAD confirmed at `70c4c0b`.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 100401,
+          "tokens_out": 918,
+          "tokens_total": 72146,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
-      "corrections": [],
+      "corrections": [
+        {
+          "reason": "Two free timeouts left partial code and hanging terminal test touching actual stdin. Safely injected key/context without weakening assertions. Red2failed8passed proved browser opens before HTTP serving and redirected screen drains attach. Preserved original run_screen API/body, removed speculative new aliases and signature retries; fixed lifecycle/eligibility, added real HTTP/Ctrl-C/error/thread-start/public CLI proofs. Final19own/33with old screen passed.",
+          "executor": "opencode:opencode-go/beam-free",
+          "at": "2026-10-22T13:36:01.434995+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode-go/beam-free": {
+          "score": 45,
+          "explain": "adherence 3/5 → 60; 1 correction −15; 0 extra; penalties none → 45",
+          "corrections": 1,
+          "done": 3,
+          "missing": 2,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/beam-free",
+          "graded_at": "2026-10-22T13:37:41.983922+00:00"
+        },
+        "opencode:opencode/nemotron-3-ultra-free": {
+          "score": 0,
+          "explain": "adherence 0/5 → 0; 0 corrections; 0 extra; penalties none → 0",
+          "corrections": 0,
+          "done": 0,
+          "missing": 5,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/nemotron-3-ultra-free",
+          "graded_at": "2026-10-22T13:37:42.233372+00:00"
+        },
+        "coordinator:self": {
+          "score": 100,
+          "explain": "adherence 5/5 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 5,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:self",
+          "graded_at": "2026-10-22T13:37:42.452047+00:00"
+        }
+      },
       "ref": "T034",
       "task_text": "Wire acc central --web startup and shutdown in tests/test_central_web_cli.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_screen.py; depends on T025, T033",
       "picks": [
@@ -6028,9 +6151,15 @@
           "pick": "opencode:opencode/nemotron-3-ultra-free",
           "reason": "best score 18 (opencode:opencode/nemotron-3-ultra-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
           "at": "2026-10-22T13:26:13.725433+00:00"
+        },
+        {
+          "pick": "antigravity:gemini-3.8-flash-low",
+          "reason": "unrated, no history (antigravity:gemini-3.8-flash-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:36:11.226871+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 3
+      "next_attempt": 5
     },
     {
       "n": 35,
@@ -7152,6 +7281,24 @@
       "n": 110,
       "text": "Narrow T033 privacy correction3748418 reviewed by free Opus low at exact HEAD, focused38 passed, no Critical/Important/no extras. Whole-field masking is deliberate owner privacy tradeoff, preventing trailing fragments of multiword credentials; data/model/date counts unaffected. Existing T033 remains accepted, no reset/reimplementation or repeat of earlier phases. Land only2-file security correction and repeat focused proof; T034 runs separately with disjoint files.",
       "at": "2026-10-22T13:30:21.712003+00:00",
+      "promoted": null
+    },
+    {
+      "n": 111,
+      "text": "Manual coordinator execution durations/tokens were not measured: replace placeholder0 durations with unknown/null on new Phase6 self records, preserving every attempt, grade and failure. Cost remains unknown (never label coordinator work free); no paid executor was dispatched. Economy reports recorded coverage, not invented savings.",
+      "at": "2026-10-22T13:31:08.114910+00:00",
+      "promoted": null
+    },
+    {
+      "n": 112,
+      "text": "T034 two failed free attempts: Beam300s timeout with partial CLI/screen/test code; Nemotron240s continuation timeout. Coordinator will salvage accepted task base plus both attempts, prove gaps before fixes, simplify only speculative new aliases/fallbacks, preserve old terminal API/tests, and request free independent review. No processes remain from either attempt; no paid executor.",
+      "at": "2026-10-22T13:31:55.422257+00:00",
+      "promoted": null
+    },
+    {
+      "n": 113,
+      "text": "T034 free Gemini3.8 low review confirms70c4c0b, focused19passed/no findings/no extras/5refs done. Coordinator corrects two inaccurate review descriptions: server and request threads are NON-daemon and explicitly joined; focused19 tests lifecycle/parser, while earlier web proofs cover CSRF/traversal/escaping. Actual source inspected, full67b5d9c..HEAD only3 allowed files, existing terminal body and tests preserved. Accept T034, repeat branch19 proof; T033 privacy fix retained by disjoint merge. Neither executor/reviewer/test child remains.",
+      "at": "2026-10-22T13:37:42.679350+00:00",
       "promoted": null
     }
   ]
