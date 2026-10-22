@@ -5215,10 +5215,202 @@
       "title": "T031 Serve loopback HTTP snapshots with allowlisted assets in skill/crew-chief/scripts/crew_chief/central_web.py, tests/test_central_web.py; depends on T022, T030",
       "type": "code",
       "risk": "high",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T12:34:02.350476+00:00",
+          "duration_s": 6.3,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-31-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-31-1",
+          "base": null,
+          "steps": 1,
+          "tokens_in": 1272,
+          "tokens_out": 29,
+          "tokens_total": 1301,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false,
+          "start_sha": "929438585aa0b55fb012c924daab0a90e889df5d",
+          "end_sha": "929438585aa0b55fb012c924daab0a90e889df5d"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T12:34:30.155106+00:00",
+          "duration_s": 601.5,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief file first.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-31-2",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-31-2",
+          "base": null,
+          "steps": 24,
+          "tokens_in": 1311371,
+          "tokens_out": 38989,
+          "tokens_total": 1350360,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "929438585aa0b55fb012c924daab0a90e889df5d",
+          "end_sha": "929438585aa0b55fb012c924daab0a90e889df5d"
+        },
+        {
+          "n": 3,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T12:46:29.067866+00:00",
+          "duration_s": 0,
+          "note": "Owner exception after two free failures; focused red 28 failed (missing feature), green 27 passed/1 skipped (Windows symlink permission). Loopback-only readonly transport/public sanitized snapshot. No old files or assertions deleted; tests joined all threads and released socket. Coordinator tokens unavailable, cost unknown; no paid executor dispatch.",
+          "branch": "crew/20261021-0722-central-31-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-31-self",
+          "start_sha": "929438585aa0b55fb012c924daab0a90e889df5d",
+          "end_sha": "ff0fa0726d4209bc7c2c731f80ebb6870f7a6a79",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 4,
+          "executor": "opencode:opencode/flint-40b-free",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T12:46:34.627916+00:00",
+          "duration_s": 180.5,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll follow the brief exactly: confirm HEAD, review the diff, run the focused proof, and answer with my review. Starting with the HEAD check and diff.\n\nHEAD is `ff0fa07` — confirmed correct. Now let me read the full diff.\n\nHEAD confirmed `ff0fa07`, diff reviewed. Now running the declared focused proof: `python -m pytest tests/test_central_web.py -q`.\n\nProof done: **27 passed, 1 skipped in 0.96s** (the skip is the symlink-permission test, expected on this platform).\n\nBefore writing the review, let me pin exact line numbers for the quality findings I'm preparing.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 5,
+          "tokens_in": 133148,
+          "tokens_out": 8631,
+          "tokens_total": 141779,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true
+        },
+        {
+          "n": 5,
+          "executor": "antigravity:claude-sonnet-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T12:49:46.672859+00:00",
+          "duration_s": 40.8,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": " terminal entry. `do_POST` always returns 405. There is also no `acc central --web` wiring. Some of this may belong to neighboring tasks, but the brief lists it under this task's criteria.\n- **FR-019: done.** The module imports only the stdlib and internal modules.\n- **FR-024: partial.** Traversal, encoded and double-encoded paths, null bytes, query strings, symlinks and over-long paths are all rejected. Reads are bounded: 1 MiB per asset, 64 KiB per string and 2048 items per collection. Isolation of corrupt records per coordinator is delegated to `central_snapshot` and not tested here.\n- **FR-026: done.** One `central_snapshot.snapshot()` call serves the API, and the module writes nothing. A read-only test compares the directory listing before and after. Parity with the terminal snapshot is only checked after sanitizing, which strips fields. The module is therefore a filtered projection, not an identical snapshot.\n- **SC-009: partial.** The tests cover parity, escaping (partly), traversal, loopback binding and cleanup, and use no live coordinators. They do not cover actions, because none exist. They do not cover Origin or token checks, because the code has none. The only check is on the Host header.\n- **US5/AC1: missing.** There is no browser UI, so no cards, pieces, charts, scoreboard or questions are rendered.\n- **US5/AC3: partial.**\n  - Done: path traversal is blocked, and POST mutations are refused (405 for everything).\n  - Not done: HTML escaping lives in the missing JS, so it is untested.\n  - Not done: Origin and token checks for mutations do not exist.\n\n**Extra:** secret and path redaction with `briefcheck._SECRET_RULES`, security headers including CSP, a Host allowlist as DNS-rebinding defense, a snapshot lock, and port validation. These are reasonable, but none of them is named in a criterion.\n\n### Quality findings\n- **Important** (lines 31-37, 41-50): the redaction blocklist drops any key containing \"token\". The `_PRIVATE_KEYS` set includes `token` and `request`, but metrics like `tokens_total` pass because only exact matches are removed. The `_public` substring filter covers password, secret, credential and api_key but not \"token\". The result is inconsistent and fragile. A key such as `auth_token` would leak.\n- **Important** (`_PATH`, line 21): the regex `(?<![\\w:])/(?:...)` redacts any text containing `/`. That includes dates, \"a/b\" model names such as `gpt/4` and URLs, so legitimate message and job text gets corrupted.\n- **Important** (lines 41-64, `_public`): heavy sanitization with a redaction blocklist plus a top-level and row allowlist. This is more than any criterion asks for, and it will silently drop new snapshot fields. It couples this module to the private `briefcheck._SECRET_RULES`.\n- **Important:** `do_POST` is a stub that returns 405. FR-016 and US5 expect actions and controlled terminal entry. The test suite has no action tests (SC-009).\n- **Minor** (line 108): `self.server.previous = raw` keeps mutable server state. It is lock-protected, but it makes the handler stateful. `snapshot_lock` also serializes all snapshot requests, so a slow snapshot blocks every client.\n- **Minor** (`create_server`, line 138): it is annotated as returning `ThreadingHTTPServer` but returns `WebServer`. Attributes such as `root` and `assets` are set dynamically with no typing.\n- **Minor** (line 113): `except Exception` returns a generic 503 and drops the diagnostic. This is safe, but it means an operator cannot tell why the snapshot failed.\n- **Minor** (tests): the Host test hard-codes values, and the port-reuse test in `test_socket_released` can be flaky on some OSes. The symlink test skips on Windows without privileges.\n\n**Overall:** the transport and security skeleton is solid and well tested. The task does not meet its acceptance criteria as written, because there are no real assets, no UI, no actions and no Origin or token mechanism. I would send this back unless those parts were deliberately assigned to later tasks.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 110274,
+          "tokens_out": 2509,
+          "tokens_total": 34158,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 6,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T12:51:11.729851+00:00",
+          "duration_s": 0,
+          "note": "T031 corrected after independent review: credential-key regression red 1 failed; green 28 passed/1 skipped; provider/model, a/b and slash dates preserved. Review concerns about T032 UI/T033 actions/T034 CLI are deferred owners, not T031 gaps. Prior correction commit retained, no deletions.",
+          "branch": "crew/20261021-0722-central-31-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-31-self",
+          "start_sha": "ff0fa0726d4209bc7c2c731f80ebb6870f7a6a79",
+          "end_sha": "4e837d492eab6a36597361cee2a2625c9141c4a1",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 7,
+          "executor": "antigravity:gemini-4-argon-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T12:51:31.429021+00:00",
+          "duration_s": 149.5,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "HEAD confirmed: 4e837d4\n\n## Proof\nCommand: `python -m pytest tests/test_central_web.py -q`\nResult: `28 passed, 1 skipped in 0.83s` (passed)\nDiff reviewed: `9294385..4e837d4` (`ff0fa07..HEAD` included); only [central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-31-self/skill/crew-chief/scripts/crew_chief/central_web.py) and [test_central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-31-self/tests/test_central_web.py) touched.\n\n## Spec verdict (T031 boundary-scoped)\n- FR-016: done (`http.server` loopback-only transport and allowlisted static asset serving).\n- FR-019: done (Python 3.11+ stdlib only at runtime; `pytest` only in tests).\n- FR-024: done (bounded path/asset reads, traversal/symlink rejection, generic error responses, secret/path redaction without mutating source records).\n- FR-026: done (serves shared `central_snapshot.snapshot` contract read-only via `public_snapshot` with no disk writes or side effects).\n- SC-009: done (covers snapshot parity, Host/path/traversal/symlink checks, credential/path scrubbing, loopback binding, port validation, and socket cleanup without live coordinators).\n- US5/AC1: done (`/api/snapshot` exposes the shared snapshot contract projection for cards, pieces, jobs, models, scoreboard, questions, totals, diagnostics, and alerts).\n- US5/AC3: done (hostile `Host` headers, traversal paths, symlinks, and POST requests are refused; paths and secrets are redacted; `ensure_ascii=True` + strict CSP/nosniff headers applied).\n- extra: none.\n\n## Quality verdict\n- Critical: none.\n- Important: none.\n- Minor: none.\n\nHEAD confirmed: 4e837d4\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 168171,
+          "tokens_out": 1098,
+          "tokens_total": 38400,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Independent free review identified auth_token key bypass in nested public metadata; add red regression, remove credential-key variants and confirm public slash labels remain unchanged. Review also assessed later tasks despite explicit T031 boundary; rerender scoped review and require HEAD confirmation.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T12:50:47.740600+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "coordinator:self": {
+          "score": 85,
+          "explain": "adherence 7/7 → 100; 1 correction −15; 0 extra; penalties none → 85",
+          "corrections": 1,
+          "done": 7,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:self",
+          "graded_at": "2026-10-22T12:54:10.924479+00:00"
+        }
+      },
       "ref": "T031",
       "task_text": "Serve loopback HTTP snapshots with allowlisted assets in skill/crew-chief/scripts/crew_chief/central_web.py, tests/test_central_web.py; depends on T022, T030",
       "picks": [
@@ -5226,8 +5418,32 @@
           "pick": "opencode:opencode/deepseek-v4.1-flash-free",
           "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free",
           "at": "2026-10-22T12:33:39.643340+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 62.2 (opencode:opencode-go/minimax-m3.1-flash-free); tier free",
+          "at": "2026-10-22T12:34:19.839260+00:00"
+        },
+        {
+          "pick": "opencode:opencode/flint-40b-free",
+          "reason": "unrated, no history (opencode:opencode/flint-40b-free); tier free",
+          "at": "2026-10-22T12:37:01.852515+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "antigravity:claude-sonnet-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-sonnet-5-5-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T12:48:58.494971+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "antigravity:gemini-4-argon-low",
+          "reason": "unrated, no history (antigravity:gemini-4-argon-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T12:51:20.550635+00:00",
+          "role": "review"
         }
-      ]
+      ],
+      "next_attempt": 8
     },
     {
       "n": 32,
@@ -5239,7 +5455,19 @@
       "escalations": [],
       "grades": {},
       "ref": "T032",
-      "task_text": "Build public dashboard cards charts and history in tests/test_central_web_assets.py, skill/crew-chief/web/index.html, skill/crew-chief/web/central.css, skill/crew-chief/web/central.js; depends on T031"
+      "task_text": "Build public dashboard cards charts and history in tests/test_central_web_assets.py, skill/crew-chief/web/index.html, skill/crew-chief/web/central.css, skill/crew-chief/web/central.js; depends on T031",
+      "picks": [
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 62.2 (opencode:opencode-go/minimax-m3.1-flash-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-22T12:46:50.402992+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 59.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free",
+          "at": "2026-10-22T12:47:05.730698+00:00"
+        }
+      ]
     },
     {
       "n": 33,
@@ -6318,6 +6546,30 @@
       "n": 100,
       "text": "T030 shipped in v0.4.0 at 2108dbb; accepted from the release, no new attempt",
       "at": "2026-10-22T12:33:19.898214+00:00",
+      "promoted": null
+    },
+    {
+      "n": 101,
+      "text": "Phase 6 only, approved 2026-10-22. Policy: deep planning and security-context review; task proof after every accept plus final full suite; implementation delegated only to OpenCode opencode/*-free or opencode-go/*-free, independent-family free review. No setup/preferences edits, no phase 7/8, push/tag/main integration. T030 accepted with released records.mark_accepted/update_job APIs, attempt null, release v0.4.0/2108dbb; original attempts preserved. Worktree/branch verified feat/v0.4.1-web. All child test/dispatch processes must finish or be cleaned by verified identity.",
+      "at": "2026-10-22T12:36:53.658306+00:00",
+      "promoted": null
+    },
+    {
+      "n": 102,
+      "text": "T031 has two failed free attempts: deepseek-v4.1-flash-free quota and opencode-go/minimax-m3.1-flash-free timeout after 600s. Per owner exception coordinator will implement T031, preserving failed evidence, then send exact HEAD to a free independent-family reviewer and run focused proof before/after accept. No paid executor dispatch.",
+      "at": "2026-10-22T12:44:39.639743+00:00",
+      "promoted": null
+    },
+    {
+      "n": 103,
+      "text": "T031 Flint free review timed out at 180s after confirming ff0fa07 and running proof 27 passed/1 skipped, without final verdict; not accepted as review. Switch review pool to free Antigravity low tiers using pick, after slow OpenCode runs. Implementations remain OpenCode *-free only; coordinator exception remains per piece after two failures. Exclude both MiniMax aliases on subsequent picks due observed 600s no-change timeout.",
+      "at": "2026-10-22T12:49:41.918513+00:00",
+      "promoted": null
+    },
+    {
+      "n": 104,
+      "text": "T031 final free Gemini low review confirms 4e837d4 and full task diff 9294385..4e837d4, proof 28 passed/1 skipped, all 7 boundary-scoped refs done, no extras or Critical/Important/Minor findings. Earlier Sonnet auth_token finding proved/fixed; claim slash labels corrupted disproved by regression. UI/actions/CLI belong to T032/T033/T034. Final diff adds only two allowed files, no existing deletions. Accept T031 and rerun branch proof. Coordinator work cost/tokens unknown, no paid executor.",
+      "at": "2026-10-22T12:54:11.563133+00:00",
       "promoted": null
     }
   ]
