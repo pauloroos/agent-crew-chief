@@ -26,6 +26,7 @@ The rules:
 from __future__ import annotations
 
 import json
+import os
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -102,21 +103,6 @@ def _worktree_of(record: dict) -> Path:
     return Path(value)
 
 
-def _round_of(round_result: Any) -> str | None:
-    """The canonical round id of a round result."""
-    if not isinstance(round_result, dict):
-        raise UsageError("the round result must be an object")
-    value = round_result.get("round_id")
-    if value is None:
-        return None
-    canonical = central_messages._canonical_uuid(value)
-    if canonical is None:
-        raise UsageError(
-            f"the round id must be a canonical UUID string, got {value!r}"
-        )
-    return canonical
-
-
 # --- the round metadata -----------------------------------------------------
 
 
@@ -178,21 +164,35 @@ def _write_round(path: Path, meta: dict, bom: bool, newline: str) -> None:
         raise UsageError(f"cannot persist the round metadata: {exc}") from exc
 
 
-def _rounds(root: Path, coordinator_id: str) -> list[tuple[Path, dict, bool, str]]:
-    """Every readable round of a coordinator, oldest first."""
-    found: list[tuple[Path, dict, bool, str]] = []
-    for path in sorted(_rounds_dir(root, coordinator_id).glob("*.json")):
-        if path.is_symlink():
+def _round_paths(root: Path, coordinator_id: str) -> list[Path]:
+    """Every round file of a coordinator with a canonical UUID filename, oldest first."""
+    items: list[tuple[str, Path]] = []
+    try:
+        rounds_dir = _rounds_dir(root, coordinator_id)
+    except UsageError as exc:
+        warnings.warn(str(exc), UserWarning, stacklevel=2)
+        return []
+    for path in rounds_dir.glob("*.json"):
+        if _is_reparse(path):
             warnings.warn(f"{path}: symbolic link refused", UserWarning, stacklevel=2)
             continue
-        try:
-            meta, bom, newline = _read_round(path)
-        except UsageError as exc:
-            warnings.warn(f"{path}: {exc}", UserWarning, stacklevel=2)
+        if central_messages._canonical_uuid(path.stem) is None:
+            warnings.warn(
+                f"{path}: round filename is not a canonical UUID", UserWarning, stacklevel=2
+            )
             continue
-        found.append((path, meta, bom, newline))
-    found.sort(key=lambda item: (str(item[1].get("started_at") or ""), item[0].name))
-    return found
+        try:
+            meta, _bom, _newline = _read_round(path)
+            started = str(meta.get("started_at") or "")
+        except UsageError:
+            started = ""
+        items.append((started, path))
+    items.sort(key=lambda item: (item[0], item[1].name))
+    return [path for _started, path in items]
+
+
+def _round_lock_path(path: Path) -> Path:
+    return path.parent / f"{path.stem}.lock"
 
 
 # --- the usage of one round -------------------------------------------------
@@ -319,6 +319,51 @@ def _entry(
     return True
 
 
+def _is_reparse(path: Path) -> bool:
+    """True when ``path`` is a symlink or a Windows reparse point/junction."""
+    if path.is_symlink():
+        return True
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+            if attrs != -1 and attrs & 0x400:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _guard_job_storage(worktree: Path, job_id: str) -> None:
+    """Refuse redirected job storage before any lock or write."""
+    safe = _job_id(job_id)
+    if safe is None:
+        raise UsageError(f"the job id is not a safe job id, got {job_id!r}")
+    base = worktree.resolve(strict=False)
+    current = worktree
+    for part in ("docs", "crew-chief", "jobs"):
+        current = current / part
+        if _is_reparse(current):
+            raise UsageError(f"{current}: redirected job storage refused")
+        try:
+            resolved = current.resolve(strict=False)
+        except OSError as exc:
+            raise UsageError(f"{current}: cannot resolve job storage: {exc}") from exc
+        if not resolved.is_relative_to(base):
+            raise UsageError(f"{current}: job storage escapes the worktree")
+    if current.exists() and not current.is_dir():
+        raise UsageError(f"{current}: job storage is not a directory")
+    job_path = current / f"{safe}.json"
+    if _is_reparse(job_path):
+        raise UsageError(f"{job_path}: redirected job file refused")
+    try:
+        if not job_path.resolve(strict=False).is_relative_to(base):
+            raise UsageError(f"{job_path}: job file escapes the worktree")
+    except OSError as exc:
+        raise UsageError(f"{job_path}: cannot resolve job file: {exc}") from exc
+
+
 def _apply_job(
     record: dict,
     job_id: str,
@@ -329,6 +374,7 @@ def _apply_job(
 ) -> bool | None:
     """Add the usage entry to the job; ``None`` when the job is not there yet."""
     worktree = _worktree_of(record)
+    _guard_job_storage(worktree, job_id)
 
     def change(job: dict) -> bool:
         return _entry(job, numbers, payload, event_id, note)
@@ -349,11 +395,22 @@ def _event(meta: dict) -> dict:
 
 
 def _target_job(meta: dict, record: dict) -> str | None:
-    """The job the usage belongs to: the round's own job, else the current one."""
-    for value in (meta.get("active_job_id"), record.get("active_job_id")):
+    """The job the usage belongs to: the round's own job, else the current one.
+
+    A non-null but unusable binding is rejected instead of being silently
+    skipped, so usage can never fall through to a different job.
+    """
+    for source in (meta, record):
+        key = "active_job_id"
+        value = source.get(key) if isinstance(source, dict) else None
+        if value is None:
+            continue
         job = _job_id(value)
-        if job:
-            return job
+        if job is None:
+            raise UsageError(
+                f"the active job id is not a safe job id, got {value!r}"
+            )
+        return job
     return None
 
 
@@ -393,9 +450,17 @@ def _record_round(
     event = _event(meta)
     if event.get("state") == "recorded":
         return
+    if meta.get("state") == "running":
+        return
     round_id = str(meta.get("id") or path.stem)
     payload = _payload(meta)
-    event_id = event.get("event_id") or f"central:{coord.name}:{round_id}"
+    raw_event_id = event.get("event_id")
+    if raw_event_id is None:
+        event_id = f"central:{coord.name}:{round_id}"
+    elif not isinstance(raw_event_id, str) or not raw_event_id:
+        raise UsageError(f"the usage event id is not a non-empty string, got {raw_event_id!r}")
+    else:
+        event_id = raw_event_id
     bound = event.get("job_id")
     if bound is not None:
         job_id = _job_id(bound)
@@ -433,6 +498,8 @@ def _record_round(
 
 def _check_binding(meta: dict, coordinator_id: str, round_id: str) -> None:
     """Refuse a round metadata that belongs to another round or coordinator."""
+    if not isinstance(meta, dict):
+        raise UsageError("the round metadata is not a JSON object")
     stored = meta.get("id")
     if stored is not None and stored != round_id:
         raise UsageError(
@@ -441,6 +508,32 @@ def _check_binding(meta: dict, coordinator_id: str, round_id: str) -> None:
     owner = meta.get("coordinator_id")
     if owner is not None and owner != coordinator_id:
         raise UsageError(f"the round metadata belongs to coordinator {owner!r}")
+    if meta.get("schema_version") != 1:
+        raise UsageError(
+            f"the round metadata schema_version must be 1, got "
+            f"{meta.get('schema_version')!r}"
+        )
+
+
+def _round_of(round_result: Any) -> str | None:
+    """The canonical round id of a round result or its embedded round."""
+    if not isinstance(round_result, dict):
+        raise UsageError("the round result must be an object")
+    value = round_result.get("round_id")
+    if value is None:
+        embedded = round_result.get("round")
+        if isinstance(embedded, dict):
+            value = embedded.get("round_id")
+            if value is None:
+                value = embedded.get("id")
+    if value is None:
+        return None
+    canonical = central_messages._canonical_uuid(value)
+    if canonical is None:
+        raise UsageError(
+            f"the round id must be a canonical UUID string, got {value!r}"
+        )
+    return canonical
 
 
 def record_round_usage(root: Path, record: dict, round_result: dict) -> None:
@@ -451,14 +544,28 @@ def record_round_usage(root: Path, record: dict, round_result: dict) -> None:
     counted.  While no job is known the usage stays pending in the round
     metadata and :func:`backfill_usage` counts it later.
     """
+    if record is None and isinstance(round_result, dict):
+        candidate = round_result.get("record")
+        if isinstance(candidate, dict):
+            record = candidate
     coordinator_id = _coordinator_of(record)
     round_id = _round_of(round_result)
     if round_id is None:
         return  # the round never ran: there is no usage to record
     path = _round_path(root, coordinator_id, round_id)
-    meta, bom, newline = _read_round(path)
-    _check_binding(meta, coordinator_id, round_id)
-    _record_round(record, _coord_dir(root, coordinator_id), path, meta, bom, newline)
+    coord = _coord_dir(root, coordinator_id)
+    lock_path = _round_lock_path(path)
+
+    def timeout_error(waited: float) -> UsageError:
+        return UsageError(
+            f"{lock_path}: round {round_id!r} is locked by another crew-chief "
+            f"process (waited {waited:g}s)"
+        )
+
+    with records.file_lock(lock_path, records.LOCK_TIMEOUT_S, records.LOCK_STALE_S, timeout_error):
+        meta, bom, newline = _read_round(path)
+        _check_binding(meta, coordinator_id, round_id)
+        _record_round(record, coord, path, meta, bom, newline)
 
 
 def backfill_usage(root: Path, record: dict) -> None:
@@ -469,9 +576,21 @@ def backfill_usage(root: Path, record: dict) -> None:
     """
     coordinator_id = _coordinator_of(record)
     coord = _coord_dir(root, coordinator_id)
-    for path, meta, bom, newline in _rounds(root, coordinator_id):
+    for path in _round_paths(root, coordinator_id):
+        lock_path = _round_lock_path(path)
         try:
-            _record_round(record, coord, path, meta, bom, newline)
+            with records.file_lock(
+                lock_path, records.LOCK_TIMEOUT_S, records.LOCK_STALE_S,
+                lambda waited: UsageError(
+                    f"{lock_path}: round {path.stem!r} is locked by another "
+                    f"crew-chief process (waited {waited:g}s)"
+                ),
+            ):
+                meta, bom, newline = _read_round(path)
+                _check_binding(meta, coordinator_id, path.stem)
+                if meta.get("state") == "running":
+                    continue
+                _record_round(record, coord, path, meta, bom, newline)
         except UsageError as exc:
             warnings.warn(f"{path}: {exc}", UserWarning, stacklevel=2)
 
@@ -485,7 +604,23 @@ def pending_usage(root: Path, record: dict) -> list[dict]:
     coordinator_id = _coordinator_of(record)
     coord = _coord_dir(root, coordinator_id)
     pending: list[dict] = []
-    for path, meta, _bom, _newline in _rounds(root, coordinator_id):
+    for path in _round_paths(root, coordinator_id):
+        lock_path = _round_lock_path(path)
+        try:
+            with records.file_lock(
+                lock_path, records.LOCK_TIMEOUT_S, records.LOCK_STALE_S,
+                lambda waited: UsageError(
+                    f"{lock_path}: round {path.stem!r} is locked by another "
+                    f"crew-chief process (waited {waited:g}s)"
+                ),
+            ):
+                meta, _bom, _newline = _read_round(path)
+                _check_binding(meta, coordinator_id, path.stem)
+        except UsageError as exc:
+            warnings.warn(f"{path}: {exc}", UserWarning, stacklevel=2)
+            continue
+        if meta.get("state") == "running":
+            continue
         event = _event(meta)
         if event.get("state") == "recorded":
             continue
@@ -499,10 +634,12 @@ def pending_usage(root: Path, record: dict) -> list[dict]:
         if chars is None:
             chars = _log_chars(coord, meta)
         numbers = _numbers(payload, chars)
+        event_id = event.get("event_id")
+        if not isinstance(event_id, str) or not event_id:
+            event_id = f"central:{coordinator_id}:{round_id}"
         pending.append(
             {
-                "event_id": event.get("event_id")
-                or f"central:{coordinator_id}:{round_id}",
+                "event_id": event_id,
                 "round_id": round_id,
                 "coordinator_id": coordinator_id,
                 "job_id": event.get("job_id"),
