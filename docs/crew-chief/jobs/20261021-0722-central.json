@@ -4605,7 +4605,128 @@
       "title": "T015 Supervise coordinator rounds without idle model calls in skill/crew-chief/scripts/crew_chief/central_supervisor.py, tests/test_central_supervisor.py; depends on T011, T012, T014",
       "type": "code",
       "risk": "high",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T00:31:41.098827+00:00",
+          "duration_s": 602.3,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief first.\n\nNow I understand the prerequisites. Let me write the focused tests first (test-first, expecting red).\n\nRed confirmed (module missing). Now the implementation.",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_supervisor.py",
+              "added": 727,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_supervisor.py",
+              "added": 618,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-15-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-15-1",
+          "base": null,
+          "steps": 50,
+          "tokens_in": 5079403,
+          "tokens_out": 57713,
+          "tokens_total": 5137116,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "9a606dc85f83b57ae21b98c871cb7a1e5a23526e",
+          "end_sha": "82b3b21c2f49226c912c171e0061076a81efd19b"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T00:42:15.861333+00:00",
+          "duration_s": 361.7,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief first.\n\nNow I understand the two issues. Let me write the failing regression tests first (red evidence).\n\nRed evidence confirmed. Now the production fixes:\n\nNow the no-progress signature with real job progress:\n\nNow the log-retention fix (the usage backfill must not reorder the round history):",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_supervisor.py",
+              "added": 68,
+              "deleted": 5
+            },
+            {
+              "file": "tests/test_central_supervisor.py",
+              "added": 114,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-15-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-15-2",
+          "base": {
+            "attempt": 1,
+            "branch": "crew/20261021-0722-central-15-1"
+          },
+          "steps": 49,
+          "tokens_in": 3642479,
+          "tokens_out": 36083,
+          "tokens_total": 3678562,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "82b3b21c2f49226c912c171e0061076a81efd19b",
+          "end_sha": "4bebf76ab6acda8e836d7ca4cee7eae8c21a543a"
+        },
+        {
+          "executor": "coordinator:manual",
+          "role": "exec",
+          "cost": "included",
+          "started": "2026-10-22T00:50:29.044510+00:00",
+          "duration_s": 4.69,
+          "status": "ok",
+          "note": "Explicit owner-authorized coordinator fallback after two recorded free failures. Preserved free implementation; coordinator validated/finalized scoped work. No live coordinator executor dispatched. Historical failures unchanged. Proof: hief\\scripts\\crew_chief\\central_supervisor.py:789: UserWarning: C:\\Users\\paulo\\AppData\\Local\\Temp\\pytest-of-paulo\\pytest-289\\test_a_persisted_pid_is_never_0\\central\\coordinators\\22a3a00c-a528-4be4-945f-9010cbe2624c\\rounds\\5b5d1e6b-fb20-42cb-8f3e-03da77b003f0.json: the round metadata belongs to round None, not '5b5d1e6b-fb20-42cb-8f3e-03da77b003f0'\n    central_usage.backfill_usage(root, record)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n21 passed, 1 warning in 3.16s\n",
+          "branch": "crew/20261021-0722-central-15-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-15-2",
+          "base": null,
+          "start_sha": "9a606dc",
+          "end_sha": "599011d5703e9beb1fdd7752a34eb64d7f1e0361",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_supervisor.py",
+              "added": 797,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_supervisor.py",
+              "added": 761,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "scope": [],
+          "tokens_in": null,
+          "tokens_out": null,
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "cost_known": false,
+          "proof": {
+            "cmd": "python -m pytest tests/test_central_supervisor.py -q",
+            "exit": 0,
+            "passed": true
+          },
+          "fallback": true,
+          "n": 3
+        }
+      ],
       "corrections": [],
       "escalations": [],
       "grades": {},
@@ -4616,8 +4737,31 @@
           "pick": "opencode:opencode/deepseek-v4.1-flash-free",
           "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
           "at": "2026-10-22T00:30:11.994759+00:00"
+        },
+        {
+          "pick": "opencode:opencode/flint-40b-free",
+          "reason": "unrated, no history (opencode:opencode/flint-40b-free); tier free",
+          "at": "2026-10-22T00:33:07.575205+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode/deepseek-v4.1-flash-free",
+          "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free",
+          "at": "2026-10-22T00:38:00.505511+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 62.2 (opencode:opencode-go/minimax-m3.1-flash-free); tier free",
+          "at": "2026-10-22T00:42:00.867316+00:00"
+        },
+        {
+          "pick": "antigravity:gemini-3.8-flash-low",
+          "reason": "unrated, no history (antigravity:gemini-3.8-flash-low); tier free; reviewer outside the family of: coordinator:manual",
+          "at": "2026-10-22T00:50:37.289662+00:00",
+          "role": "review"
         }
-      ]
+      ],
+      "next_attempt": 5
     },
     {
       "n": 16,
@@ -4924,10 +5068,312 @@
       "title": "T041 Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002",
       "type": "code",
       "risk": "medium",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T00:30:58.258427+00:00",
+          "duration_s": 361.8,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll start by reading the brief.\n\nNow the test file first (red), following the existing test style.\n\nRed run:\n\nGreen-side implementation:\n\nNow `config.py`:\n\nNow the template:",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_config.py",
+              "added": 68,
+              "deleted": 0
+            },
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/config.py",
+              "added": 18,
+              "deleted": 1
+            },
+            {
+              "file": "skill/crew-chief/templates/preferences.example.toml",
+              "added": 11,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_continuity_preferences.py",
+              "added": 301,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [
+            "repo: ?? .crew-chief-discovery.json",
+            "repo: ?? .crew-chief-phase3.py"
+          ],
+          "branch": "crew/20261021-0722-central-41-1",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-41-1",
+          "base": null,
+          "steps": 34,
+          "tokens_in": 1745837,
+          "tokens_out": 13387,
+          "tokens_total": 1759224,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "9a606dc85f83b57ae21b98c871cb7a1e5a23526e",
+          "end_sha": "b2e5eeda8e4201937a63c1444a34732a76b3a458"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T00:37:41.582384+00:00",
+          "duration_s": 242.0,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief first.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-41-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-41-2",
+          "base": {
+            "attempt": 1,
+            "branch": "crew/20261021-0722-central-41-1"
+          },
+          "steps": 10,
+          "tokens_in": 280214,
+          "tokens_out": 2367,
+          "tokens_total": 282581,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "b2e5eeda8e4201937a63c1444a34732a76b3a458",
+          "end_sha": "b2e5eeda8e4201937a63c1444a34732a76b3a458"
+        },
+        {
+          "executor": "coordinator:manual",
+          "role": "exec",
+          "cost": "included",
+          "started": "2026-10-22T00:43:26.371385+00:00",
+          "duration_s": 2.05,
+          "status": "ok",
+          "note": "Explicit owner-authorized coordinator fallback after two recorded free failures. Preserved free implementation; coordinator validated/finalized scoped work. No live coordinator executor dispatched. Historical failures unchanged. Proof: ........................................................................ [ 87%]\n..........                                                               [100%]\n82 passed in 0.49s\n",
+          "branch": "crew/20261021-0722-central-41-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-41-2",
+          "base": null,
+          "start_sha": "9a606dc",
+          "end_sha": "b2e5eeda8e4201937a63c1444a34732a76b3a458",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_config.py",
+              "added": 68,
+              "deleted": 0
+            },
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/config.py",
+              "added": 18,
+              "deleted": 1
+            },
+            {
+              "file": "skill/crew-chief/templates/preferences.example.toml",
+              "added": 11,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_continuity_preferences.py",
+              "added": 301,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "scope": [],
+          "tokens_in": null,
+          "tokens_out": null,
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "cost_known": false,
+          "proof": {
+            "cmd": "python -m pytest tests/test_central_continuity_preferences.py -q",
+            "exit": 0,
+            "passed": true
+          },
+          "fallback": true,
+          "n": 3
+        },
+        {
+          "n": 4,
+          "executor": "opencode:opencode/nemotron-3.5-lightning-free",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:43:32.825203+00:00",
+          "duration_s": 120.7,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Now let me run the proof test:\n\n\nNow let me read all the allowed files to ensure thorough review:\n\n\nNow I have all the information needed. Let me compile the full review.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 12,
+          "tokens_in": 457511,
+          "tokens_out": 8477,
+          "tokens_total": 465988,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true
+        },
+        {
+          "n": 5,
+          "executor": "antigravity:claude-opus-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:45:48.411537+00:00",
+          "duration_s": 39.7,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "This task only adds validated preferences. Detecting quota or stalls and acting on the policy belong to later tasks, so I judged only the preference side of each criterion.\n- **FR-028: done.** `on_coordinator_quota` accepts `ask`, `wait` or `handoff:<cli>`, and the target must be in `SUPPORTED_COORDINATORS`. Anything else raises an error, including `stop`, `handoff:gemini`, `handoff:opencode`, an empty string and numbers.\n- **Important: `config.py` around L501–504 (`load_prefs`).** `pick()` stores the raw file value, not the normalized one. A file with `on_coordinator_quota = \" WAIT \"` or `\"Handoff:Codex\"` passes validation, because `_normalize_policy` strips and lowercases. But `Prefs.on_coordinator_quota` then holds the raw string, and later code comparing to `\"wait\"` or `\"handoff:codex\"` won't match it. No test covers mixed case or spaces through `load_prefs`; only the resolver-level `\" WAIT \"` case is tested. Fix: store the output of `resolve_continuity_settings` in `Prefs`.\n\nb2e5eeda8e4201937a63c1444a34732a76b3a458: proof `python -m pytest tests/test_central_continuity_preferences.py -q` gave **82 passed**.\n\nHEAD matches b2e5eed. The diff `9a606dc..HEAD` touches only the 4 allowed files (+398/−1). The one deleted line is a comment that was reworded. No existing code or tests were deleted. I did not modify any files.\n\n## Spec verdict\n- **FR-027: done.** `stall_minutes` defaults to 40. It is validated as a finite positive number by the existing `_validate_timing`. The tests reject 0, negative, NaN, inf, bool and string values, at the launch, project and global levels, and also through file loading.\n- **US7/AC5: done.** The default is `ask`. A handoff target must be named explicitly and nothing picks one implicitly. The template comment says installing a CLI never authorizes a costlier one.\n- **extra:** None of substance. It adds a new public function `resolve_continuity_settings` and leaves `resolve_settings` output unchanged, which a test checks.\n\n## Quality verdict\n- **Minor: `central_config.py` `_normalize_policy`.** The `target in SUPPORTED_COORDINATORS` check after `_normalize_coordinator` is probably redundant if that function already rejects unknown names. It is harmless.\n- **Minor: `config.py` `_validate_file` around L379.** `resolve_continuity_settings` checks each file on its own, so a bad global value is reported even when the project file overrides it. That matches how the existing central keys behave, so it's consistent.\n- **Minor:** `Prefs.stall_minutes` is typed as `float`, but the default is an int (40). This is only cosmetic.\n\nThe tests use `tmp_path` paths and never touch real config or call model CLIs. The assertions are real equality and raise checks, and they include BOM/CRLF reading and an error message that names the offending file. The code is stdlib-only and cross-platform.\n\nb2e5eeda8e4201937a63c1444a34732a76b3a458: proof **82 passed**.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 119363,
+          "tokens_out": 1891,
+          "tokens_total": 36917,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "executor": "coordinator:manual",
+          "role": "exec",
+          "cost": "included",
+          "started": "2026-10-22T00:48:18.407739+00:00",
+          "duration_s": 2.78,
+          "status": "ok",
+          "note": "Explicit owner-authorized coordinator fallback after two recorded free failures. Preserved free implementation; coordinator validated/finalized scoped work. No live coordinator executor dispatched. Historical failures unchanged. Proof: ........................................................................ [ 84%]\n.............                                                            [100%]\n85 passed in 0.90s\n",
+          "branch": "crew/20261021-0722-central-41-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-41-2",
+          "base": null,
+          "start_sha": "9a606dc",
+          "end_sha": "96761a67974cecb24ccf9a02ce6101112dfd586c",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_config.py",
+              "added": 68,
+              "deleted": 0
+            },
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/config.py",
+              "added": 21,
+              "deleted": 1
+            },
+            {
+              "file": "skill/crew-chief/templates/preferences.example.toml",
+              "added": 11,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_continuity_preferences.py",
+              "added": 308,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "scope": [],
+          "tokens_in": null,
+          "tokens_out": null,
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "cost_known": false,
+          "proof": {
+            "cmd": "python -m pytest tests/test_central_continuity_preferences.py -q",
+            "exit": 0,
+            "passed": true
+          },
+          "fallback": true,
+          "n": 7
+        },
+        {
+          "n": 6,
+          "executor": "antigravity:claude-opus-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:48:01.336367+00:00",
+          "duration_s": 67.0,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "This task only delivers validated preferences (the defaults, precedence and validation). Detecting quota or stalls, waiting, asking and handing off are runtime behaviour for later tasks.\n- **FR-028: done.** `on_coordinator_quota` accepts only `ask`, `wait`, or `handoff:<cli>` where the CLI is one of `SUPPORTED_COORDINATORS` (claude or codex). Aliases are mapped to the canonical name. Nothing is ever picked automatically: a handoff target only exists if the owner names it.\n- **Defaults defined twice:** the defaults live in both `config.py:62-63` (`DEFAULT_STALL_MINUTES` / `DEFAULT_ON_COORDINATOR_QUOTA`) and `central_config.py:37-38` (`_DEFAULTS`). This matches how the existing central settings are already done, but the two copies could drift apart.\n\nHEAD is `96761a67974cecb24ccf9a02ce6101112dfd586c` and the proof passes (85 passed).\n\n**HEAD check:** the brief says to confirm HEAD is `b2e5eed`. But its final correction says to review the latest HEAD instead. That is `96761a6`, which is `b2e5eed` plus one fix commit (the loader canonicalization fix). So I reviewed the full diff `9a606dc..96761a6`. It touches only the 4 allowed files (+408/−1). The one deleted line is a comment that was reworded. No existing code or tests were removed.\n\n**Proof:** `python -m pytest tests/test_central_continuity_preferences.py -q` → **85 passed** in 0.72s.\n\n## Spec verdict\n\n- **FR-027: done.** `stall_minutes` defaults to 40. Every layer (launch, project, global) rejects values that are not numbers, are booleans, are not finite (NaN/inf), or are ≤ 0. Detection and stored timestamps belong to a later task.\n- **US7/AC5: done.** The default is `ask`, and a configured target maps to exactly one CLI. Unsupported or empty targets are rejected with an error that lists the valid options. The durable question and the stop behaviour are runtime work for a later task.\n- **Extra:** the policy is matched case-insensitively with surrounding spaces trimmed, and CLI aliases are accepted (`handoff:claude-code` becomes `handoff:claude`). This is harmless and follows the existing convention for `coordinator_default`. The example template also documents behaviour (no model calls while waiting, resuming the exact session) that is still in the future. That is reasonable as documentation.\n\n## Quality verdict\n- **Critical:** none.\n- **Important:** none.\n- **Minor:**\n  - **Error label in `load_prefs`:** `config.py:466-469` feeds the merged file values in as \"overrides\". If a bad value ever got past file validation, the error would point at the override layer instead of the file. In practice `_validate_file` (`config.py:379`) catches it first and names the file, as `test_prefs_error_names_the_offending_file` checks.\n  - **`setup_data` not separately tested:** `pick` also reads `setup_data`, but no test covers a continuity key that is set only in the managed `acc setup` block. Validation of that path depends on how the existing loader handles the setup block.\n  - **Type hint vs value:** `Prefs.stall_minutes` is typed `float` (`config.py:169`), but an integer from the file (e.g. 40) is stored as an `int`. This is consistent with `central_round_timeout_s`.\n- **Tests:** the assertions are real. They check exact resolved values, which layer wins, that `None` launch values don't hide project settings, that inputs aren't modified, that the established central settings come out unchanged, BOM/CRLF reading, canonical output from the file loader (the fixed bug), and rejection in both project and global files with the file named in the error. The file-loader tests pass an explicit `tmp_path` global file, and no live CLIs are invoked.\n\nHEAD is `96761a67974cecb24ccf9a02ce6101112dfd586c`, proof: 85 passed.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 141682,
+          "tokens_out": 2674,
+          "tokens_total": 40320,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 8,
+          "executor": "antigravity:claude-opus-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:49:36.702028+00:00",
+          "duration_s": 47.3,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "This task only adds validated preferences. Detecting quota or stalls and acting on the policy belong to later tasks.\n| FR-028 | **done** (preferences part) | `on_coordinator_quota` accepts `ask`, `wait` or `handoff:<cli>`. The target must be a supported coordinator (claude or codex); `handoff:gemini`, `handoff:opencode`, `stop`, `\"\"` and `7` are rejected. Nothing chooses a CLI on its own: the only target is the one named in the setting. |\n\nHEAD 96761a67974cecb24ccf9a02ce6101112dfd586c · Proof: `python -m pytest tests/test_central_continuity_preferences.py -q` gave **85 passed**\n\nHEAD is 96761a6, as the brief requires. I reviewed `git diff 9a606dc..HEAD`: 4 files, 408 lines added, 1 removed. All four files are on the allowed list. No existing code or tests were deleted; the one removed line is a comment that was reworded. `git diff --check` is clean. I checked the claimed coverage against the real assertions in the test file, not the test names. I changed no files.\n\n## Spec verdict\n\n| Criterion | Verdict | Notes |\n|---|---|---|\n| FR-027 | **done** (preferences part) | `stall_minutes` defaults to 40. It must be a finite positive number: 0, negative, nan, inf, true and `\"40\"` are all rejected. The checks go through the existing `_validate_timing`. Detection and saving timestamps are left to later tasks, which is correct. |\n| US7/AC5 | **done** (preferences part) | Default is `ask`. Settings resolve in order: launch overrides, then project, then global, then the default. The template says a named target is the owner's choice and does not allow other targets. |\n\n**Extras** (nothing asked for these):\n- Policy values are normalised: case and spaces are ignored, and aliases are accepted (`handoff:claude-code` becomes `handoff:claude`).\n- Overrides set to `None` are treated as unset.\n- Two tests guard existing behaviour: `resolve_settings` still returns its 5 keys, and settings are read correctly from files with a BOM and CRLF line endings.\n\n## Quality verdict\n**Critical:** none.\n\n**Important:** none.\n\n**Minor:**\n- [config.py#L466-L469](file:///E:/DEV/acc-v04.crew/20261021-0722-central-41-2/skill/crew-chief/scripts/crew_chief/config.py#L466-L469): `load_prefs` feeds the merged value into the *overrides* slot of `resolve_continuity_settings`. It works, but a reader would assume these are launch overrides. If validation fails, the error does not say which file was at fault. In practice `_validate_file` checks each file first, so this only bites for values coming from setup.\n- [config.py#L169](file:///E:/DEV/acc-v04.crew/20261021-0722-central-41-2/skill/crew-chief/scripts/crew_chief/config.py#L169): `stall_minutes` is typed `float`, but the default is the int `40` and int values are passed through unchanged. This is harmless.\n- [central_config.py#L176](file:///E:/DEV/acc-v04.crew/20261021-0722-central-41-2/skill/crew-chief/scripts/crew_chief/central_config.py#L176) and [config.py#L57-L63](file:///E:/DEV/acc-v04.crew/20261021-0722-central-41-2/skill/crew-chief/scripts/crew_chief/config.py#L57-L63): the defaults (40 and \"ask\") are defined in both modules. They could drift apart, though tests pin both today.\n- The last test in [test_central_continuity_preferences.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-41-2/tests/test_central_continuity_preferences.py) has a style problem. It uses `__import__('json')`, a one-line parametrize, single quotes, and only one blank line before it. The rest of the file doesn't look like this, and it reads like it was added afterwards.\n- Unused imports `math` and `config` in the test file, assuming nothing in the part of the file I didn't open uses them.\n\nHEAD 96761a67974cecb24ccf9a02ce6101112dfd586c · Proof: **85 passed**",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 121201,
+          "tokens_out": 2458,
+          "tokens_total": 39333,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Independent free Opus review correctly found that load_prefs validates normalized policy but returns raw mixed-case/space value. Add failing file-loader regression and normalize returned Prefs policy; refresh final HEAD review before accept.",
+          "executor": "coordinator:manual",
+          "at": "2026-10-22T00:47:08.498560+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "coordinator:manual": {
+          "score": 85,
+          "explain": "adherence 3/3 → 100; 1 correction −15; 0 extra; penalties none → 85",
+          "corrections": 1,
+          "done": 3,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:manual",
+          "graded_at": "2026-10-22T00:51:05.000972+00:00"
+        }
+      },
       "ref": "T041",
       "task_text": "Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002",
       "picks": [
@@ -4935,8 +5381,26 @@
           "pick": "opencode:opencode/deepseek-v4.1-flash-free",
           "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode-go/longcat-2.5-preview-free, opencode:opencode/longcat-2.5-preview-free",
           "at": "2026-10-22T00:30:22.657444+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 62.2 (opencode:opencode-go/minimax-m3.1-flash-free); tier free",
+          "at": "2026-10-22T00:37:29.457017+00:00"
+        },
+        {
+          "pick": "opencode:opencode/nemotron-3.5-lightning-free",
+          "reason": "unrated, no history (opencode:opencode/nemotron-3.5-lightning-free); tier free",
+          "at": "2026-10-22T00:43:00.365088+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "antigravity:claude-opus-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-opus-5-5-low); tier free; reviewer outside the family of: coordinator:manual",
+          "at": "2026-10-22T00:45:34.362446+00:00",
+          "role": "review"
         }
-      ]
+      ],
+      "next_attempt": 9
     },
     {
       "n": 42,
@@ -5521,6 +5985,30 @@
       "n": 91,
       "text": "Phase 3 start: prior job records already clean/committed at 9db637c; phases 1/2 remain accepted. Owner-approved US7 added before implementation with FR027-030, SC012-014 and small T041-043 in Phase 3, T044 UI only in Phase 4. spec import/status validated: Phase 3 0/9, ready T015/T041, no warnings. Planning=deep, context=dependency, verification=task proofs plus independent free-family review and final FULL suite, delegation=ACC free CLI dispatch only. Owner quota fallback overrides older four-wait rulings: one 15-minute wait/retry, then coordinator fallback with explicit ruling; normal fallback only after two failed free attempts. No setup/global-preference edit; no phase 4+, web/Orca, push/tag/main merge.",
       "at": "2026-10-22T00:30:04.333941+00:00",
+      "promoted": null
+    },
+    {
+      "n": 92,
+      "text": "T041 attempt 1 timed out after 361.8s; independent proof in its worktree: 82 passed in 1.77s, not accepted. outside_writes lists two untracked coordinator-created scratch files (.crew-chief-discovery.json and .crew-chief-phase3.py), NOT worker writes: both were created by coordinator while concurrent dispatch ran. Preserve historical flags; do not penalize worker for those. Scratch tools moved outside repository to _tools runtime; future briefs also external. T015 may report the same transient coordinator files; inspect attribution rather than hiding evidence. Retry T041 from preserved attempt 1 with a different free model, no fallback before second free failure.",
+      "at": "2026-10-22T00:37:25.584362+00:00",
+      "promoted": null
+    },
+    {
+      "n": 93,
+      "text": "T041 fallback authorized after TWO free timeouts: DeepSeek 361.8s and MiniMax 242.0s. Coordinator adopts preserved implementation without production edits because declared proof is 82 passed and compatibility proof with existing config/preferences is 280 passed. Historical attempts remain timeout, never changed to ok. Append an explicitly attributed coordinator validation/adoption attempt through released records.update_job/add_attempt, not a fictional CLI dispatch; pin cumulative original-base-to-HEAD diff for independent free reviewer and report coordinator fallback honestly in economy. T015 second free MiniMax attempt running from preserved tests/code; no phase beyond 3.",
+      "at": "2026-10-22T00:42:55.683907+00:00",
+      "promoted": null
+    },
+    {
+      "n": 94,
+      "text": "T015 fallback now authorized after TWO free timeouts: DeepSeek 602.3s and MiniMax 361.7s. Preserve both files and every original assertion; coordinator will finish only proved residual supervisor defects, refresh declared proof and independent free-family review before grade/accept. T041 reviewer canonicalization correction has red 3 failed then 283 compatibility passed; final adoption records actual 96761a6 cumulatively from 9a606dc. Nemotron timeout left untracked review.md despite read-only instruction: preserved externally, never product scope. An intervening review brief was stale because adoption initially refused that artifact; discard it regardless of verdict and rerender from final recorded HEAD.",
+      "at": "2026-10-22T00:48:41.886360+00:00",
+      "promoted": null
+    },
+    {
+      "n": 95,
+      "text": "T041 final independent free Opus Low review at exact 96761a67974cecb24ccf9a02ce6101112dfd586c confirms 85 passed, no Critical/Important findings, 4 declared files only and no existing code/test deletion. Normalizing documented policy/aliases, None overrides, compatibility/BOM tests are within requested config semantics, not extras. Cosmetic minor findings do not change behavior; load_prefs validates each input file including managed setup first, and existing int/float convention retained. Compatibility proof 283 passed. Grade attributed manual fallback with one canonicalization correction; historical failed free attempts and prior/stale reviews retained. T015 red race 1 failed and isolated-bootstrap 1 failed before minimal fixes; final 21 passed, fake CLI subprocess exit checked; independent Gemini review in flight.",
+      "at": "2026-10-22T00:51:04.725367+00:00",
       "promoted": null
     }
   ]
