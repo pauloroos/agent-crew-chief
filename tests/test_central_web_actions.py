@@ -312,3 +312,17 @@ def test_actions_route_by_the_stored_backend_like_the_cli(tmp_path, monkeypatch)
     assert central_messages.pending(root, mystery["id"], "in") == []
     assert len(list((root / "coordinators" / orca["id"]).rglob("control/*.json"))) == 1
     assert not list((root / "coordinators" / mystery["id"]).rglob("control/*.json"))
+
+
+def test_attach_fallback_keeps_an_explicit_central_dir_without_the_home_path(tmp_path, monkeypatch):
+    from crew_chief import central_config
+
+    home = Path.home()
+    with running(tmp_path, monkeypatch) as server:
+        assert exchange(server, "/api/attach")[1]["command"] == "acc attach " + CID
+        server.central_dir = str(home / "my central")
+        data = exchange(server, "/api/attach")[1]
+    assert data["command"] == f'acc attach {CID} --central-dir "~/my central"'
+    assert str(home) not in json.dumps(data)
+    # The copied command reaches the same root in any shell: acc expands the ~ itself.
+    assert central_config.resolve_root("~/my central", {}) == home / "my central"

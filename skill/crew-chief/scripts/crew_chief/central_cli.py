@@ -312,7 +312,7 @@ def handle_central(args: argparse.Namespace, browser_open: Any = None) -> int:
         assets = Path(__file__).resolve().parents[2] / "web"
         return central_screen.run_web(
             root,
-            {"poll": poll},
+            {"poll": poll, "central_dir": getattr(args, "central_dir", None)},
             assets=assets,
             port=port,
             browser_open=browser_open,

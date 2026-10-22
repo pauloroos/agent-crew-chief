@@ -62,7 +62,8 @@ class CentralConfigError(ValueError):
 
 
 def _as_path(value: Any) -> Path:
-    return value if isinstance(value, Path) else Path(value)
+    # Expanded here so a copied "~/..." works in shells that do not expand it (cmd.exe).
+    return Path(value).expanduser()
 
 
 def resolve_root(explicit: Any = None, env: dict[str, str] | None = None, home: Any = None) -> Path:

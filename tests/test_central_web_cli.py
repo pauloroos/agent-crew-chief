@@ -254,3 +254,12 @@ def test_thread_start_failure_closes_without_shutdown_deadlock(tmp_path, monkeyp
     assert central_screen.run_web(tmp_path, io=IO(False), assets=tmp_path,
         server_factory=lambda *a, **k: fake, browser_open=lambda url: True) == 1
     assert fake.closed and not fake.attach_bridge_active
+
+
+@pytest.mark.parametrize("flag", [None, "custom central"])
+def test_web_passes_only_an_explicit_central_dir_to_the_view(tmp_path, monkeypatch, flag):
+    seen = {}
+    monkeypatch.setattr(central_screen, "run_web", lambda root, options, **kw: seen.update(options) or 0)
+    argv = ["central", "--web"] + (["--central-dir", flag] if flag else [])
+    assert central_cli.handle_central(_parse(argv)) == 0
+    assert seen["central_dir"] == flag

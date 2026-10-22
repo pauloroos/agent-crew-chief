@@ -345,6 +345,7 @@ def run_web(root, options=None, io=None, clock=None, *, assets=None, port=0,
     started = False
     try:
         server = factory(Path(root), assets, port)
+        server.central_dir = (options or {}).get("central_dir")
         # Serve before invoking the browser: an opener may immediately fetch.
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .01})
         thread.start()

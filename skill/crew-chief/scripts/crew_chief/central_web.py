@@ -277,7 +277,20 @@ class _Handler(BaseHTTPRequestHandler):
         if self.server.attach_bridge_active:
             self.server.attach_intents.put_nowait(cid)
             return {"ok": True, "queued": True}
-        return {"ok": True, "queued": False, "command": "acc attach " + cid}
+        return {"ok": True, "queued": False, "command": attach_command(cid, self.server.central_dir)}
+
+
+def attach_command(cid: str, central_dir=None) -> str:
+    """The copyable ``acc attach`` line; an explicit central dir is kept, home shown as ``~``."""
+    command = "acc attach " + cid
+    if not central_dir:
+        return command
+    path = Path(central_dir)
+    try:
+        shown = "~/" + path.resolve().relative_to(Path.home().resolve()).as_posix()
+    except (OSError, ValueError):
+        shown = str(central_dir)
+    return command + " --central-dir " + (f'"{shown}"' if " " in shown else shown)
 
 
 def create_server(root: Path, assets: Path, port: int = 0, *, attach_bridge_active: bool = False) -> ThreadingHTTPServer:
@@ -302,4 +315,5 @@ def create_server(root: Path, assets: Path, port: int = 0, *, attach_bridge_acti
     server.attach_intents = queue.Queue(maxsize=16)
     server.action_ids_lock = threading.Lock()
     server.attach_bridge_active = bool(attach_bridge_active)
+    server.central_dir = None  # an explicit --central-dir, echoed by the attach fallback
     return server
