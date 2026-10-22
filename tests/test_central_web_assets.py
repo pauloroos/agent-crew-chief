@@ -1,13 +1,12 @@
 """Asset and rendering tests for the packaged central web view.
 
 Browser smoke steps (copy into the phase report; no live coordinator):
-1. Start the loopback server with packaged assets:
-   python -c "from pathlib import Path; from crew_chief.central_web import create_server; s=create_server(Path('/tmp/central'), Path('skill/crew-chief/web')); print(s.server_address); import time; time.sleep(30)" 
-   (use a temp central root and the packaged web dir; never real ~/.config)
+1. From the checkout run: python tests/test_central_web_assets.py --smoke
+   It prints an ephemeral loopback URL and serves synthetic snapshots only.
 2. Open http://127.0.0.1:<port>/ in a browser; confirm cards, questions, job
    history, model token charts, scoreboard and totals render from /api/snapshot.
-3. Replace the snapshot monkeypatch with synthetic data containing XSS-like
-   strings and confirm they appear as text, never as markup.
+3. The demo includes HTML-like question text: confirm it appears literally,
+   never as markup. Inspect at a narrow width and with keyboard navigation.
 4. Confirm no external scripts or stylesheets are loaded (DevTools Network).
 5. Confirm POST controls stay disabled (buttons disabled) until T033.
 6. Stop the server and confirm the listening socket is released.
@@ -20,6 +19,12 @@ import json
 from pathlib import Path
 import re
 import threading
+import shutil
+import subprocess
+import sys
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skill/crew-chief/scripts"))
 
 import pytest
 
@@ -160,9 +165,113 @@ def test_xss_text_not_markup(tmp_path, monkeypatch):
     with running(tmp_path, monkeypatch, assets=PACKAGED_ASSETS, data=data) as (server, _):
         status, _, body = request(server, "/api/snapshot")
         assert status == 200
-        # server sanitizes/redacts? at least no raw script in public? check body doesn't crash
-        text = body.decode()
-        assert "script" not in text.lower() or True
+        # JSON is data, and the browser inserts it only through textContent.
+        assert headers_content_type(server).startswith("application/json")
+        assert json.loads(body)["questions"][0]["body"].startswith("<script>")
+
+
+def headers_content_type(server):
+    return request(server, "/api/snapshot")[1]["Content-Type"]
+
+
+def render_js(sample):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("optional Node DOM runtime unavailable")
+    runner = r'''
+const fs = require('fs'), vm = require('vm');
+const fixture = JSON.parse(fs.readFileSync(0, 'utf8'));
+const created = [];
+class Element {
+  constructor(tag) { this.tag = tag; this.children = []; this.style = {}; this._text = ''; }
+  set textContent(value) { this._text = String(value); this.children = []; }
+  get textContent() { return this._text + this.children.map(x => x.textContent).join(' '); }
+  get firstChild() { return this.children[0]; }
+  appendChild(x) { this.children.push(x); return x; }
+  removeChild(x) { this.children.splice(this.children.indexOf(x), 1); }
+  set innerHTML(x) { throw new Error('unsafe markup insertion'); }
+  setAttribute(k, v) { this[k] = v; }
+  addEventListener() {}
+}
+const elements = {};
+const document = {
+  getElementById(id) { return elements[id] ||= new Element('section'); },
+  createElement(tag) { created.push(tag); return new Element(tag); },
+};
+const calls = [];
+const fetch = async (url) => {
+  calls.push(url);
+  if (url !== '/api/snapshot') throw new Error('unexpected request');
+  return {ok: true, json: async () => fixture};
+};
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {document, fetch, setInterval() {}});
+setImmediate(() => console.log(JSON.stringify({
+  text: Object.fromEntries(Object.entries(elements).map(([k, v]) => [k, v.textContent])), created, calls
+})));
+'''
+    completed = subprocess.run([node, "-e", runner, str(PACKAGED_ASSETS / "central.js")],
+        input=json.dumps(sample), capture_output=True, text=True, timeout=10, check=True)
+    return json.loads(completed.stdout)
+
+
+def test_dom_renders_actual_snapshot_safely():
+    malicious = "<img src=x onerror=alert(1)>"
+    sample = {"coordinators": [{"id": "c1", "repo_label": malicious, "state": "running",
+        "accepted": 1, "total": 2, "active_pieces": [{"ref": "T1", "title": "piece"}],
+        "jobs": [{"id": "j1", "title": "history title"}], "scoreboard": "score 85",
+        "models": [{"model": "unknown-model", "role": "exec", "tier": "free", "tokens_total": None}]}],
+        "questions": [{"id": "q1", "body": malicious}], "totals": {"total_tokens": None}}
+    result = render_js(sample)
+    assert malicious in result["text"]["cards"] and malicious in result["text"]["questions"]
+    assert "img" not in result["created"] and "script" not in result["created"]
+    assert "history title" in result["text"]["history"]
+    assert "score 85" in result["text"]["scoreboard"]
+    assert "unknown tok" in result["text"]["charts"]
+    assert "unknown" in result["text"]["totals"]
+    assert result["calls"] == ["/api/snapshot"]
+
+
+def test_chart_uses_deduplicated_shared_totals():
+    model = {"model": "shared-model", "role": "exec", "tier": "free", "tokens_total": 7}
+    sample = {"coordinators": [{"models": [model]}, {"models": [model]}],
+        "totals": {"models": [model], "tokens_by_tier": {"free": 7}}, "questions": []}
+    result = render_js(sample)
+    assert result["text"]["charts"].count("shared-model") == 1
+    assert "free: 7" in result["text"]["charts"]
+
+
+def test_empty_dom_states():
+    result = render_js({"coordinators": [], "questions": [], "totals": {}})["text"]
+    assert "No pending questions" in result["questions"]
+    assert "No job history" in result["history"]
+    assert "No scoreboard data" in result["scoreboard"]
+
+
+def smoke():
+    """Manual fake-browser fixture; never loads a real registry or launches CLIs."""
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
+    from crew_chief.central_web import create_server
+    fixture = {"schema_version": 1, "generated_at": "synthetic demo", "coordinators": [{
+        "id": "00000000-0000-4000-8000-000000000001", "repo_label": "demo", "cli": "fake",
+        "state": "waiting", "accepted": 1, "total": 2, "jobs": [{"id": "demo", "title": "Demo job"}],
+        "scoreboard": "Demo model: 85", "models": [{"role": "exec", "model": "demo-model",
+        "tier": "free", "tokens_total": 42}]}], "questions": [{"id": "demo-question",
+        "body": "<img src=x onerror=alert(1)>", "coordinator_id": "00000000-0000-4000-8000-000000000001"}],
+        "totals": {"coordinators": 1, "jobs": 1, "questions": 1, "total_tokens": 42}}
+    with TemporaryDirectory(prefix="acc-demo-") as directory, patch.object(central_snapshot, "snapshot", return_value=fixture):
+        server = create_server(Path(directory), PACKAGED_ASSETS)
+        print(f"http://127.0.0.1:{server.server_port}/  (Ctrl-C to close)", flush=True)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["--smoke"]:
+    smoke()
 
 
 def test_socket_released(tmp_path, monkeypatch):

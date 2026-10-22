@@ -162,6 +162,7 @@
 
       root.appendChild(card);
     });
+    if (!coordinators.length) root.appendChild(make("p", "muted", "No coordinators yet."));
   }
 
   function fmtNumber(value) {
@@ -257,6 +258,8 @@
         rows.push(m);
       });
     });
+    // The shared aggregate already deduplicates jobs referenced by two views.
+    if (snapshot.totals && Array.isArray(snapshot.totals.models)) rows = snapshot.totals.models;
     // Also totals-level model chart if present in totals? none.
     if (!rows.length) {
       root.appendChild(make("p", "muted", "No model token data."));
@@ -275,13 +278,14 @@
       row.appendChild(label);
       var barWrap = make("div", null);
       var bar = make("div", "chart-bar");
+      bar.hidden = typeof m.tokens_total !== "number" || !isFinite(m.tokens_total);
       var t = (typeof m.tokens_total === "number" && isFinite(m.tokens_total)) ? m.tokens_total : 0;
       bar.style.width = Math.max(2, (t / maxTotal) * 100) + "%";
       if (m.tier === "free") bar.style.background = "var(--free)";
       if (m.tier === "paid") bar.style.background = "var(--paid)";
       barWrap.appendChild(bar);
       row.appendChild(barWrap);
-      var val = make("div", null, fmtNumber(t) + " tok");
+      var val = make("div", null, fmtNumber(m.tokens_total) + " tok" + (m.estimated ? " (estimated)" : ""));
       row.appendChild(val);
       root.appendChild(row);
     });
