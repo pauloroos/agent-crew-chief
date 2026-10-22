@@ -129,7 +129,7 @@ Proof: `python -m pytest tests/test_central_usage.py -q`.
 
 ## Phase 3: Supervision and lifecycle (v0.4.0)
 
-- [ ] T015 [P] [US2] Supervise coordinator rounds without idle model calls in skill/crew-chief/scripts/crew_chief/central_supervisor.py, tests/test_central_supervisor.py; depends on T011, T012, T014
+- [X] T015 [P] [US2] Supervise coordinator rounds without idle model calls in skill/crew-chief/scripts/crew_chief/central_supervisor.py, tests/test_central_supervisor.py; depends on T011, T012, T014
 - [ ] T016 [P] [US2] Implement cooperative pause resume and stop controls in skill/crew-chief/scripts/crew_chief/central_controls.py, tests/test_central_controls.py; depends on T003, T004, T015
 - [ ] T017 [P] [US2] Hand off exclusive session ownership for interactive attach in skill/crew-chief/scripts/crew_chief/central_attach.py, tests/test_central_attach.py; depends on T008, T009, T015, T016
 - [ ] T018 [P] [US2] Reconcile stale supervisors and recover explicitly in skill/crew-chief/scripts/crew_chief/central_recovery.py, tests/test_central_recovery.py; depends on T003, T015, T016, T017
