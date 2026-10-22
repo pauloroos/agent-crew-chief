@@ -17,9 +17,15 @@ CID = "00000000-0000-4000-8000-000000000001"
 
 @contextmanager
 def running(tmp_path, monkeypatch):
-    root = tmp_path / "central"
-    monkeypatch.setattr(central_registry, "load_registry", lambda *a, **k: {"coordinators": {CID: {"id": CID}}})
-    server = central_web.create_server(root, tmp_path)
+    monkeypatch.setattr(central_registry, "load_registry",
+                        lambda *a, **k: {"coordinators": {CID: {"id": CID, "backend": "default"}}})
+    with serving(tmp_path / "central", tmp_path) as server:
+        yield server
+
+
+@contextmanager
+def serving(root, assets):
+    server = central_web.create_server(root, assets)
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .01})
     thread.start()
     try:
@@ -285,3 +291,24 @@ const tick=()=>new Promise(setImmediate);
     result = subprocess.run([node, "-e", runner, str(js)], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     assert "browser actions passed" in result.stdout
+
+
+def test_actions_route_by_the_stored_backend_like_the_cli(tmp_path, monkeypatch):
+    """FR-017: the web routes as ``acc``: Orca rows need no Orca, unknown backends are refused."""
+    from test_central_backend_cli import _stored_row
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))  # no Orca anywhere
+    root = tmp_path / "central"
+    orca, mystery = _stored_row(tmp_path, "orca"), _stored_row(tmp_path, "mystery")
+    for row in (orca, mystery):
+        central_registry.register(root, row)
+    with serving(root, tmp_path) as server:
+        assert exchange(server, "/api/message", {"coordinator_id": orca["id"], "text": "hi"})[0] == 200
+        assert exchange(server, "/api/pause", {"coordinator_id": orca["id"]})[0] == 200
+        for path, extra in (("/api/message", {"text": "hi"}), ("/api/pause", {}), ("/api/attach", {})):
+            refused = exchange(server, path, {"coordinator_id": mystery["id"], **extra})
+            assert refused == (400, {"error": "action refused"})
+    assert [m["body"] for m in central_messages.pending(root, orca["id"], "in")] == ["hi"]
+    assert central_messages.pending(root, mystery["id"], "in") == []
+    assert len(list((root / "coordinators" / orca["id"]).rglob("control/*.json"))) == 1
+    assert not list((root / "coordinators" / mystery["id"]).rglob("control/*.json"))

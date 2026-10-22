@@ -16,6 +16,7 @@ import secrets
 import threading
 
 from . import briefcheck, central_controls, central_messages, central_registry, central_snapshot
+from .central_backend import BackendError
 
 _ASSETS = {"/": ("index.html", "text/html; charset=utf-8"),
            "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -251,7 +252,7 @@ class _Handler(BaseHTTPRequestHandler):
             except queue.Full:
                 self._reply(503, {"error": "terminal queue full"})
                 return
-            except (central_messages.MessageError, central_controls.ControlError, ValueError):
+            except (central_messages.MessageError, central_controls.ControlError, BackendError, ValueError):
                 self._reply(400, {"error": "action refused"})
                 return
             except Exception:
@@ -262,10 +263,14 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _action(self, body):
         cid = body["coordinator_id"]
+        # Routed by the stored backend exactly as the CLI routes it (FR-017).
+        row, backend = central_controls.registered_backend(self.server.root, cid)
+        if backend is None:
+            raise central_controls.ControlError("unknown coordinator")
         if self.path in ("/api/message", "/api/answer"):
             envelope = central_messages.owner_message(cid, body["text"], body.get("question_id"))
             envelope["id"] = body["action_id"]
-            return {"ok": True, "message_id": central_messages.send(self.server.root, cid, envelope)}
+            return {"ok": True, "message_id": backend.send(row, envelope)}
         if self.path in ("/api/pause", "/api/resume"):
             return {"ok": True, "control_id": central_controls.request_control(self.server.root, cid, self.path.rsplit("/", 1)[1])}
         if self.server.attach_bridge_active:

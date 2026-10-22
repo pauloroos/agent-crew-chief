@@ -108,12 +108,12 @@ def test_terminal_bridge_handoff(tmp_path):
     fake.attach_intents.put("11111111-1111-4111-8111-111111111111")
     calls = []
 
-    def fake_attach(root, cid, io, timeout_s=5.0):
+    def fake_attach(root, cid, io):
         calls.append((str(root), cid))
         return {"ok": True}
 
     with patch("crew_chief.central_web.create_server", return_value=fake), \
-         patch("crew_chief.central_screen.central_attach.attach", fake_attach), \
+         patch("crew_chief.central_screen._attach", fake_attach), \
          patch("crew_chief.central_screen.read_key", return_value="q"), \
          patch("crew_chief.central_screen.terminal_input", return_value=nullcontext()):
         # Force interactive io
@@ -161,7 +161,7 @@ def test_redirected_screen_never_consumes_attach_intents(tmp_path, monkeypatch):
     fake = FakeServer()
     fake.attach_intents.put("11111111-1111-4111-8111-111111111111")
     calls = []
-    monkeypatch.setattr(central_screen.central_attach, "attach", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(central_screen, "_attach", lambda *a, **k: calls.append(a))
     monkeypatch.setattr(central_screen, "_snapshot", lambda *a: {})
     central_screen.run_screen(tmp_path, io=IO(False), web_server=fake)
     assert calls == [] and fake.attach_intents.qsize() == 1

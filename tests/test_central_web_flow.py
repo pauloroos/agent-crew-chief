@@ -10,7 +10,7 @@ import threading
 import uuid
 
 import pytest
-from crew_chief import (central_messages, central_registry, central_screen, central_snapshot,
+from crew_chief import (central_attach, central_messages, central_registry, central_screen, central_snapshot,
                         central_terminal, central_web, records)
 
 CID = "00000000-0000-4000-8000-000000000001"
@@ -153,7 +153,8 @@ def test_http_attach_consumed_only_by_terminal_loop(live, monkeypatch):
         return None if len(results) == 1 else "q"
     monkeypatch.setattr(central_screen, "terminal_input", lambda **kw: nullcontext())
     monkeypatch.setattr(central_screen, "read_key", key)
-    monkeypatch.setattr(central_screen.central_attach, "attach", lambda root, cid, io, **kw: attached.append((root, cid, io)))
+    # The registered default backend reaches the core attach, as `acc attach` does.
+    monkeypatch.setattr(central_attach, "attach", lambda root, cid, io, *a, **kw: attached.append((root, cid, io)))
     assert central_screen.run_screen(server.root, io=terminal_io, web_server=server) == 0
     assert len(attached) == 1 and attached[0] == (server.root, CID, terminal_io)
     assert not server.attach_bridge_active

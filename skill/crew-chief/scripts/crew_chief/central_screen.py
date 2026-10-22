@@ -25,13 +25,13 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from . import (
-    central_attach,
     central_web,
     central_controls,
     central_messages,
     central_snapshot,
     central_terminal,
 )
+from .central_backend import ATTACH_TIMEOUT_KEY, TERMINAL_KEY
 from .central_keys import (
     KEY_DETAILS,
     KEY_DOWN,
@@ -136,6 +136,19 @@ def _clamp_selected(selected: int, count: int) -> int:
     return selected
 
 
+def _registered(root: Path, cid: str):
+    """The stored row and backend of ``cid``, routed exactly as ``acc`` routes it (FR-017)."""
+    row, backend = central_controls.registered_backend(root, cid)
+    if backend is None:
+        raise central_controls.ControlError(f"no coordinator {cid!r} registered")
+    return row, backend
+
+
+def _attach(root: Path, cid: str, io: Any) -> dict:
+    row, backend = _registered(root, cid)
+    return backend.attach({**row, TERMINAL_KEY: io, ATTACH_TIMEOUT_KEY: 5.0})
+
+
 def _handle_message(root: Path, snap: dict, selected: int, io: _IO) -> None:
     """Send a canned message/reply to the selected coordinator's inbox."""
     rows = snap.get("rows") if isinstance(snap, dict) else None
@@ -155,7 +168,8 @@ def _handle_message(root: Path, snap: dict, selected: int, io: _IO) -> None:
                 reply_to = q.get("id")
                 break
     try:
-        central_messages.send(root, str(cid), central_messages.owner_message(str(cid), "ack", reply_to))
+        row, backend = _registered(root, str(cid))
+        backend.send(row, central_messages.owner_message(str(cid), "ack", reply_to))
     except Exception:
         pass
 
@@ -173,6 +187,7 @@ def _handle_pause_resume(root: Path, snap: dict, selected: int) -> None:
     state = str(row.get("state", "")).lower()
     action = "resume" if state in ("paused", "suspended") else "pause"
     try:
+        _registered(root, str(cid))
         central_controls.request_control(root, str(cid), action)
     except Exception:
         pass
@@ -189,7 +204,7 @@ def _handle_attach(root: Path, snap: dict, selected: int, io: _IO) -> None:
     if not cid:
         return
     try:
-        central_attach.attach(root, str(cid), io, timeout_s=5.0)
+        _attach(root, str(cid), io)
     except Exception:
         pass
 
@@ -213,7 +228,7 @@ def _drain_attach_intents(root, server, io):
             cid = server.attach_intents.get_nowait()
         except queue.Empty:
             return
-        central_attach.attach(root, cid, io, timeout_s=5.0)
+        _attach(root, cid, io)
 
 
 def run_screen(

@@ -81,6 +81,28 @@ def _make_snap(rows: list[dict] | None = None, questions: list[dict] | None = No
     }
 
 
+class _Backend:
+    """A registered backend that records what the screen routed to it."""
+
+    def __init__(self):
+        self.sent: list[dict] = []
+        self.attached: list[tuple] = []
+
+    def send(self, row, envelope):
+        self.sent.append({"cid": row["id"], **envelope})
+        return "msg-1"
+
+    def attach(self, record):
+        self.attached.append((record["id"], record["attach_timeout_s"]))
+        return {"ok": True, "state": "attached"}
+
+
+def _registered(backend):
+    """Answer the screen's stored-backend routing with ``backend``."""
+    return patch("crew_chief.central_screen._registered",
+                 side_effect=lambda root, cid: ({"id": cid, "backend": "default"}, backend))
+
+
 def _row(cid: str = "coord-1", state: str = "running") -> dict:
     return {
         "coordinator_id": cid,
@@ -184,16 +206,13 @@ def test_message_key_sends():
         questions=[{"coordinator_id": "c1", "id": "q1"}],
     )
 
-    sent_messages: list[dict] = []
-
-    def fake_send(root, coordinator_id, envelope):
-        sent_messages.append({"cid": coordinator_id, **envelope})
-        return "msg-1"
+    backend = _Backend()
+    sent_messages = backend.sent
 
     keys = ["m", "q"]
     with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap), \
          patch("crew_chief.central_screen.read_key", side_effect=keys), \
-         patch("crew_chief.central_screen.central_messages.send", side_effect=fake_send), \
+         _registered(backend), \
          patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
         exit_code = run_screen(Path("/tmp"), options={}, io=fake_io, clock=fake_clock)
 
@@ -221,6 +240,7 @@ def test_pause_toggle():
     with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap), \
          patch("crew_chief.central_screen.read_key", side_effect=keys), \
          patch("crew_chief.central_screen.central_controls.request_control", side_effect=fake_control), \
+         _registered(_Backend()), \
          patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
         exit_code = run_screen(Path("/tmp"), options={}, io=fake_io, clock=fake_clock)
 
@@ -244,6 +264,7 @@ def test_resume_when_paused():
     with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap), \
          patch("crew_chief.central_screen.read_key", side_effect=keys), \
          patch("crew_chief.central_screen.central_controls.request_control", side_effect=fake_control), \
+         _registered(_Backend()), \
          patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
         exit_code = run_screen(Path("/tmp"), options={}, io=fake_io, clock=fake_clock)
 
@@ -259,16 +280,13 @@ def test_enter_triggers_attach():
     fake_clock = FakeClock()
     snap = _make_snap(rows=[_row("c1")])
 
-    attach_calls: list[tuple] = []
-
-    def fake_attach(root, cid, terminal, timeout_s=5.0):
-        attach_calls.append((cid, timeout_s))
-        return {"ok": True, "state": "attached"}
+    backend = _Backend()
+    attach_calls = backend.attached
 
     keys = ["enter", "q"]
     with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap), \
          patch("crew_chief.central_screen.read_key", side_effect=keys), \
-         patch("crew_chief.central_screen.central_attach.attach", side_effect=fake_attach), \
+         _registered(backend), \
          patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
         exit_code = run_screen(Path("/tmp"), options={}, io=fake_io, clock=fake_clock)
 
@@ -365,3 +383,30 @@ def test_narrow_width_rendering():
     assert exit_code == 0
     output = fake_io.stdout.getvalue()
     assert len(output) > 0
+
+def test_screen_actions_route_by_the_stored_backend_like_the_cli(tmp_path, monkeypatch):
+    """FR-017: m, p and Enter route as ``acc``: Orca rows need no Orca, unknown backends do nothing."""
+    from crew_chief import central_messages, central_registry
+    from test_central_backend_cli import _stored_row
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))  # no Orca anywhere
+    root = tmp_path / "central"
+    orca, mystery = _stored_row(tmp_path, "orca"), _stored_row(tmp_path, "mystery")
+    for row in (orca, mystery):
+        central_registry.register(root, row)
+    attached: list[str] = []
+
+    def fake_attach(root, cid, terminal, timeout_s):
+        attached.append(cid)
+        return {"ok": True, "state": "attached"}
+
+    snap = _make_snap(rows=[_row(orca["id"]), _row(mystery["id"])])
+    keys = ["m", "p", "enter", "down", "m", "p", "enter", "q"]
+    with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap),          patch("crew_chief.central_screen.read_key", side_effect=keys),          patch("crew_chief.central_attach.attach", side_effect=fake_attach),          patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
+        assert run_screen(root, options={}, io=FakeIO(is_tty=True), clock=FakeClock()) == 0
+
+    assert [m["body"] for m in central_messages.pending(root, orca["id"], "in")] == ["ack"]
+    assert central_messages.pending(root, mystery["id"], "in") == []
+    assert len(list((root / "coordinators" / orca["id"]).rglob("control/*.json"))) == 1
+    assert not list((root / "coordinators" / mystery["id"]).rglob("control/*.json"))
+    assert attached == [orca["id"]]
