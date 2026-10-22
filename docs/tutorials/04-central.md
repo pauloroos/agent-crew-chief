@@ -1,140 +1,165 @@
-# 04-central · Core installation, launch and recovery
+# 04-central · Coordinators in their own worktrees
 
-This tutorial documents the core installation, launch, monitoring, and recovery
-workflow for agent-crew-chief v0.4.0. It depends on tutorials 01–03 and tasks
-T025, T026, T027.
+This tutorial installs the `acc` command, launches a coordinator in its own
+worktree, watches it from the central screen, talks to it, pauses and stops
+it, recovers it after a failure and integrates its branch yourself. It builds
+on tutorials 01–03 and uses the small
+[`examples/hello-crew/`](../../examples/hello-crew/) project.
 
-## Before you start
+Everything here works on Windows, macOS and Linux with only Python 3.11+, git
+and one supported coordinator CLI (`claude` or `codex`). No Orca, tmux, pty,
+curses or ConPTY is needed: the screen and `attach` use the terminal you
+already have.
 
-This tutorial uses the small [`examples/hello-crew/`](../../examples/hello-crew/)
-project. Ensure ACC is installed and configured:
+## 1. Install the `acc` command
 
-```bash
-python -I .agents/skills/crew-chief/scripts/crew-chief.py setup --yes --project .
-python -I .agents/skills/crew-chief/scripts/crew-chief.py discover --project .
-```
-
-## 1. Core installation
-
-Install a released ACC bundle into a practice repository:
+Clone the release once and install only the user-scoped command wrapper:
 
 ```bash
-# Install ACC v0.4.0 into a temporary repo
-python -I .agents/skills/crew-chief/scripts/crew-chief.py install . --release 0.4.0
+git clone --branch v0.4.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+python -I ~/tools/agent-crew-chief/install.py --command
 ```
 
-The `install.py` script copies the skill into the repository and creates a
-user-scoped `acc` wrapper. The old script is retained; global preferences and
-PATH are never silently edited.
+The installer writes `acc` (or `acc.cmd` on Windows) into your user bin
+directory (`~/.local/bin`, or `%LOCALAPPDATA%\agent-crew-chief\bin` on
+Windows; `--bin-dir DIR` picks another one) and prints where it went. It never
+edits `PATH` or your preferences: add that directory to `PATH` yourself if it
+is not there yet. The old `python -I .../crew-chief.py` entry keeps working.
 
-**Command‑install** (FR-001):
+Check it:
 
 ```bash
-acc --command <path-to-binary>
+acc --version
+acc --help
 ```
 
-This installs an explicit user‑scoped wrapper without requiring a full project
-installation. The legacy `install.py` still works, and existing settings remain
-unchanged.
+## 2. Prepare the project
 
-## 2. Launching the central tool
-
-Launch ACC in a temporary isolated worktree. No Orca executable is required
-(US6/AC2):
+A coordinator runs in a new worktree created from the project's `HEAD`, so the
+project must have ACC installed **and committed** at the same version as the
+`acc` command:
 
 ```bash
-acc launch --project . --request "# request\nShip the central tool.\n"
+python -I ~/tools/agent-crew-chief/install.py .
+git add -A
+git commit -m "chore: install agent-crew-chief"
 ```
 
-**CLI override** — force a specific executor:
+If you skip this, `launch` stops with "no worktree ACC is installed"; pass
+`--install-worktree-acc` to let it install ACC only inside the new worktree.
+
+## 3. Launch a coordinator
+
+Write the request in a file, then launch. Every launch states how much it is
+authorized to do:
 
 ```bash
-acc launch --cli opencode
+acc launch --repo . --request-file request.md --mode raw-request --authorize-raw
 ```
 
-**Yolo mode** — bypass approvals:
+- `raw-request` + `--authorize-raw`: the coordinator may plan from the raw
+  request.
+- `direct-spec` + `--spec-dir specs/001-feature`: work from an existing spec.
+- `approved-spec` + `--spec-dir specs/001-feature --approved`: a spec you have
+  already approved.
 
 ```bash
-acc launch --yolo
+acc launch --repo . --request-file request.md --mode approved-spec --spec-dir specs/001-feature --approved
 ```
 
-**Restricted mode** — coordinator is unrestricted but individual runs are
-restricted:
+Useful options: `--cli claude|codex` picks the coordinator CLI (default: your
+`coordinator_default` preference, else the CLI you are in), `--restricted`
+keeps the coordinator from bypassing permission prompts, `--base REV` starts
+the branch elsewhere than `HEAD`.
+
+`launch` prints `launched coordinator <ID>`. The coordinator gets its own
+branch and worktree; your checkout is never touched, merged or pushed. A
+detached supervisor runs it in bounded rounds.
+
+The central registry lives in `~/.config/agent-crew-chief/central/` and every
+`acc` command finds it from any directory. `--central-dir DIR` (or the
+`AGENT_CREW_CHIEF_CENTRAL_DIR` variable) points at another one.
+
+## 4. Monitor
+
+Open the central screen in a second terminal:
 
 ```bash
-acc launch --restricted
+acc central
 ```
 
-## 3. Monitoring and messages
+Each row shows the repository, CLI, state, accepted/total pieces and score,
+with active pieces underneath and pending questions highlighted. Keys: arrows
+select, `Enter` attaches, `m` replies, `p` pauses/resumes, `d` toggles
+details, `Esc` closes details, `q` quits (quitting never stops a coordinator).
 
-Monitor an running job and send messages between rounds:
+For a script or a redirected terminal, print one plain snapshot:
 
 ```bash
-# Monitor job progress
-acc monitor --job JOB_ID
-
-# Send a message to the worktree inbox
-acc message --job JOB_ID --text "What's the status?"
+acc central --once
 ```
 
-Durable file inboxes/outboxes with message IDs, acknowledgments, timestamps
-and idempotent redelivery are used (FR-007, SC-003). Malformed or oversized
-messages are rejected.
+## 5. Message and answer questions
 
-## 4. Attach and pause
-
-Take exclusive ownership of a session, or pause it:
+Messages are durable files: they wait in the coordinator's inbox and are read
+between rounds, with IDs and acknowledgments so nothing is lost or read twice.
 
 ```bash
-# Attach to an interactive terminal
-acc attach --job JOB_ID
-
-# Pause the current round
-acc pause --job JOB_ID
+acc message COORDINATOR_ID --text "Keep the public API unchanged."
+acc message COORDINATOR_ID --text "Use SQLite." --reply-to QUESTION_ID
 ```
 
-## 5. Stop and recovery
+`--reply-to` answers a question the coordinator asked; only the work that
+depends on that question waits for it.
 
-Stop a job and recover explicitly:
+## 6. Attach, pause and resume
+
+Take over the coordinator's session in your terminal:
 
 ```bash
-# Stop the job
-acc stop --job JOB_ID
-
-# Explicit recovery — never signal a bare persisted PID or silently restart
-acc recover --job JOB_ID
+acc attach COORDINATOR_ID
 ```
 
-**No pty dependency** (FR-020): Windows needs no pty, curses, tmux or
-ConPTY. Interactive entry uses the actual terminal and persisted session.
-
-**Preserve v0.3.4 behavior** (FR-018): Coordinators use existing
-pick/brief/dispatch/review/grade/accept/close and leave work in their own
-branch for owner integration. Source checkouts are never merged or pushed
-automatically.
-
-## 6. Recovery
-
-When a coordinator fails or a session is interrupted, recover using the
-persisted session evidence:
+The supervisor yields after the current round. If the CLI cannot resume a
+session or your terminal is redirected, `attach` says so and keeps the
+background session; it never starts a substitute session.
 
 ```bash
-acc recovery --job JOB_ID
+acc pause COORDINATOR_ID
+acc resume COORDINATOR_ID
 ```
 
-Recovery reads the last OK attempt's branch, restores eligibility, and
-reconciles stale supervisors. It never kills by PID, loses messages or
-silently retries failed rounds.
+`pause` lets the current round finish and then holds; `resume` makes the
+coordinator eligible again.
 
-## 7. Owner integration
+## 7. Stop and recover
 
-After a job is complete, the coordinator branch retains close output. The
-owner can review the diff, accept the work, or discard it. No test process
-survives after cleanup — final cleanup proves no test process survives.
+```bash
+acc stop COORDINATOR_ID
+```
 
----
+Stop is cooperative: the supervisor stops after the current round. No process
+is killed by a stored PID.
 
-**Release documentation** (SC-011): This tutorial gives the exact
-install/launch/monitor/message/attach/pause/stop/recovery flow, with split
-estimates and owner‑controlled integration. No private data, client names,
-personal paths or credentials appear in committed artifacts.
+A coordinator that failed (or that you stopped) is held until you decide:
+
+```bash
+acc recover COORDINATOR_ID
+```
+
+`recover` moves a `failed` or `stopped` coordinator back to `created`; nothing
+is retried silently. Its messages and worktree are kept.
+
+## 8. Integrate the work yourself
+
+The coordinator uses the same job cycle as before (pick, brief, dispatch,
+review, grade, accept, close) inside its own worktree and leaves the result on
+its branch. Review that branch like any other and merge it when you are
+satisfied:
+
+```bash
+git log --oneline main..BRANCH
+git merge BRANCH
+```
+
+ACC never merges or pushes for you.

@@ -9,9 +9,8 @@ appear in committed artifacts.
 """
 from __future__ import annotations
 
-import os
 import re
-import subprocess
+import shlex
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 README = REPO_ROOT / "README.md"
 TUTORIAL = REPO_ROOT / "docs" / "tutorials" / "04-central.md"
+TUTORIALS = [TUTORIAL, TUTORIAL.with_name("04-central.pt-BR.md")]
 SCRIPTS_DIR = REPO_ROOT / "skill" / "crew-chief" / "scripts"
 
 
@@ -41,7 +41,7 @@ _PRIVATE_PATTERNS = [
 ]
 
 
-@pytest.mark.parametrize("doc", [README, TUTORIAL])
+@pytest.mark.parametrize("doc", [README, *TUTORIALS])
 def test_no_private_data_in_public_artifacts(doc):
     """FR-021: public artifacts contain no private data, credentials or personal paths."""
     if not doc.exists():
@@ -138,63 +138,33 @@ def test_terminal_monitoring_documented():
 # Example commands parse against the real CLI
 # ---------------------------------------------------------------------------
 
-def _extract_code_blocks(text: str) -> list[str]:
-    """Extract bash/shell code blocks from markdown."""
-    blocks = []
-    in_block = False
-    current = []
+def _acc_lines(text: str) -> list[str]:
+    """Every line of a fenced code block that starts with ``acc ``."""
+    lines, in_block = [], False
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("```"):
-            if in_block:
-                blocks.append("\n".join(current))
-                current = []
-                in_block = False
-            else:
-                lang = stripped[3:].strip().lower()
-                if lang in ("bash", "sh", "shell", ""):
-                    in_block = True
-            continue
-        if in_block:
-            # Skip comment-only lines and empty lines at start.
-            if stripped.startswith("#") and not current:
-                continue
-            current.append(line)
-    return blocks
+            in_block = not in_block
+        elif in_block and stripped.startswith("acc "):
+            lines.append(stripped)
+    return lines
 
 
-def _run_cli_help() -> str:
-    """Run crew-chief --help and return stdout."""
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(SCRIPTS_DIR) + os.pathsep + env.get("PYTHONPATH", "")
-    result = subprocess.run(
-        [sys.executable, "-I", "-c",
-         "import sys; sys.path.insert(0, r'" + str(SCRIPTS_DIR) + "'); "
-         "import crew_chief.cli; sys.exit(crew_chief.cli.main(['--help']))"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        env=env, timeout=30,
-    )
-    return result.stdout + result.stderr
+@pytest.mark.parametrize("doc", TUTORIALS, ids=lambda p: p.name)
+def test_every_acc_command_parses_with_the_real_parser(doc):
+    """Drift guard: each ``acc ...`` example parses with cli.build_parser()."""
+    if str(SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS_DIR))
+    from crew_chief import cli
 
-
-def test_example_commands_reference_real_subcommands():
-    """Verification boundary: examples in 04-central.md reference real CLI subcommands."""
-    if not TUTORIAL.exists():
-        pytest.skip("04-central.md not yet created")
-    help_text = _run_cli_help()
-    # The tutorial uses 'acc' as alias for crew-chief; check that the
-    # subcommands it mentions actually exist in the real CLI.
-    text = _read(TUTORIAL)
-    # Known subcommands from the tutorial that map to crew-chief subcommands.
-    mentioned = set()
-    for word in re.findall(r"\b(install|launch|monitor|message|attach|pause|stop|recover|recovery)\b", text.lower()):
-        mentioned.add(word)
-    # At least some of these should appear in --help or be known aliases.
-    # The CLI may use different names; we just verify the tutorial is not
-    # referencing completely fictional commands.
-    assert len(mentioned) >= 3, (
-        f"04-central.md should reference at least 3 CLI operations; found: {mentioned}"
-    )
+    lines = _acc_lines(_read(doc))
+    assert len(lines) >= 10, f"{doc.name}: expected the full command flow, got {lines}"
+    for line in lines:
+        argv = shlex.split(line)[1:]
+        try:
+            cli.build_parser().parse_args(argv)
+        except SystemExit as exc:  # --help/--version exit 0; a parse error exits 2
+            assert exc.code == 0, f"{doc.name}: {line!r} does not parse"
 
 
 # ---------------------------------------------------------------------------
