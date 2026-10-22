@@ -287,8 +287,12 @@ def _handle_supervisor(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def add_central_subcommands(subparsers: Any) -> None:
-    """Register the central subcommands on an existing argparse subparsers group."""
+def add_central_subcommands(subparsers: Any, common: Any = None) -> None:
+    """Register the central subcommands on an existing argparse subparsers group.
+
+    ``common`` is accepted for compatibility with :mod:`cli`'s call site but
+    is currently unused; central subcommands define their own arguments.
+    """
     launch_parser = subparsers.add_parser("launch", help="start a new coordinator")
     launch_parser.add_argument("--repo", required=True, help="path to the source repository")
     launch_parser.add_argument(
