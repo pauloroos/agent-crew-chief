@@ -428,6 +428,78 @@ def test_two_identical_running_rounds_pause_instead_of_looping(tmp_path):
     assert stored(root, record)["state"] == "stopped"
 
 
+def test_a_productive_job_keeps_the_supervisor_running(tmp_path):
+    """Two rounds on the same job that really progressed must not pause.
+
+    Both rounds report the same job ids: the progress is in the job record,
+    where a piece was accepted between them.
+    """
+    job_id = "20260101-0000-demo"
+    root, record, coord = prepared(tmp_path, job_ids=[job_id])
+    jobs = Path(record["worktree"]) / "docs" / "crew-chief" / "jobs"
+    jobs.mkdir(parents=True)
+    job = {
+        "id": job_id,
+        "title": "demo",
+        "request": "do the work",
+        "created": "2026-01-01T00:00:00+00:00",
+        "distributed": True,
+        "reason": "central",
+        "issue_ref": "",
+        "pieces": [{
+            "n": 1,
+            "title": "piece one",
+            "type": "code",
+            "risk": "low",
+            "attempts": [],
+            "corrections": [],
+            "escalations": [],
+            "grades": {},
+        }],
+    }
+    path = jobs / f"{job_id}.json"
+    path.write_text(json.dumps(job), encoding="utf-8")
+    checkpoint = {
+        "state": "running",
+        "active_job_id": job_id,
+        "job_ids": [job_id],
+        "blocked_task_refs": [],
+        "round_id": str(uuid.uuid4()),
+    }
+
+    def first(rec):
+        return round_result(rec, state="running", session_id="sess-1",
+                            meta={"checkpoint": dict(checkpoint)})
+
+    def second(rec):
+        piece = job["pieces"][0]
+        piece["attempts"] = [
+            {"n": 1, "role": "exec", "status": "ok", "branch": "crew/demo"}
+        ]
+        piece["accepted"] = {
+            "attempt": 1,
+            "branch": "crew/demo",
+            "at": "2026-01-01T00:01:00+00:00",
+        }
+        path.write_text(json.dumps(job), encoding="utf-8")
+        return round_result(rec, state="running", session_id="sess-1",
+                            meta={"checkpoint": dict(checkpoint)})
+
+    def third(rec):
+        return round_result(rec, state="completed", session_id="sess-1")
+
+    clock = FakeClock()
+    clock.on_sleep = lambda count: send_control(coord, "stop", order=count)
+    runner = FakeRunner([first, second, third])
+
+    supervise(root, record["id"], clock, runner)
+
+    assert len(runner.calls) == 3
+    events = supervisor_file(coord)["events"]
+    assert not [event for event in events if event["state"] == "paused"]
+    assert stored(root, record)["state"] == "completed"
+
+
 def test_pause_waits_for_the_round_then_resume_continues_the_session(tmp_path):
     root, record, coord = prepared(tmp_path)
 
@@ -563,6 +635,48 @@ def test_log_retention_keeps_twenty_rounds_and_preserves_metadata(tmp_path, monk
         assert meta["usage"] == {"tokens_total": old.index(round_id)}
         assert meta["state"] == "completed"
         assert meta["consumed_message_ids"] == []
+
+
+def test_the_usage_backfill_never_reorders_the_round_history(tmp_path, monkeypatch):
+    """The usage backfill rewrites the round metadata; the order must survive it.
+
+    The round ids sort in the reverse of their creation order, so a rewrite
+    that reorders the rounds by name cannot pass by luck.
+    """
+    monkeypatch.setattr(central_supervisor, "LOG_RETENTION_ROUNDS", 2)
+    root, record, coord = prepared(tmp_path)
+    rounds = coord / "rounds"
+    logs = coord / "logs"
+    rounds.mkdir(exist_ok=True)
+    logs.mkdir(exist_ok=True)
+    old = []
+    for index in range(4):
+        round_id = str(uuid.UUID(int=3 - index))
+        old.append(round_id)
+        (logs / f"{round_id}.stdout.log").write_text(f"round {index}", encoding="utf-8")
+        meta = {
+            "schema_version": 1,
+            "id": round_id,
+            "coordinator_id": record["id"],
+            "state": "completed",
+            "usage": {"tokens_total": index},
+            "consumed_message_ids": [],
+            "logs": {"stdout": f"logs/{round_id}.stdout.log"},
+        }
+        path = rounds / f"{round_id}.json"
+        path.write_text(json.dumps(meta), encoding="utf-8")
+        stamp = 1_700_000_000 + index
+        os.utime(path, (stamp, stamp))
+    runner = FakeRunner([lambda rec: round_result(rec, state="completed", session_id="s1")])
+
+    supervise(root, record["id"], FakeClock(), runner)
+
+    for round_id in old[:2]:
+        assert not (logs / f"{round_id}.stdout.log").exists()
+        meta = json.loads((rounds / f"{round_id}.json").read_text(encoding="utf-8"))
+        assert meta["logs"] == {"stdout": None}
+    for round_id in old[2:]:
+        assert (logs / f"{round_id}.stdout.log").exists()
 
 
 # --- the real detached bootstrap -------------------------------------------

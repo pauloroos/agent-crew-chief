@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -45,6 +46,7 @@ from . import (
     central_registry,
     central_rounds,
     central_usage,
+    records,
 )
 from .records import write_atomic
 
@@ -456,12 +458,56 @@ def _names(value: Any) -> tuple:
     return tuple(item for item in value) if isinstance(value, list) else ()
 
 
-def _signature(work_state: str, meta: dict) -> tuple:
+def _texts(value: Any) -> tuple:
+    """The unique text entries of a list, sorted; anything else is empty."""
+    if not isinstance(value, list):
+        return ()
+    return tuple(sorted({item for item in value if isinstance(item, str) and item}))
+
+
+#: A job id that can be read from the worktree without escaping it.
+_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+
+
+def _job_progress(worktree: Any, job_ids: tuple[str, ...]) -> tuple:
+    """The real progress of the coordinator's jobs: accepted, pending, open attempts.
+
+    The same job ids are not progress: an accepted piece, a piece still pending
+    or an attempt still open are. A missing or unreadable job record is no
+    progress, never a crash.
+    """
+    accepted = pending = open_attempts = 0
+    if not isinstance(worktree, str) or not worktree:
+        return (accepted, pending, open_attempts)
+    for job_id in job_ids:
+        if not _JOB_ID.fullmatch(job_id):
+            continue
+        try:
+            job = records.load_job(Path(worktree), job_id)
+        except (records.RecordError, OSError):
+            continue
+        for piece in job.get("pieces") or []:
+            if not isinstance(piece, dict):
+                continue
+            if piece.get("accepted"):
+                accepted += 1
+                continue
+            pending += 1
+            for attempt in piece.get("attempts") or []:
+                if isinstance(attempt, dict):
+                    open_attempts += 1
+    return (accepted, pending, open_attempts)
+
+
+def _signature(work_state: str, meta: dict, record: dict) -> tuple:
     """What one round reported as work; identical values mean no progress."""
     checkpoint = meta.get("checkpoint")
     checkpoint = checkpoint if isinstance(checkpoint, dict) else {}
     result = meta.get("result")
     result = result if isinstance(result, dict) else {}
+    job_ids = tuple(sorted(
+        set(_texts(checkpoint.get("job_ids"))) | set(_texts(record.get("job_ids")))
+    ))
     return (
         work_state,
         checkpoint.get("active_job_id"),
@@ -470,6 +516,7 @@ def _signature(work_state: str, meta: dict) -> tuple:
         _names(meta.get("consumed_message_ids")),
         len(result.get("questions") or ()),
         len(result.get("answers") or ()),
+        _job_progress(record.get("worktree"), job_ids),
     )
 
 
@@ -638,7 +685,7 @@ def supervise(root: Path, coordinator_id: str, clock: Any, runner: Any) -> None:
         if runner is None:
             runner = _Runner(root, status)
         status.start()
-        _backfill(root, record, status)
+        _backfill(root, record, status, rounds_dir)
         checkpoint, diagnostics = central_rounds._checkpoint(rounds_dir)
         for diagnostic in diagnostics:
             status.note("starting", f"round checkpoint: {diagnostic}")
@@ -692,7 +739,7 @@ def supervise(root: Path, coordinator_id: str, clock: Any, runner: Any) -> None:
                     return
                 reported = record.get("state")
                 work_state = reported if isinstance(reported, str) else "idle"
-                signature = _signature(work_state, meta)
+                signature = _signature(work_state, meta, record)
                 if work_state == "running" and signature == last_signature:
                     status.set_state(
                         "paused",
@@ -718,10 +765,26 @@ def supervise(root: Path, coordinator_id: str, clock: Any, runner: Any) -> None:
             status.close()
 
 
-def _backfill(root: Path, record: dict, status: _Status) -> None:
-    """Reconcile usage a previous supervisor could not record before exiting."""
+def _backfill(root: Path, record: dict, status: _Status, rounds_dir: Path) -> None:
+    """Reconcile usage a previous supervisor could not record before exiting.
+
+    The backfill rewrites every round metadata; the file time is restored so a
+    metadata rewrite never reorders the rounds and the log retention window.
+    """
+    stamps: dict[Path, tuple[int, int]] = {}
+    for path in rounds_dir.glob("*.json"):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        stamps[path] = (stat.st_atime_ns, stat.st_mtime_ns)
     try:
         central_usage.backfill_usage(root, record)
     except (central_usage.UsageError, central_messages.MessageError,
             central_registry.RegistryError, OSError) as exc:
         status.note("starting", f"usage backfill deferred: {exc}")
+    for path, (atime, mtime) in stamps.items():
+        try:
+            os.utime(path, ns=(atime, mtime))
+        except OSError:
+            continue
