@@ -183,7 +183,7 @@ def handle_attach(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(json.dumps(result, indent=2, default=str))
     elif ok:
-        print(f"attached to {coordinator_id}")
+        print(f"session of {coordinator_id} closed; back in the background")
     else:
         reason = result.get("reason", "unknown")
         print(f"attach failed: {reason}", file=sys.stderr)

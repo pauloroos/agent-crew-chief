@@ -277,6 +277,38 @@ def test_enter_triggers_attach():
     assert attach_calls[0][0] == "c1"
 
 
+def test_enter_opens_the_real_session_and_restores_state(tmp_path, fake_bin):
+    """Enter goes through the real attach; only the session subprocess is faked."""
+    import types
+
+    from crew_chief import central_registry
+    from test_central_attach import _FakeTerminal, _prepared
+    from test_central_supervisor import CLAUDE_HELP, FAKE_CLI
+
+    fake_bin("claude", FAKE_CLI.replace("__HELP__", repr(CLAUDE_HELP)))  # answers the probe
+    root, record = _prepared(tmp_path, state="paused", session_id="s42")
+    runs: list[tuple] = []
+
+    def fake_run(argv, cwd=None):
+        runs.append((argv, cwd))
+        return types.SimpleNamespace(returncode=0)
+
+    snap = _make_snap(rows=[_row(record["id"], state="paused")])
+    with patch("crew_chief.central_screen.central_snapshot.snapshot", return_value=snap), \
+         patch("crew_chief.central_screen.read_key", side_effect=["enter", "q"]), \
+         patch("crew_chief.central_attach.subprocess", types.SimpleNamespace(run=fake_run)), \
+         patch("crew_chief.central_screen.terminal_input", _noop_terminal_input):
+        exit_code = run_screen(root, options={}, io=_FakeTerminal(), clock=FakeClock())
+
+    assert exit_code == 0
+    assert len(runs) == 1
+    argv, cwd = runs[0]
+    assert argv[1:3] == ["--resume", "s42"]
+    assert cwd == record["worktree"]
+    stored = central_registry.load_registry(root)["coordinators"][record["id"]]
+    assert stored["state"] == "paused"
+
+
 # --- SC-005: empty rows — no crash on navigation ---------------------------
 
 def test_empty_rows_no_crash():

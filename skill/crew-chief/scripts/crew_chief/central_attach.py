@@ -1,6 +1,7 @@
 """Interactive attach: yield exclusive ownership to a terminal client (FR-010, FR-011, FR-020, SC-004).
 
-Attach lets an operator enter a coordinator's conversation in its worktree.
+Attach lets an operator enter a coordinator's conversation in its worktree:
+the adapter's ``interactive`` argv runs on the caller's terminal.
 The background supervisor yields exclusive ownership via a durable pause
 control, waits for the child round to finish, then hands the lease to the
 interactive client. When the client exits, background eligibility is
@@ -17,12 +18,13 @@ Public API
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-from . import central_controls, central_messages, central_registry
+from . import central_controls, central_launch, central_messages, central_registry
 
 __all__ = [
     "AttachError",
@@ -180,7 +182,7 @@ def attach(
     except central_registry.RegistryError as exc:
         return {"ok": False, "state": "paused", "reason": f"could not mark attached: {exc}"}
 
-    result = {
+    result: dict[str, Any] = {
         "ok": True,
         "state": "attached",
         "coordinator_id": coordinator_id,
@@ -190,19 +192,34 @@ def attach(
         "attached_at": _now_iso(),
     }
 
-    # The caller owns the interactive session here; when it returns we restore
-    # background eligibility. A real integration would run the CLI in the
-    # terminal and release in finally; this module only provides the protocol.
+    # Exclusive ownership is ours: run the session on the real terminal (no
+    # capture), then always restore background eligibility.
+    try:
+        argv = central_launch.adapter_for(cli).interactive(record)
+        completed = subprocess.run(argv, cwd=record.get("worktree"))
+        result["exit_code"] = completed.returncode
+        if completed.returncode != 0:
+            result.update(ok=False, reason=f"{cli} exited with code {completed.returncode}")
+    except (ValueError, RuntimeError, OSError) as exc:
+        # AdapterError is a ValueError, CodexError a RuntimeError.
+        result.update(
+            ok=False,
+            reason=f"cannot open the {cli} session here: {exc}; output and messaging remain available",
+        )
+    finally:
+        _release(root, coordinator_id, result)
+    result["state"] = "paused" if "release_error" not in result else "attached"
+    return result
+
+
+def _release(root: Path, coordinator_id: str, result: dict) -> None:
+    """Hand the coordinator back to its background supervisor."""
     try:
         central_registry.update_record(root, coordinator_id, {"state": "paused"})
     except central_registry.RegistryError:
         result["release_error"] = "could not restore paused state after attach"
-        return result
-
+        return
     try:
         central_controls.request_control(root, coordinator_id, "resume")
     except central_controls.ControlError as exc:
         result["release_error"] = f"resume control failed: {exc}"
-        return result
-
-    return result

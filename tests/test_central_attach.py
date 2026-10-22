@@ -10,6 +10,7 @@ Proof: ``python -m pytest tests/test_central_attach.py -q``.
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 
@@ -17,6 +18,23 @@ import pytest
 
 from crew_chief import central_registry
 from crew_chief.central_attach import AttachError, attach
+from test_central_supervisor import CLAUDE_HELP
+from test_coordinator_codex import STUB as CODEX_STUB
+
+#: A claude that answers the probe and records an interactive run.
+FAKE_CLAUDE = """
+import json, os, sys
+args = sys.argv[1:]
+if "--version" in args:
+    print("1.2.3 (Claude Code)")
+    raise SystemExit(0)
+if "--help" in args:
+    print(__HELP__)
+    raise SystemExit(0)
+with open(os.environ["FAKE_CLAUDE_LOG"], "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"argv": args, "cwd": os.getcwd()}) + "\\n")
+raise SystemExit(int(os.environ.get("FAKE_CLAUDE_EXIT", "0")))
+"""
 
 # ---------------------------------------------------------------------------
 # helpers — mirror test_central_supervisor.py record_for / prepared pattern
@@ -147,49 +165,98 @@ class TestAttachBusy:
 
 
 # ---------------------------------------------------------------------------
-# attach — successful yield path (monkeypatched supervisor interaction)
+# attach — the interactive session runs on the terminal (fake CLIs on PATH)
 # ---------------------------------------------------------------------------
 
 
-class TestAttachYield:
-    def test_attached_result_contains_worktree_and_session(
+class TestAttachRunsTheSession:
+    """The adapter's interactive argv runs in the worktree; state is always restored."""
+
+    @pytest.fixture
+    def claude(self, tmp_path: Path, fake_bin, monkeypatch: pytest.MonkeyPatch) -> Path:
+        log = tmp_path / "claude.log"
+        monkeypatch.setenv("FAKE_CLAUDE_LOG", str(log))
+        fake_bin("claude", FAKE_CLAUDE.replace("__HELP__", repr(CLAUDE_HELP)))
+        return log
+
+    def _state(self, root: Path, record: dict) -> str:
+        return central_registry.load_registry(root)["coordinators"][record["id"]]["state"]
+
+    def _controls(self, root: Path, record: dict) -> list[str]:
+        directory = root / "coordinators" / record["id"] / "control"
+        return sorted(
+            json.loads(p.read_text(encoding="utf-8"))["command"]
+            for p in directory.glob("*.json")
+        )
+
+    def test_claude_session_resumes_in_the_worktree(self, tmp_path: Path, claude: Path) -> None:
+        root, record = _prepared(tmp_path, state="paused", session_id="s42")
+        result = attach(root, record["id"], terminal=_FakeTerminal(), timeout_s=1.0)
+
+        assert result["ok"] is True, result.get("reason")
+        call = json.loads(claude.read_text(encoding="utf-8").splitlines()[-1])
+        assert call["argv"][:2] == ["--resume", "s42"]
+        assert Path(call["cwd"]).resolve() == Path(record["worktree"]).resolve()
+        assert result["state"] == "paused"
+        assert self._state(root, record) == "paused"
+        assert self._controls(root, record) == ["pause", "resume"]
+
+    def test_codex_session_resumes_in_the_worktree(
+        self, tmp_path: Path, fake_bin, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        log = tmp_path / "codex.log"
+        monkeypatch.setenv("FAKE_CODEX_LOG", str(log))
+        fake_bin("codex", CODEX_STUB)
+        root, record = _prepared(tmp_path, cli="codex", state="paused", session_id="thread-1")
+        result = attach(root, record["id"], terminal=_FakeTerminal(), timeout_s=1.0)
+
+        assert result["ok"] is True, result.get("reason")
+        call = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
+        assert "resume" in call["argv"] and call["argv"][-1] == "thread-1"
+        assert Path(call["cwd"]).resolve() == Path(record["worktree"]).resolve()
+        assert self._state(root, record) == "paused"
+
+    def test_failing_cli_restores_state_and_reports(
+        self, tmp_path: Path, claude: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("FAKE_CLAUDE_EXIT", "3")
+        root, record = _prepared(tmp_path, state="paused", session_id="s42")
+        result = attach(root, record["id"], terminal=_FakeTerminal(), timeout_s=1.0)
+
+        assert result["ok"] is False
+        assert "exited with code 3" in result["reason"]
+        assert self._state(root, record) == "paused"
+        assert self._controls(root, record) == ["pause", "resume"]
+
+    def test_missing_session_is_an_explicit_fallback(self, tmp_path: Path, claude: Path) -> None:
+        root, record = _prepared(tmp_path, state="paused", session_id=None)
+        result = attach(root, record["id"], terminal=_FakeTerminal(), timeout_s=1.0)
+
+        assert result["ok"] is False
+        assert "session_id" in result["reason"]
+        assert not claude.exists(), "no session may start without a persisted id"
+        assert self._state(root, record) == "paused"
+
+    def test_missing_cli_is_an_explicit_fallback(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        root, record = _prepared(
-            tmp_path, state="paused", session_id="s42"
-        )
-
-        # Skip the real control-file write and registry updates; we only need
-        # the protocol shape when the coordinator is already paused.
-        monkeypatch.setattr(
-            "crew_chief.central_attach.central_controls.request_control",
-            lambda *a, **kw: "fake-id",
-        )
-        monkeypatch.setattr(
-            "crew_chief.central_attach.central_registry.update_record",
-            lambda *a, **kw: {},
-        )
-
+        empty = tmp_path / "empty-bin"
+        empty.mkdir()
+        monkeypatch.setenv("PATH", str(empty))
+        root, record = _prepared(tmp_path, state="paused", session_id="s42")
         result = attach(root, record["id"], terminal=_FakeTerminal(), timeout_s=1.0)
-        assert result["ok"] is True
-        assert result["state"] == "attached"
-        assert result["worktree"] == record["worktree"]
-        assert result["session_id"] == "s42"
-        assert result["cli"] == "claude"
-        assert "attached_at" in result
 
-    def test_codex_cli_is_supported(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        assert result["ok"] is False
+        assert "cannot open the claude session" in result["reason"]
+        assert self._state(root, record) == "paused"
+
+    def test_an_attached_coordinator_is_not_attached_twice(
+        self, tmp_path: Path, claude: Path
     ) -> None:
-        root, record = _prepared(tmp_path, cli="codex", state="paused")
-        monkeypatch.setattr(
-            "crew_chief.central_attach.central_controls.request_control",
-            lambda *a, **kw: "fake-id",
-        )
-        monkeypatch.setattr(
-            "crew_chief.central_attach.central_registry.update_record",
-            lambda *a, **kw: {},
-        )
-        result = attach(root, record["id"], terminal=_FakeTerminal(), timeout_s=1.0)
-        assert result["ok"] is True
-        assert result["cli"] == "codex"
+        root, record = _prepared(tmp_path, state="attached", session_id="s42")
+        result = attach(root, record["id"], terminal=_FakeTerminal(), timeout_s=0.3)
+
+        assert result["ok"] is False
+        assert result["reason"].startswith("busy")
+        assert not claude.exists()
+        assert self._state(root, record) == "attached"
