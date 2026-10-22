@@ -6372,7 +6372,12 @@
           "role": "review"
         }
       ],
-      "next_attempt": 5
+      "next_attempt": 5,
+      "accepted": {
+        "attempt": 3,
+        "branch": "crew/20261021-0722-central-35-self",
+        "at": "2026-10-22T13:50:36.326790+00:00"
+      }
     },
     {
       "n": 36,
@@ -7517,6 +7522,12 @@
       "n": 117,
       "text": "T035 final free Gemini3.8 low review confirms1769a51 start/end, reads entire only-new204-line test file, focused10passed/all7refs done/no extras/no findings. Real HTTP/temp registry/jobs, no live coordinator/model/real terminal, fake cooperative state consumer explicit. Clock mismatch found and corrected separately in accepted T031 before final integration proof. Accept T035, repeat branch proof then mandatory FULL python-m-pytest-q; no Phase7/8 work.",
       "at": "2026-10-22T13:50:35.624030+00:00",
+      "promoted": null
+    },
+    {
+      "n": 118,
+      "text": "Phase6 verification complete: mandatory full python-m-pytest-q on feature branch exit0, 1775passed7skipped1warning in537.81s, first full execution/no retry. Warning belongs to unchanged synthetic supervisor fixture missing round identity. All5 phase6 tasks accepted; T030 release acceptance has no new attempt. Final owned-process audit0 for all attempts plus full pytest727/PID2888 descendants. No baseline files/tests deleted, all new commits Paulo/no coauthor, main stays2108dbb. Economy job-wide68%pieces/100%recordedtokens/coordinatornotrecorded/3.0attempts/mean61 with historical attempts/time alerts. Report docs/crew-chief/relatorio-fase-6.md records browser/other-OS limits and synthetic smoke. No questions/skips; T036ready but Phase7/8 untouched; no close/changelog/version/tag/push/publication.",
+      "at": "2026-10-22T14:01:42.763364+00:00",
       "promoted": null
     }
   ]
