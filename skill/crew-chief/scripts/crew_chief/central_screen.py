@@ -15,6 +15,10 @@ Public API
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import queue
+import threading
+import webbrowser
 import sys
 import time
 from pathlib import Path
@@ -22,6 +26,7 @@ from typing import Any, Protocol
 
 from . import (
     central_attach,
+    central_web,
     central_controls,
     central_messages,
     central_snapshot,
@@ -41,7 +46,7 @@ from .central_keys import (
     terminal_size,
 )
 
-__all__ = ["run_screen"]
+__all__ = ["run_screen", "run_web"]
 
 _DEFAULT_POLL_S = 1.0
 
@@ -189,11 +194,35 @@ def _handle_attach(root: Path, snap: dict, selected: int, io: _IO) -> None:
         pass
 
 
+@contextmanager
+def _web_bridge(server):
+    if server is not None:
+        server.attach_bridge_active = True
+    try:
+        yield
+    finally:
+        if server is not None:
+            server.attach_bridge_active = False
+
+
+def _drain_attach_intents(root, server, io):
+    if server is None:
+        return
+    for _ in range(16):
+        try:
+            cid = server.attach_intents.get_nowait()
+        except queue.Empty:
+            return
+        central_attach.attach(root, cid, io, timeout_s=5.0)
+
+
 def run_screen(
     root: Path,
     options: dict | None = None,
     io: _IO | None = None,
     clock: _Clock | None = None,
+    *,
+    web_server=None,
 ) -> int:
     """Run the central terminal screen.  Returns 0 on clean exit."""
     opts = options or {}
@@ -223,6 +252,8 @@ def run_screen(
         except Exception:
             supported = False
 
+    if web_server is not None:
+        web_server.attach_bridge_active = False
     if once or not supported:
         snap = _snapshot(root, None)
         cols = None
@@ -238,8 +269,9 @@ def run_screen(
     show_details = False
     paused = False
 
-    with terminal_input(stream=io_obj):
+    with terminal_input(stream=io_obj), _web_bridge(web_server):
         while True:
+            _drain_attach_intents(root, web_server, io_obj)
             snap = _snapshot(root, None)
             count = _row_count(snap)
             selected = _clamp_selected(selected, count)
@@ -279,3 +311,56 @@ def run_screen(
             if key == KEY_ENTER:
                 _handle_attach(root, snap, selected, io_obj)
                 continue
+
+def _is_tty(io):
+    try:
+        return bool(io.stdin.isatty() and io.stdout.isatty())
+    except (AttributeError, OSError):
+        return False
+
+
+def run_web(root, options=None, io=None, clock=None, *, assets=None, port=0,
+            browser_open=None, server_factory=None):
+    """Own one loopback server; only the terminal input loop may attach."""
+    io_obj = io if io is not None else _StdIO()
+    assets = Path(assets) if assets is not None else Path(__file__).resolve().parents[2] / "web"
+    factory = server_factory if server_factory is not None else central_web.create_server
+    server = None
+    thread = None
+    started = False
+    try:
+        server = factory(Path(root), assets, port)
+        # Serve before invoking the browser: an opener may immediately fetch.
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .01})
+        thread.start()
+        started = True
+        url = f"http://127.0.0.1:{server.server_port}/"
+        _write(io_obj.stdout, url + "\n")
+        opener = browser_open if browser_open is not None else webbrowser.open
+        try:
+            opened = opener(url)
+        except Exception:
+            opened = False
+        if opened is False:
+            _write(getattr(io_obj, "stderr", io_obj.stdout), "fallback: open " + url + " manually\n")
+            _write(io_obj.stdout, "fallback: open " + url + " manually\n")
+        if _is_tty(io_obj):
+            return run_screen(Path(root), options, io=io_obj, clock=clock, web_server=server)
+        # Redirected input cannot own a terminal bridge. Keep HTTP alive until
+        # Ctrl-C, rather than the terminal screen's finite plain snapshot.
+        while thread.is_alive():
+            thread.join(.2)
+        return 0
+    except KeyboardInterrupt:
+        return 0
+    except Exception:
+        _write(getattr(io_obj, "stderr", sys.stderr), "error: web view failed\n")
+        return 1
+    finally:
+        if server is not None:
+            server.attach_bridge_active = False
+            if started and thread.is_alive():
+                server.shutdown()
+            if started:
+                thread.join(5)
+            server.server_close()

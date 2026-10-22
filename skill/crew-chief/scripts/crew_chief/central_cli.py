@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -259,10 +260,47 @@ def handle_control(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def handle_central(args: argparse.Namespace) -> int:
-    """Open the refreshing central screen, or print one snapshot."""
+def handle_central(args: argparse.Namespace, browser_open: Any = None) -> int:
+    """Open the refreshing central screen, or serve the web view."""
+    web = bool(getattr(args, "web", False))
+    if getattr(args, "port", None) is not None and not web:
+        print("error: --port requires --web", file=sys.stderr)
+        return 2
+    if web and (getattr(args, "json", False) or getattr(args, "plain", False)
+                or getattr(args, "once", False)):
+        print("error: --web is incompatible with --json, --plain and --once", file=sys.stderr)
+        return 2
+    if web:
+        port = getattr(args, "port", None)
+        if port is None:
+            port = 0
+        if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
+            print(f"error: invalid port: {port!r}", file=sys.stderr)
+            return 2
+        poll_raw = getattr(args, "poll", 1.0)
+        try:
+            poll = float(poll_raw if poll_raw is not None else 1.0)
+        except (TypeError, ValueError):
+            print(f"error: invalid poll interval: {poll_raw!r}", file=sys.stderr)
+            return 2
+        if not math.isfinite(poll) or poll <= 0:
+            print(f"error: invalid poll interval: {poll_raw!r}", file=sys.stderr)
+            return 2
+        if browser_open is None:
+            browser_open = getattr(args, "browser_open", None)
+        root = _central_dir(args)
+        release_root = Path(getattr(args, "release_root", None) or _RELEASE_ROOT)
+        assets = release_root / "skill" / "crew-chief" / "web"
+        return central_screen.run_web(
+            root,
+            {"poll": poll},
+            assets=assets,
+            port=port,
+            browser_open=browser_open,
+        )
     options = {"once": args.once, "plain": args.plain, "poll": args.poll}
     return central_screen.run_screen(_central_dir(args), options)
+
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +379,12 @@ def add_central_subcommands(subparsers: Any, common: Any = None) -> None:
     )
     central_parser.add_argument(
         "--poll", type=float, default=1.0, help="seconds between refreshes"
+    )
+    central_parser.add_argument(
+        "--web", action="store_true", help="serve the loopback web view"
+    )
+    central_parser.add_argument(
+        "--port", type=int, default=None, help="port for --web (default: ephemeral)"
     )
     central_parser.add_argument("--central-dir", help="override central storage directory")
     central_parser.set_defaults(handler=handle_central)
