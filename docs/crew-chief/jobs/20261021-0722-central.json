@@ -6604,7 +6604,73 @@
       "title": "T037 Adapt probed Orca capabilities to the backend contract in skill/crew-chief/scripts/crew_chief/central_orca.py, tests/test_central_orca.py; depends on T036",
       "type": "code",
       "risk": "high",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T14:19:19.556795+00:00",
+          "duration_s": 361.4,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll start by reading the brief file.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-37-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-37-1",
+          "base": null,
+          "steps": 19,
+          "tokens_in": 861700,
+          "tokens_out": 13063,
+          "tokens_total": 874763,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "23651b303660e61b84cf7e3c52673c5b1bb3ce66",
+          "end_sha": "23651b303660e61b84cf7e3c52673c5b1bb3ce66"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode-go/beam-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T14:26:41.022514+00:00",
+          "duration_s": 362.7,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "\\\"supervisor_nonce\\\": None,\\n        }\"},\"output\":\"Edited E:/DEV/acc-v041.crew/20261021-0722-central-37-2/skill/crew-chief/scripts/crew_chief/central_orca.py (1 replacement)\",\"title\":\"edit\",\"metadata\":{\"metadata\":{\"files\":[{\"file\":\"E:/DEV/acc-v041.crew/20261021-0722-central-37-2/skill/crew-chief/scripts/crew_chief/central_orca.py\",\"patch\":\"Index: E:/DEV/acc-v041.crew/20261021-0722-central-37-2/skill/crew-chief/scripts/crew_chief/central_orca.py\\n===================================================================\\n--- E:/DEV/acc-v041.crew/20261021-0722-central-37-2/skill/crew-chief/scripts/crew_chief/central_orca.py\\n+++ E:/DEV/acc-v041.crew/20261021-0722-central-37-2/skill/crew-chief/scripts/crew_chief/central_orca.py\\n@@ -561,9 +561,8 @@\\n             \\\"created_at\\\": now,\\n             \\\"updated_at\\\": now,\\n             \\\"last_error\\\": launch_error,\\n             \\\"supervisor_nonce\\\": None,\\n-            \\\"orca_worktree_id\\\": worktree_info[\\\"id\\\"],\\n         }\\n \\n         # Persist the registry record.\\n         try:\\n\",\"status\":\"modified\",\"additions\":0,\"deletions\":1}],\"truncated\":false},\"content\":[{\"type\":\"text\",\"text\":\"Edited E:/DEV/acc-v041.crew/20261021-0722-central-37-2/skill/crew-chief/scripts/crew_chief/central_orca.py (1 replacement)\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"path\\\": \\\"E:/DEV/acc-v041.crew/20261021-0722-central-37-2/skill/crew-chief/scripts/crew_chief/central_orca.py\\\", \\\"oldString\\\": \\\"            \\\\\\\"supervisor_nonce\\\\\\\": None,\\\\n            \\\\\\\"orca_worktree_id\\\\\\\": worktree_info[\\\\\\\"id\\\\\\\"],\\\\n        }\\\", \\\"newString\\\": \\\"            \\\\\\\"supervisor_nonce\\\\\\\": None,\\\\n        }\\\"}\"},\"time\":{\"start\":1792679546245,\"end\":1792679546661}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792679546717,\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"part\":{\"id\":\"prt_164070f5d001ICe1wMxumJkzK3\",\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"messageID\":\"msg_16407088e001WXpVtZFeKy4j2z\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"b81240be7e70dd95c546d260124592d18da1a603\",\"cost\":0,\"tokens\":{\"input\":553,\"output\":105,\"reasoning\":35,\"cache\":{\"read\":112960,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792679548374,\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"part\":{\"id\":\"prt_1640715d6001G77w1lpbAePR0W\",\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"messageID\":\"msg_164070f6b001ltH24Z9IbQbF9a\",\"type\":\"step-start\",\"snapshot\":\"b81240be7e70dd95c546d260124592d18da1a603\"}}\n{\"type\":\"tool_use\",\"timestamp\":1792679562374,\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"part\":{\"partID\":\"prt_1640715fa002EPkK0ugTWEpGn5\",\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"messageID\":\"msg_164070f6b001ltH24Z9IbQbF9a\",\"type\":\"tool\",\"id\":\"call-aba778bb-cd05-447d-859d-bdcf6e925b2a\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:/DEV/acc-v041.crew/20261021-0722-central-37-2\\\" && python -m pytest tests/test_central_orca.py -q 2>&1 | tail -20\"},\"output\":\".............                                                            [100%]\\r\\n13 passed in 12.49s\\r\\n\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"exit\":0},\"content\":[{\"type\":\"text\",\"text\":\".............                                                            [100%]\\r\\n13 passed in 12.49s\\r\\n\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\": \\\"cd \\\\\\\"E:/DEV/acc-v041.crew/20261021-0722-central-37-2\\\\\\\" && python -m pytest tests/test_central_orca.py -q 2>&1 | tail -20\\\"}\"},\"time\":{\"start\":1792679548410,\"end\":1792679562374}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792679562431,\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"part\":{\"id\":\"prt_164074cbf001IpE73zLE2ZZFOz\",\"sessionID\":\"ses_e9bfe2d4effecedP48XD4OFSpy\",\"messageID\":\"msg_164070f6b001ltH24Z9IbQbF9a\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"b81240be7e70dd95c546d260124592d18da1a603\",\"cost\":0,\"tokens\":{\"input\":243,\"output\":72,\"reasoning\":8,\"cache\":{\"read\":113472,\"write\":0}}}}\n",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_orca.py",
+              "added": 745,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_orca.py",
+              "added": 273,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-37-2",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-37-2",
+          "base": null,
+          "steps": 60,
+          "tokens_in": 4159862,
+          "tokens_out": 30653,
+          "tokens_total": 4190515,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "23651b303660e61b84cf7e3c52673c5b1bb3ce66",
+          "end_sha": "3c3d69f50aff5d6e0ca097e4e9a5b3049c50bc33"
+        }
+      ],
       "corrections": [],
       "escalations": [],
       "grades": {},
@@ -6615,8 +6681,14 @@
           "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
           "reason": "best score 64.5 (opencode:opencode-go/minimax-m3.1-flash-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
           "at": "2026-10-22T14:19:04.544894+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 58.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
+          "at": "2026-10-22T14:26:09.903109+00:00"
         }
-      ]
+      ],
+      "next_attempt": 3
     },
     {
       "n": 38,
@@ -7767,6 +7839,12 @@
       "n": 122,
       "text": "T036 concise independent free Muse1.3 review confirms a83a3ed twice and16passed, no Critical/Important/extras/deletions. SC010/US6AC3 positive Orca matrix explicitly belongs to T037/T038 per declared boundary, not a missing T036 deliverable; all T036 contract/default/identity/error/no-Orca obligations done. Minor private UUID helper/IO exception suggestions preserve existing core semantics and need no scope expansion. Accept then repeat branch proof; owned executor/review processes finished.",
       "at": "2026-10-22T14:18:29.871616+00:00",
+      "promoted": null
+    },
+    {
+      "n": 123,
+      "text": "T037 two failed free execs: MiniMax361.4s/no diff; Beam362.7s partial oversized adapter/tests. Reject unsafe partial design: agent launch before preflight, terminal handle treated as model session, unsupported registry field. No owned executor remains. Coordinator now implements narrow adapter: Orca creates worktrees using actual schema/argv; accepted core retains authorized preflight, headless supervisor, durable message IDs, actual-session attach and state. Terminal runtime handles are never model sessions; no second model writer. Routine dependency injection into central_launch is needed to reuse accepted preparation without global monkeypatches/duplicated authorization. Add central_launch to T037 allowed files before code, import spec; T038 still owns public routing. No spec/plan architecture change, no paid executor.",
+      "at": "2026-10-22T14:33:18.685753+00:00",
       "promoted": null
     }
   ]
