@@ -201,6 +201,21 @@ def test_public_privacy_short_credentials_and_space_paths():
     assert result["totals"]["tokens_total"] == 7
 
 
+@pytest.mark.parametrize("leak", [
+    '{\\"password\\": \\"hunter2\\"}', '"Authorization": "Token hunter2"', "Authorization: Basic aHVudGVyMg==",
+    "private_key=hunter2", "private-key: hunter2", '{"passphrase": "hunter2"}', "passphrase=hunter2"])
+def test_credential_variants_are_redacted_in_questions_and_diagnostics(leak):
+    data = {"coordinators": [], "questions": [{"body": "see " + leak, "passphrase": "hunter2"}],
+            "diagnostics": [{"record": "r", "message": "failed with " + leak}]}
+    assert "hunter2" not in json.dumps(central_web.public_snapshot(data))
+    assert "aHVudGVyMg" not in json.dumps(central_web.public_snapshot(data))
+
+
+def test_ordinary_text_about_basic_tokens_is_kept():
+    data = {"coordinators": [], "questions": [{"body": "Basic question: how many tokens does it use?"}]}
+    assert central_web.public_snapshot(data)["questions"][0]["body"] == data["questions"][0]["body"]
+
+
 def test_labelled_secret_with_spaces_never_leaves_fragments():
     phrase = "password=alpha beta gamma"
     data = {"coordinators": [], "questions": [{"body": phrase}]}

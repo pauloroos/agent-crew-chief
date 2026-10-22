@@ -26,8 +26,10 @@ _ASSETS = {"/": ("index.html", "text/html; charset=utf-8"),
            "/central.js": ("central.js", "text/javascript; charset=utf-8"),
            "/favicon.svg": ("favicon.svg", "image/svg+xml")}
 _PATH = re.compile(r"[A-Za-z]:[/\\][^\s<>\"']*|\\\\[^\s<>\"']+|(?<![\w:<])/(?:[^\s<>\"']+)|~[/\\][^\s<>\"']*")
-# The optional quote after the key also catches JSON/dict fragments such as {"password": "x"}.
-_CREDENTIAL_TEXT = re.compile(r"(?i)(?:api[_-]?key|secret|password|passwd|token)[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)|Bearer\s+[^\s,;]+")
+# The optional (escaped) quote after the key also catches JSON/dict fragments such as
+# {"password": "x"} and {\"password\": \"x\"}; an Authorization value covers Basic/Token schemes.
+_CREDENTIAL_TEXT = re.compile(r"(?i)(?:api[_-]?key|secret|password|passwd|passphrase|private[_-]?key|authorization|token)"
+                              r"\\?[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)|Bearer\s+[^\s,;]+")
 _PRIVATE_KEYS = {"repo", "worktree", "path", "root", "request", "authorization", "session_id",
                  "password", "passwd", "secret", "token", "api_key", "credential", "credentials"}
 _TOP = {"schema_version", "generated_at", "coordinators", "questions", "totals", "diagnostics", "alerts"}
@@ -42,7 +44,7 @@ _MAX_ACTION_IDS = 1024
 def _private_key(key):
     normalized = re.sub(r"[^a-z0-9]", "", key.lower())
     return (key.lower() in _PRIVATE_KEYS or normalized.endswith("token")
-            or any(word in normalized for word in ("password", "secret", "credential", "apikey", "privatekey"))
+            or any(word in normalized for word in ("password", "passphrase", "secret", "credential", "apikey", "privatekey"))
             or normalized in ("authorization", "cookie", "setcookie"))
 
 
