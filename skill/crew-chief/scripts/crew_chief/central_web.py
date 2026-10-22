@@ -62,9 +62,8 @@ def _public(value, depth=0):
         # A private key/cookie may span lines; suppress its whole text field.
         if "PRIVATE KEY" in text or re.search(r"(?im)^\s*(?:set-)?cookie:", text):
             return "[redacted]"
-        for _, pattern in briefcheck._SECRET_RULES:
-            text = pattern.sub("[redacted]", text)
-        text = _CREDENTIAL_TEXT.sub("[redacted]", text)
+        if _CREDENTIAL_TEXT.search(text) or any(pattern.search(text) for _, pattern in briefcheck._SECRET_RULES):
+            return "[redacted]"
         # Do not leave a private path's space-delimited suffix in the response.
         return "[redacted]" if _PATH.search(text) else text
     if isinstance(value, dict):

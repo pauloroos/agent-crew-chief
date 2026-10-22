@@ -159,6 +159,14 @@ def test_public_privacy_short_credentials_and_space_paths():
     assert result["totals"]["tokens_total"] == 7
 
 
+def test_labelled_secret_with_spaces_never_leaves_fragments():
+    phrase = "password=alpha beta gamma"
+    data = {"coordinators": [], "questions": [{"body": phrase}]}
+    result = central_web.public_snapshot(data)["questions"][0]["body"]
+    for fragment in ("alpha", "beta", "gamma"):
+        assert fragment not in result
+
+
 def test_browser_actions_are_bootstrapped_and_guarded():
     js = (Path(__file__).resolve().parents[1] / "skill/crew-chief/web/central.js").read_text(encoding="utf-8")
     assert '"/api/csrf"' in js and "csrf_token" in js
