@@ -44,7 +44,7 @@ elif args[:2] == ['worktree', 'create']:
         print('creation reply lost; worktree preserved', file=sys.stderr)
         raise SystemExit(1)
     row = {'id':'repo-fixture::'+wt}
-    print(json.dumps({'ok':True,'result': row if mode == 'flat' else {'worktree':row}}))
+    print(json.dumps({'ok':mode != 'logical-error','result': row if mode == 'flat' else {'worktree':row}}))
 else:
     raise SystemExit('unexpected command: '+repr(args))
 ''', encoding="utf-8")
@@ -200,3 +200,12 @@ def test_flat_documented_full_id_is_also_normalized(fixture, monkeypatch):
     monkeypatch.setenv("FAKE_ORCA_MODE", "flat")
     row = create(fixture)
     assert row["session_id"] is None and row["backend"] == "orca"
+
+
+def test_json_failure_with_partial_worktree_is_not_success(fixture, monkeypatch):
+    backend, repo, options, log, wt = fixture
+    monkeypatch.setenv("FAKE_ORCA_MODE", "logical-error")
+    result = backend.create(repo, options)
+    assert not result["ok"] and "preserv" in result["error"]
+    assert wt.exists()
+    assert not central_registry.load_registry(backend.root)["coordinators"]

@@ -84,6 +84,8 @@ class OrcaBackend(DefaultBackend):
                 "--name", f"central-{coordinator_id}", "--setup", "skip",
                 "--base-branch", commit, "--no-parent", "--json",
             ]))
+            if not isinstance(payload, dict) or payload.get("ok") is not True:
+                raise BackendError("Orca reported an unsuccessful creation")
             # The documented full ID is repo-id::absolute-worktree-path. Obtain
             # Git identity from Git itself, not guessed Orca response fields.
             result = payload.get("result") if isinstance(payload, dict) else None
