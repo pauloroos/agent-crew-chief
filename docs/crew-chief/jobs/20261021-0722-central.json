@@ -4389,11 +4389,174 @@
           "cost_known": false,
           "start_sha": "33850670d1982faaccbf1bd8be3b8530dc5642ae",
           "end_sha": "33850670d1982faaccbf1bd8be3b8530dc5642ae"
+        },
+        {
+          "n": 3,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-21T23:48:44.424794+00:00",
+          "duration_s": 602.2,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll read the brief first.\n\nNow I understand the contract. Let me write the test file first (red phase).\n\nRed confirmed (module missing). Now the implementation:",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_usage.py",
+              "added": 519,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_usage.py",
+              "added": 437,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-14-3",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-14-3",
+          "base": null,
+          "steps": 31,
+          "tokens_in": 2645934,
+          "tokens_out": 53601,
+          "tokens_total": 2699535,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "227532a418883841e41691cdea6843147a2a8ddb",
+          "end_sha": "f49250a96fb49276ed7817ef6e301bcd1f6438d8"
+        },
+        {
+          "n": 4,
+          "executor": "opencode:opencode-go/beam-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T00:00:15.829239+00:00",
+          "duration_s": 303.9,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "DONE\n\nChanged only `skill/crew-chief/scripts/crew_chief/central_usage.py`: added per-round locking with re-read, canonical filename/schema binding validation in backfill/pending, rejection of malformed job bindings/event IDs, running-round exclusion, and job-storage symlink/junction guards before any lock/write. Existing 19 tests pass.",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_usage.py",
+              "added": 177,
+              "deleted": 40
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-14-4",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-14-4",
+          "base": {
+            "attempt": 3,
+            "branch": "crew/20261021-0722-central-14-3"
+          },
+          "steps": 39,
+          "tokens_in": 2996589,
+          "tokens_out": 23752,
+          "tokens_total": 3020341,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "f49250a96fb49276ed7817ef6e301bcd1f6438d8",
+          "end_sha": "94bb276e5592502230f35d2067bb28f152e4b88c",
+          "proof": {
+            "cmd": "python -m pytest tests/test_central_usage.py -q",
+            "exit": 0,
+            "passed": true
+          }
+        },
+        {
+          "n": 5,
+          "executor": "antigravity:claude-sonnet-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:10:43.356400+00:00",
+          "duration_s": 42.1,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "- **FR-013:** done, scoped to the T014 ledger. Entries carry role, model, quota_family, and in/out/total counts. Counts the CLI did not report stay `None`. The aggregation itself is future metrics, not T014.\n\nNeed to read the implementation.\n4f193175218feaba755fe79b70a5d3a2b0dd385b\n\nI read `central_usage.py` in full and ran the proof. I did not read `tests/test_central_usage.py` line by line, so I haven't confirmed that each regression named in the brief is covered.\n\n**Proof:** `python -m pytest tests/test_central_usage.py -q` gave **35 passed** in 2.15s. The diff adds 670 lines in `central_usage.py` and 619 in the test file.\n\n## Spec verdict\n- **FR-025:** done.\n  - Reported counts are used first. When none are reported, a coordinator-only `chars//4` estimate is marked `estimated=True`.\n  - The event ID is `central:<coordinator>:<round>`. It is checked against the round metadata (`_event`, L396-398). It is deduped inside the job under `records.update_job`'s lock (`_entry`, L289-291).\n  - Central usage is accepted only when the round reports it. It is never estimated (L257).\n- **SC-006:** done for the ledger. The 35 tests pass, but I haven't verified that they cover each threshold.\n- **US4/AC1:** done.\n  - Estimates are labelled and missing usage stays `None`.\n  - The job binding is written before the job update (`_bind`, L500). A job switch or crash therefore cannot reassign usage.\n  - A crash between the job write and `_mark_recorded` is safe: the next run finds the event ID in the job and only marks the round as recorded.\n\n**Extra:** `pending_usage` (L612) and the `ROUND_READ_MAX_BYTES` and `ROLES` constants are not asked for by any criterion. They support the pending state and are harmless.\n\n## Quality findings\n**Critical:** none.\n\n**Important**\n- `central_usage.py` L382-383: `_apply_job` turns every `records.RecordError` into `None`, which means \"job not there yet\". That also covers a corrupt job file and a job lock timeout. The usage then stays pending silently, already bound to that job (L500), and `backfill_usage` never raises or warns. Only a missing job should map to `None`. Other errors should become `UsageError`.\n\n**Minor**\n- L467 and L605: a round stuck in `state == \"running\"` after a crash is skipped forever, so its usage is never recorded. There is no staleness handling.\n- L636-666: `pending_usage` reads the round under the lock but evaluates it after releasing it. It is read-only, so the effect is only a possibly stale snapshot.\n- L181-186: `_round_paths` reads every round file without the lock just to sort by `started_at`. Unreadable files sort first with an empty key.\n- L508-509: after binding, a missing job leaves `job_id` bound for good. This is intended by the design, but a typo'd `active_job_id` would never rebind. Worth a comment.\n- L324-332: `_is_reparse` swallows all exceptions around the `ctypes` call. It fails open on Windows if `GetFileAttributesW` can't be called.\n\n4f193175218feaba755fe79b70a5d3a2b0dd385b",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 89269,
+          "tokens_out": 2538,
+          "tokens_total": 38856,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 6,
+          "executor": "antigravity:gemini-4-argon-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:13:53.302290+00:00",
+          "duration_s": 95.6,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "- **FR-013**: `done` — Records coordinator and central usage entries in the active job under the job lock via [`records.update_job`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/skill/crew-chief/scripts/crew_chief/central_usage.py#L383) and [`records.add_usage`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/skill/crew-chief/scripts/crew_chief/central_usage.py#L294-L301), preserving `role`, `model`, `quota_family`, token counts, and `estimated` semantics compatible with `economy.job_economy`.\n\n`git rev-parse HEAD`: `20f57e4d50fedba5b00fbe44a84950211800dfae`\n\n## Proof\n- Command: `python -m pytest tests/test_central_usage.py -q`\n- Result: `39 passed` (0 failed)\n- Files changed in `227532a418883841e41691cdea6843147a2a8ddb..HEAD`: only [central_usage.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/skill/crew-chief/scripts/crew_chief/central_usage.py) and [test_central_usage.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/tests/test_central_usage.py).\n\n## Spec verdict\n- **FR-025**: `done` — Captures CLI-reported counts (`tokens_in`, `tokens_out`, `tokens_total`), falls back to marked `chars // 4` estimates only when no coordinator counts are reported ([`_numbers`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/skill/crew-chief/scripts/crew_chief/central_usage.py#L239-L267)), binds stable `central:<coordinator_id>:<round_id>` event IDs before job updates ([`_bind`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/skill/crew-chief/scripts/crew_chief/central_usage.py#L436-L448)), and records attributed `central` usage without guessing totals.\n- **SC-006**: `done` — Within T014's accounting boundary, [test_central_usage.py](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/tests/test_central_usage.py) covers measured, total-only, partial, estimated, missing/unknown, central role, pending/backfill, crash recovery, job switching, concurrent first-bind, corrupt/oversized/locked files, and path/ID redirection with exact expected values.\n- **US4/AC1**: `done` — Estimates are labelled (`estimated=True`), missing usage stays `None` (`usage_recorded=False` in `economy.job_economy`), and repeated `record_round_usage` / `backfill_usage` calls or mid-flight crashes never count an event twice.\n- **extra**: `none`.\n\n## Quality verdict\n- **Critical**: None.\n- **Important**: None. (Both prior defects—distinguishing `FileNotFoundError` from corrupt/locked jobs in [`_apply_job`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/skill/crew-chief/scripts/crew_chief/central_usage.py#L384-L388) and verifying `job.get(\"id\") == job_id` before mutation in [`_apply_job`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-14-4/skill/crew-chief/scripts/crew_chief/central_usage.py#L377-L380)—are cleanly resolved and verified by tests.)\n- **Minor**: None.\n\n`git rev-parse HEAD`: `20f57e4d50fedba5b00fbe44a84950211800dfae`",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 72204,
+          "tokens_out": 1426,
+          "tokens_total": 49376,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
-      "corrections": [],
+      "corrections": [
+        {
+          "reason": "Preserved timeout implementation passes 19 tests but lacks required backfill round binding validation, cross-job concurrent bind serialization and job path containment; invalid original job ID can fall through to current job. These inspection hypotheses need red proof before minimal correction; maintain all prior tests and exact accounting contract.",
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "at": "2026-10-22T00:00:12.020907+00:00"
+        },
+        {
+          "reason": "Attempt 4 implements validation/serialization changes but again adds no new tests: only original 19 pass. The requested new red regressions and concurrency/path proofs are missing. Coordinator invokes owner fallback after MiniMax timeout and this free quality failure; preserve implementation and all original tests, add independent meaningful regressions then minimal remaining proved fixes before final external review.",
+          "executor": "opencode:opencode-go/beam-free",
+          "at": "2026-10-22T00:05:51.760096+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode-go/minimax-m3.1-flash-free": {
+          "score": 60,
+          "explain": "adherence 3/4 → 75; 1 correction −15; 0 extra; penalties none → 60",
+          "corrections": 1,
+          "done": 3,
+          "missing": 1,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "graded_at": "2026-10-22T00:16:44.467908+00:00"
+        },
+        "opencode:opencode-go/beam-free": {
+          "score": 60,
+          "explain": "adherence 3/4 → 75; 1 correction −15; 0 extra; penalties none → 60",
+          "corrections": 1,
+          "done": 3,
+          "missing": 1,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/beam-free",
+          "graded_at": "2026-10-22T00:16:44.763879+00:00"
+        }
+      },
       "ref": "T014",
       "task_text": "Record idempotent coordinator usage in active jobs in skill/crew-chief/scripts/crew_chief/central_usage.py, tests/test_central_usage.py; depends on T003, T012",
       "picks": [
@@ -4406,9 +4569,31 @@
           "pick": "opencode:opencode-go/longcat-2.5-preview-free",
           "reason": "best score 60 (opencode:opencode-go/longcat-2.5-preview-free); tier free; skipped for quota: opencode:opencode-go/beam-free, opencode:opencode-go/minimax-m3.1-flash-free, opencode:opencode/beam-free, opencode:opencode/flint-40b-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free, opencode:opencode/minimax-m3.1-flash-free, opencode:opencode/nemotron-3-ultra-free, opencode:opencode/nemotron-3.5-lightning-free, opencode:opencode/nemotron-3.5-super-vl-free",
           "at": "2026-10-21T23:32:35.416425+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 62.4 (opencode:opencode-go/minimax-m3.1-flash-free); tier free; skipped for quota: opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-21T23:48:31.974560+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 59.1 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/longcat-2.5-preview-free",
+          "at": "2026-10-21T23:59:13.174545+00:00"
+        },
+        {
+          "pick": "antigravity:claude-sonnet-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-sonnet-5-5-low); tier free; reviewer outside the family of: opencode:opencode-go/beam-free",
+          "at": "2026-10-22T00:10:09.345428+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "antigravity:gemini-4-argon-low",
+          "reason": "unrated, no history (antigravity:gemini-4-argon-low); tier free; reviewer outside the family of: opencode:opencode-go/beam-free",
+          "at": "2026-10-22T00:13:25.205416+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 3
+      "next_attempt": 7
     },
     {
       "n": 15,
@@ -5203,6 +5388,48 @@
       "n": 80,
       "text": "Retry 3 selected LongCat but T014 attempt 2 again returned provider quota HTTP 402 in 6.4s, no changes/outside writes. Strict-allowlist pick again has no available free executor. Begin fourth and final owner-required 15-minute wait. If still blocked after retry 4, stop Phase 2 and report T014 pending; never start next phase or use paid execution.",
       "at": "2026-10-21T23:33:17.107861+00:00",
+      "promoted": null
+    },
+    {
+      "n": 81,
+      "text": "Quota wait/retry 4 of 4: fourth full 15-minute wait completed at 23:48:27 UTC. Strict-allowlist pick now selects OpenCode-Go MiniMax m3.1 flash free, score 62.4, with expired cooldown; dispatch T014. All four waits honored, no global preferences changed, no paid/included/contributor hands-on dispatch. If all eligible free routes again report quota, stop phase and report pending T014 rather than adding another wait cycle.",
+      "at": "2026-10-21T23:48:41.115239+00:00",
+      "promoted": null
+    },
+    {
+      "n": 82,
+      "text": "T014 MiniMax attempt 3 timed out at 602.2s after red missing-module proof and substantial module/tests. Coordinator independently ran declared proof: 19 passed in 0.82s. It has not been accepted. Inspection finds backfill bypasses id/coordinator/schema binding checks, invalid round job binding can fall through to a new current job, round metadata updates lack per-event serialization, and job-directory symlink containment is missing. ACC pick still offers free OpenCode-Go Beam, so phase is no longer blocked by all-free quota; continue this task only from preserved attempt 3 with red regressions and minimal fixes. No fifth quota-wait cycle.",
+      "at": "2026-10-21T23:59:49.064897+00:00",
+      "promoted": null
+    },
+    {
+      "n": 83,
+      "text": "Invoke explicit owner fallback for T014 after two free work failures: MiniMax attempt 3 timed out at 602.2s and Beam attempt 4 delivered production corrections without any requested new regressions (original 19 tests only). Coordinator will preserve both files, add focused isolated red regressions against predecessor and current implementation, fix only proved residual gaps, then pin independent final review to actual fallback HEAD before ACC accept. Same successful attempt-4 branch will carry attributed fallback commit; original dispatch end SHA stays historical. No further phase work, no paid hands-on executor, no hidden history rewrites.",
+      "at": "2026-10-22T00:05:52.654900+00:00",
+      "promoted": null
+    },
+    {
+      "n": 84,
+      "text": "T014 fallback proof: new isolated tests against original f49250a show 15 failed/19 passed, including deterministic concurrent same-round/different-job double charge and temp junction storage escape. Against Beam 94bb276 residual 7 failed/27 passed prove missing id/owner, boolean schema, unsafe job characters, forged event IDs and unreported central-role estimate. Minimal attributed coordinator fixes close them. Additional red 1 failed proves partial input=1000 became estimated total=100; now unknown total stays None. Declared proof 35 passed in 1.61s, every original assertion retained. Final fallback commit extends successful attempt-4 branch; original dispatch end SHA remains historical. Use independent free Antigravity reviewer with full actual HEAD/proof first and last lines because prior OpenCode review capture omitted those lines. No acceptance before that review.",
+      "at": "2026-10-22T00:10:04.117451+00:00",
+      "promoted": null
+    },
+    {
+      "n": 85,
+      "text": "T014 Sonnet review pins full 4f193175218feaba755fe79b70a5d3a2b0dd385b and proof 35 passed, four ledger criteria done, identifies Important broad RecordError suppression. Coordinator red reproductions: corrupt job and simulated job-lock timeout both fail (2 failed); minimal fix now returns pending only for actual missing-file cause and turns other read/lock/write failures into bounded UsageError. Running-round recovery is explicitly Phase 3, do not account in-progress evidence. pending_usage supports unknown/pending visibility; constants are internal implementation, not user-facing extras. Request final review including actual tests for every declared verification boundary, no later metrics threshold requirement.",
+      "at": "2026-10-22T00:12:27.722998+00:00",
+      "promoted": null
+    },
+    {
+      "n": 86,
+      "text": "T014 final path-integrity red: two temp-sentinel cases prove a job JSON whose internal id differs from its validated filename can redirect records.save_job to another ledger/path after the external path guard. Both tests failed before production change. Minimal callback guard now rejects job.id mismatch before appending usage; no baseline module edits. Retain all 19 initial assertions and every added red regression. Refresh exact-HEAD external review before accept.",
+      "at": "2026-10-22T00:13:19.969254+00:00",
+      "promoted": null
+    },
+    {
+      "n": 87,
+      "text": "T014 final independent Gemini Argon Low review confirms full actual HEAD 20f57e4d50fedba5b00fbe44a84950211800dfae at start/end, proof 39 passed, all four scoped criteria done, no extras and no Critical/Important/Minor findings. Reviewer inspected real coverage of measured/total-only/partial/estimated/missing/central role, pending/backfill/crashes/job switches, concurrent first bind, corrupt/oversized/locked metadata and path/ID redirection. Cumulative diff only adds the two declared files (675 module +665 test lines), no baseline deletion. Free authors retain partial scores because missing regressions and residual fixes were supplied through explicitly attributed coordinator fallback, not falsely credited. Accept only Phase-2 T014 and immediately repeat proof, then full suite; do not dispatch any newly ready next-phase task.",
+      "at": "2026-10-22T00:16:45.127579+00:00",
       "promoted": null
     }
   ]
