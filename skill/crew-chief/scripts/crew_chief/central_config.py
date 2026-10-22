@@ -34,6 +34,8 @@ _DEFAULTS = {
     "central_poll_s": 1.0,
     "central_round_timeout_s": 900,
     "central_backend": "default",
+    "stall_minutes": 40,
+    "on_coordinator_quota": "ask",
 }
 
 #: Canonical preference keys, as documented in the plan.
@@ -42,6 +44,8 @@ _PREF_UNRESTRICTED = ("coordinator_unrestricted",)
 _PREF_POLL = ("central_poll_s",)
 _PREF_TIMEOUT = ("central_round_timeout_s",)
 _PREF_BACKEND = ("central_backend",)
+_PREF_STALL = ("stall_minutes",)
+_PREF_POLICY = ("on_coordinator_quota",)
 
 #: Launch override names accepted from the command line. Each tuple also keeps
 #: the canonical preference key, so a caller may pass either spelling.
@@ -162,6 +166,70 @@ def _validate_timing(name: str, value: Any) -> Any:
             f"{name} must be positive, got {value!r}"
         )
     return value
+
+
+#: ``on_coordinator_quota`` values that name no target CLI.
+_QUOTA_POLICIES = ("ask", "wait")
+#: Prefix of the ``handoff:<cli>`` quota policy.
+_HANDOFF_PREFIX = "handoff:"
+
+
+def _normalize_policy(value: Any, label: str) -> str:
+    """Return the canonical ``on_coordinator_quota`` value.
+
+    ``ask`` and ``wait`` stand alone; ``handoff:<cli>`` names an explicitly
+    chosen target CLI, which must be one of :data:`SUPPORTED_COORDINATORS`.
+    """
+    if not isinstance(value, str):
+        raise CentralConfigError(f"{label} must be a string, got {value!r}")
+    value = value.strip().lower()
+    if value in _QUOTA_POLICIES:
+        return value
+    if value.startswith(_HANDOFF_PREFIX):
+        target = _normalize_coordinator(value[len(_HANDOFF_PREFIX):], label)
+        if target in SUPPORTED_COORDINATORS:
+            return _HANDOFF_PREFIX + target
+        raise CentralConfigError(
+            f"{label} must name a supported coordinator CLI after "
+            f"'handoff:', expected one of {', '.join(SUPPORTED_COORDINATORS)}, "
+            f"got {value!r}"
+        )
+    raise CentralConfigError(
+        f"{label} must be 'ask', 'wait' or 'handoff:<cli>', got {value!r}"
+    )
+
+
+def resolve_continuity_settings(
+    global_data: dict[str, Any],
+    project_data: dict[str, Any],
+    overrides: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve the coordinator continuity preferences (FR-027, FR-028).
+
+    Launch overrides win, then project preferences, then global preferences,
+    then the built-in defaults (``stall_minutes = 40``,
+    ``on_coordinator_quota = "ask"``). ``stall_minutes`` must be a finite
+    positive number; the policy must be ``ask``, ``wait`` or
+    ``handoff:<cli>`` with a supported target. Invalid values raise
+    :class:`CentralConfigError`; the input dictionaries are left untouched.
+    """
+    global_data = global_data or {}
+    project_data = project_data or {}
+    overrides = overrides or {}
+
+    stall, _ = _resolve_scalar(
+        global_data, project_data, overrides,
+        _PREF_STALL, _PREF_STALL, _DEFAULTS["stall_minutes"],
+    )
+    stall = _validate_timing("stall_minutes", stall)
+    policy, policy_label = _resolve_scalar(
+        global_data, project_data, overrides,
+        _PREF_POLICY, _PREF_POLICY, _DEFAULTS["on_coordinator_quota"],
+    )
+    return {
+        "stall_minutes": stall,
+        "on_coordinator_quota": _normalize_policy(policy, policy_label),
+    }
 
 
 def resolve_settings(

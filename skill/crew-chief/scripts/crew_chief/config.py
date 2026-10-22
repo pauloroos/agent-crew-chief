@@ -55,6 +55,12 @@ DEFAULT_COORDINATOR_UNRESTRICTED = True
 DEFAULT_CENTRAL_POLL_S = 1.0
 DEFAULT_CENTRAL_ROUND_TIMEOUT_S = 900
 DEFAULT_CENTRAL_BACKEND = "default"
+#: Minutes without job progress *and* child output before a central round is
+#: considered stalled (``0`` is invalid, unlike the economy alerts), and the
+#: policy applied on a coordinator quota or stall: ``ask``, ``wait`` or
+#: ``handoff:<cli>``.
+DEFAULT_STALL_MINUTES = 40
+DEFAULT_ON_COORDINATOR_QUOTA = "ask"
 
 #: Markers of the block ``acc setup`` manages in the global preferences file.
 SETUP_BEGIN = "# >>> acc setup >>>"
@@ -157,6 +163,11 @@ class Prefs:
     central_poll_s: float = DEFAULT_CENTRAL_POLL_S
     central_round_timeout_s: float = DEFAULT_CENTRAL_ROUND_TIMEOUT_S
     central_backend: str = DEFAULT_CENTRAL_BACKEND
+    #: Minutes without job progress and child output before a round is stalled,
+    #: and the policy on a coordinator quota or stall (``ask``, ``wait`` or
+    #: ``handoff:<cli>``). Both are validated by ``central_config``.
+    stall_minutes: float = DEFAULT_STALL_MINUTES
+    on_coordinator_quota: str = DEFAULT_ON_COORDINATOR_QUOTA
 
 
 def tool_work_types(tool: dict) -> tuple[str, ...]:
@@ -361,9 +372,11 @@ def _validate_file(path: Path, data: dict[str, Any]) -> None:
 
     # Central coordination scalars are validated through the accepted
     # central_config.resolve_settings interface (injected supported fallback
-    # caller, validation only).
+    # caller, validation only), and the continuity scalars through
+    # resolve_continuity_settings.
     try:
         central_config.resolve_settings(data, {}, {}, "claude")
+        central_config.resolve_continuity_settings(data, {}, {})
     except central_config.CentralConfigError as exc:
         raise PrefsError(f"{path}: {exc}") from exc
 
@@ -485,6 +498,10 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
             "central_round_timeout_s", DEFAULT_CENTRAL_ROUND_TIMEOUT_S
         ),
         central_backend=pick("central_backend", DEFAULT_CENTRAL_BACKEND),
+        stall_minutes=pick("stall_minutes", DEFAULT_STALL_MINUTES),
+        on_coordinator_quota=pick(
+            "on_coordinator_quota", DEFAULT_ON_COORDINATOR_QUOTA
+        ),
         ignore_home_entries=list(
             dict.fromkeys(
                 [
