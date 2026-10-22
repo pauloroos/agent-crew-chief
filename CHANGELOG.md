@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
+## [0.4.1] - 2026-10-23
+
+### Added
+- **Web view:** `acc central --web` serves a loopback-only dashboard with packaged static assets (cards, charts, history, scoreboard, messages, questions) and controlled terminal entry; no external network, no CDN, no secrets or personal paths in served content (FR-016, SC-009).
+- **Optional Orca backend:** explicitly optional backend with the same launch/message/state/attach contract as the default; capability probe runs at startup, incompatibility fails without switching mid-launch, and default mode never needs Orca (FR-017, SC-010).
+- **Release gate:** installed-bundle fake end-to-end flow covers web/default/Orca modes, three-OS CI matrix requirement and documented fake-browser smoke evidence before release review (SC-008, SC-011).
+
+### Changed
+- Runtime still requires only Python 3.11+ stdlib and Git; pytest remains development-only (FR-019).
+- Public artifacts contain no private data; all tests use temporary homes/config roots and fake CLIs (FR-021).
+- Commits omit AI co-author trailers while preserving human authorship and executor accounting (FR-023).
+- `__version__` is `0.4.1`.
+
 ## [0.4.0] - 2026-10-22
 
 ### Added
