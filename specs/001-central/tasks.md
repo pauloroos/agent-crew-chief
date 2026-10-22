@@ -239,7 +239,7 @@ Render a synthetic central-runner brief and verify the quoted protocol/constrain
 
 Proof: `python -m pytest tests/test_central_skill.py -q`.
 
-- [ ] T044 [US7] Show coordinator interruption alerts and continuity actions in skill/crew-chief/scripts/crew_chief/central_snapshot.py, skill/crew-chief/scripts/crew_chief/central_terminal.py, skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_continuity_view.py; depends on T025, T043
+- [x] T044 [US7] Show coordinator interruption alerts and continuity actions in skill/crew-chief/scripts/crew_chief/central_snapshot.py, skill/crew-chief/scripts/crew_chief/central_terminal.py, skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_continuity_view.py; depends on T025, T043
 
 ### T044: verification boundary
 
