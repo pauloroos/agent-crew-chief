@@ -163,3 +163,75 @@ git merge BRANCH
 ```
 
 ACC never merges or pushes for you.
+
+## 9. Inspect in a browser (v0.4.1)
+
+The browser shows the same records as the terminal: cards, questions, job
+history, model token charts, scoreboard, totals and diagnostics.
+
+```bash
+acc central --web
+acc central --web --port 8080
+```
+
+The page is loopback only at `http://127.0.0.1:<port>/` (default: an
+ephemeral port) and is served from the packaged static assets
+`skill/crew-chief/web/index.html`, `skill/crew-chief/web/central.css` and
+`skill/crew-chief/web/central.js`. There is no CDN and no external script
+or stylesheet; untrusted text renders through `textContent` only, never as
+markup.
+
+Local actions (message, reply, pause, resume, terminal entry) are
+authorized per server: the page first fetches a CSRF token, then sends it
+with a retry id on every POST, and the server enforces strict Origin/Host
+checks with no CORS. Buttons stay disabled until the token arrives.
+
+Terminal entry is controlled: Attach queues an intent for an active
+terminal view, which performs the same handoff as `Enter`. With no
+available terminal bridge the page shows a copyable instruction instead:
+
+```bash
+acc attach COORDINATOR_ID
+```
+
+It does not claim it opened the session; run that command in your own
+terminal.
+
+Reproducible fake-browser smoke (synthetic fixtures only, no live
+coordinator, no real registry):
+
+```bash
+python tests/test_central_web_assets.py --smoke
+```
+
+1. It prints an ephemeral loopback URL and serves synthetic snapshots only.
+2. Open `http://127.0.0.1:<port>/` and confirm cards, questions, history,
+   charts, scoreboard and totals render from `/api/snapshot`.
+3. Confirm HTML-like demo text appears literally, never as markup.
+4. Confirm no external scripts or stylesheets load, then stop the server and
+   confirm the listening socket is released.
+
+## 10. Optional Orca backend (v0.4.1)
+
+Default mode never needs Orca. Pass `--backend orca` only when you want
+Orca to create the worktree:
+
+```bash
+acc launch --repo . --request-file request.md --mode raw-request --authorize-raw --backend orca
+```
+
+Before anything is created, `probe` checks the installed executable
+(`--version`, `--help` and the machine-readable `agent-context --json`
+capabilities). On success, worktree, terminal, message and state behavior
+meets the same backend contract as the default backend. On an unsupported
+version or missing capability the launch fails explicitly without
+switching backend mid-launch. The backend choice is immutable per launch:
+later message and attach operations route to the registered backend.
+
+## 11. v0.4.1 limits
+
+- Loopback only (`127.0.0.1`), ephemeral port by default; no remote server
+  or shared-user access, and no browser shell is ever embedded.
+- The owner integrates: review the coordinator branch and merge it yourself
+  as in section 8. ACC never merges or pushes, and never removes a
+  coordinator worktree automatically.
