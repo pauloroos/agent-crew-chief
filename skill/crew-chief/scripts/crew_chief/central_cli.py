@@ -332,7 +332,7 @@ def add_central_subcommands(subparsers: Any) -> None:
     message_parser.set_defaults(handler=handle_message)
 
     attach_parser = subparsers.add_parser(
-        "attach", help="enter a coordinator conversation interactively"
+        "attach", parents=parents, help="enter a coordinator conversation interactively"
     )
     attach_parser.add_argument("id", help="coordinator id")
     attach_parser.add_argument(
@@ -342,13 +342,13 @@ def add_central_subcommands(subparsers: Any) -> None:
     attach_parser.set_defaults(handler=handle_attach)
 
     for action in ("pause", "resume", "stop", "recover"):
-        ctrl = subparsers.add_parser(action, help=f"{action} a coordinator")
+        ctrl = subparsers.add_parser(action, parents=parents, help=f"{action} a coordinator")
         ctrl.add_argument("id", help="coordinator id")
         ctrl.add_argument("--central-dir", help="override central storage directory")
         ctrl.set_defaults(handler=handle_control, action=action)
 
     # Private supervisor entry — never documented in public help.
-    sup = subparsers.add_parser("_supervisor", help=argparse.SUPPRESS)
+    sup = subparsers.add_parser("_supervisor", parents=parents, help=argparse.SUPPRESS)
     sup.add_argument("--coordinator-id", required=True)
     sup.add_argument("--root", required=True)
     sup.set_defaults(handler=_handle_supervisor)
