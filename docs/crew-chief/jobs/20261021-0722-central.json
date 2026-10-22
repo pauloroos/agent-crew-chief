@@ -5694,17 +5694,184 @@
           "role": "review"
         }
       ],
-      "next_attempt": 7
+      "next_attempt": 7,
+      "accepted": {
+        "attempt": 5,
+        "branch": "crew/20261021-0722-central-32-self",
+        "at": "2026-10-22T13:05:07.508461+00:00"
+      }
     },
     {
       "n": 33,
       "title": "T033 Authorize web messages replies and lifecycle actions in tests/test_central_web_actions.py, skill/crew-chief/scripts/crew_chief/central_web.py, skill/crew-chief/web/central.js; depends on T031, T032",
       "type": "code",
       "risk": "high",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/mimo-v2.6-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T13:05:22.228346+00:00",
+          "duration_s": 11.4,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-33-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-33-1",
+          "base": null,
+          "steps": 2,
+          "tokens_in": 21702,
+          "tokens_out": 61,
+          "tokens_total": 21763,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "1a9addfda7c1386f0950373da8544b1e74d0f1f7",
+          "end_sha": "1a9addfda7c1386f0950373da8544b1e74d0f1f7"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode/nemotron-3-ultra-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T13:06:04.113284+00:00",
+          "duration_s": 241.3,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Now I have a comprehensive understanding of the codebase. Let me implement the T033 task - adding authorized web message replies and lifecycle actions.\n\nFirst, I'll implement the server-side changes in `central_web.py`:\n",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_web.py",
+              "added": 228,
+              "deleted": 6
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-33-2",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-33-2",
+          "base": null,
+          "steps": 12,
+          "tokens_in": 583309,
+          "tokens_out": 5772,
+          "tokens_total": 589081,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "1a9addfda7c1386f0950373da8544b1e74d0f1f7",
+          "end_sha": "9612370795bbf296027514ea22da6d00b1c3cf38"
+        },
+        {
+          "n": 3,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T13:15:01.412404+00:00",
+          "duration_s": 0,
+          "note": "T033 completed after two free failures, salvaged backend9612370. Proof37 passed; combined accepted web78 passed1symlinkskip. Node fake DOM tests assert controls stay disabled until token and network retries reuse UUID; no browser available. Full task diff1a9addf..HEAD; existing tests/assertions preserved.",
+          "branch": "crew/20261021-0722-central-33-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-33-self",
+          "start_sha": "9612370795bbf296027514ea22da6d00b1c3cf38",
+          "end_sha": "de237773b819a09bb116b3a46a55dc9ad6ccc030",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web_actions.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 4,
+          "executor": "antigravity:claude-sonnet-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:15:18.947529+00:00",
+          "duration_s": 37.4,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "HEAD start: de23777. HEAD end: de23777. The working tree is clean and I made no edits. `python -m pytest tests/test_central_web_actions.py -q` gave 37 passed. I read the whole diff of `central_web.py` and `central.js`. I only skimmed the test file's stat, not its contents.\n\n**Spec verdict**\n- FR-007: done. The server rejects malformed or oversized bodies and bounds text by `BODY_MAX_BYTES`. The action ID becomes the message ID, so redelivery is idempotent. Durability and acknowledgments live in the core, which I did not inspect.\n- FR-008: done. A reply sends `question_id` as `reply_to`. The JS picks the pending question for the selected coordinator.\n- FR-010: missing. The diff has no session handoff or background-eligibility restore. The brief assigns the terminal bridge to T034, so this looks out of scope. The fallback is the explicit `acc attach` command.\n- FR-016: done for this task's scope. Message, reply, pause, resume and attach controls are added. Terminal entry is only the copyable command, and the bridge is T034.\n- FR-024: done. Reads and requests are bounded, and the coordinator ID must be a canonical UUID that exists in the registry. Registry paths are not exposed. I only saw the request side of this.\n- SC-009: done. The 37 tests pass. I did not read them, so I can't confirm each listed area is covered.\n- US5/AC2: done. Each action is deduplicated by action ID, and a retry with the same ID returns the same result.\n- US5/AC3: done. Origin must match Host exactly, the CSRF token is compared in constant time, and only fixed routes are allowed. The JS builds its DOM with `textContent`. Credential variants and any text containing a path are redacted.\n- US5/AC4: done. The server returns `command: \"acc attach <id>\"` and the JS shows it, with the status \"Action recorded\" rather than a claim that a terminal opened.\n\n**Extra**\n- `_unique_object` and non-finite-JSON rejection are stricter than any criterion asks.\n- `_private_key` normalisation is also stricter than asked.\n\n**Quality**\n- Critical: none.\n- Important: none.\n- Minor:\n  - `central_web.py` ~L362: the dedup cache fails closed at 1024 entries, so a long session loses actions until the page is reopened. That is deliberate and the message says so.\n  - `_PATH` now redacts a whole string if any path appears in it. That hides ordinary text such as \"a/b\" in model or date strings. The brief says those slash strings are retained, so I did not check that against the code.\n  - `central.js` `updateControls`: it rebuilds the `<select>` on every 2-second poll. The selection is kept, but an open dropdown may flicker.\n  - `attach_intents` is only filled. Nothing drains it until T034, so it fills at 16 and later attaches return 503. That is bounded and expected.\n  - Reply asks for text through `window.prompt`, which is basic but works.\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 148626,
+          "tokens_out": 2168,
+          "tokens_total": 45922,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "n": 5,
+          "executor": "antigravity:gemini-4-argon-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:17:04.722285+00:00",
+          "duration_s": 187.6,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "**HEAD confirmed at start and end**: `de23777`\n**Proof (`python -m pytest tests/test_central_web_actions.py -q`)**: `37 passed in 1.21s`, all child threads/processes cleanly joined.\n\n## Spec verdict\n- **FR-007**: `done` — Uses `central_messages.owner_message`/`send` with canonical UUID `action_id` and `BODY_MAX_BYTES`/`_MAX_BODY_BYTES` caps; rejects malformed/oversized/duplicate-key/non-finite JSON bodies.\n- **FR-008**: `done` — `/api/answer` requires canonical `question_id` and correlates via `central_messages.send`, reusing the answer ID on equivalent retries and rejecting conflicting answers or unknown questions.\n- **FR-010**: `done` (T033 scope) — `/api/attach` enqueues `cid` in bounded 16-item `attach_intents` when `attach_bridge_active=True` and otherwise returns `{\"ok\": True, \"queued\": False, \"command\": \"acc attach \" + cid}`.\n- **FR-016**: `done` — Loopback-only `WebServer` adds `/api/csrf` and fixed POST action routes (`/api/message`, `/api/answer`, `/api/pause`, `/api/resume`, `/api/attach`) wired to `central.js`.\n- **FR-024**: `done` — Bounded 80 KiB body reads, `_MAX_ACTION_IDS = 1024` fail-closed dedup cache, path/credential scrubbing in `_public`, and generic error responses without path leaks.\n- **SC-009**: `done` — [tests/test_central_web_actions.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-33-self/tests/test_central_web_actions.py) thoroughly exercises real HTTP loopback, Origin/Host/CSRF checks, framing, concurrent dedup (`ThreadPoolExecutor`), correlated answers, bounded attach queue, Node VM client flow, and thread cleanup without live coordinators.\n- **US5/AC2**: `done` — Authorized actions execute once per `action_id` and persist to shared inbox/control/intent stores.\n- **US5/AC3**: `done` — Hostile origins, duplicate headers, bad tokens, extra fields (`argv`/`path`), and traversal strings are refused before touching storage; DOM uses `textContent` exclusively.\n- **US5/AC4**: `done` — Default `attach_bridge_active=False` renders `#attach-command` with `acc attach <cid>` and status `\"Action recorded\"`.\n- **extra**: `none`\n\n## Quality verdict\n- **Critical**: `none`\n- **Important**: `none`\n- **Minor**: `none` — Clean, minimal, well-tested implementation across [central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-33-self/skill/crew-chief/scripts/crew_chief/central_web.py), [central.js](file:///E:/DEV/acc-v041.crew/20261021-0722-central-33-self/skill/crew-chief/web/central.js), and [test_central_web_actions.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-33-self/tests/test_central_web_actions.py).\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 247673,
+          "tokens_out": 1592,
+          "tokens_total": 55587,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Salvaged timeout backend had no JS/tests; red16failed14passed proved unknown coordinator/extra argv fields accepted, duplicate retry conflict/eviction and no actual attach queue. Added strict JSON/framing/CSRF-Origin-Host/known IDs, safe errors, bounded fail-closed dedup and real attach queue; strengthened short credentials/space-path privacy. Separate surrogate red1 fixed; green37 plus accepted web proofs78passed1skip.",
+          "executor": "opencode:opencode/nemotron-3-ultra-free",
+          "at": "2026-10-22T13:15:01.204048+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode/nemotron-3-ultra-free": {
+          "score": 18,
+          "explain": "adherence 3/9 → 33.3; 1 correction −15; 0 extra; penalties none → 18",
+          "corrections": 1,
+          "done": 3,
+          "missing": 6,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/nemotron-3-ultra-free",
+          "graded_at": "2026-10-22T13:20:29.619596+00:00"
+        },
+        "coordinator:self": {
+          "score": 100,
+          "explain": "adherence 9/9 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 9,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:self",
+          "graded_at": "2026-10-22T13:20:29.864360+00:00"
+        }
+      },
       "ref": "T033",
       "task_text": "Authorize web messages replies and lifecycle actions in tests/test_central_web_actions.py, skill/crew-chief/scripts/crew_chief/central_web.py, skill/crew-chief/web/central.js; depends on T031, T032",
       "picks": [
@@ -5712,8 +5879,26 @@
           "pick": "opencode:opencode/mimo-v2.6-flash-free",
           "reason": "unrated, no history (opencode:opencode/mimo-v2.6-flash-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free",
           "at": "2026-10-22T13:02:20.885743+00:00"
+        },
+        {
+          "pick": "opencode:opencode/nemotron-3-ultra-free",
+          "reason": "unrated, no history (opencode:opencode/nemotron-3-ultra-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free",
+          "at": "2026-10-22T13:05:55.508807+00:00"
+        },
+        {
+          "pick": "antigravity:claude-sonnet-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-sonnet-5-5-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:15:08.860377+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "antigravity:gemini-4-argon-low",
+          "reason": "unrated, no history (antigravity:gemini-4-argon-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:16:49.395201+00:00",
+          "role": "review"
         }
-      ]
+      ],
+      "next_attempt": 6
     },
     {
       "n": 34,
@@ -5725,7 +5910,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T034",
-      "task_text": "Wire acc central --web startup and shutdown in tests/test_central_web_cli.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_screen.py; depends on T025, T033"
+      "task_text": "Wire acc central --web startup and shutdown in tests/test_central_web_cli.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_screen.py; depends on T025, T033",
+      "picks": [
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 59.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
+          "at": "2026-10-22T13:15:31.121835+00:00"
+        }
+      ]
     },
     {
       "n": 35,
@@ -6816,6 +7008,24 @@
       "n": 106,
       "text": "T032 final free Gemini3.8 low review confirms9f1b89e, proof13 passed including Node DOM (no runtime skips), refs4/4 done/no extras/no findings. Full8688b83..HEAD adds exactly4 allowed files, zero baseline deletions. Beam work salvaged, red regressions fixed rather than assertions weakened; responsive/focus CSS and synthetic smoke are inherent dashboard scope. Accept and repeat branch proof. No installed browser/Playwright available, so no claim of physical browser smoke; exact synthetic procedure preserved for report.",
       "at": "2026-10-22T13:05:06.747629+00:00",
+      "promoted": null
+    },
+    {
+      "n": 107,
+      "text": "T033 two free failures: MiMo quota, Nemotron3 ultra timeout240. Nemotron produced only backend central_web changes at9612370, no test/JS proof. Coordinator will inspect and salvage that backend in isolated self worktree, add red behavioral/security/JS tests and complete T033, with free independent review. Processes checked finished; no paid executor.",
+      "at": "2026-10-22T13:10:30.955738+00:00",
+      "promoted": null
+    },
+    {
+      "n": 108,
+      "text": "T033 Sonnet free review confirmsde23777/proof37 and no Critical/Important but explicitly read production only, not test contents. Its FR010 handoff gap belongs to T034 consuming the queued intent through accepted T017, not T033; strict JSON and credential normalization fulfill owner security/privacy, no extras. Slash-label claim is disproved by accepted T031 regression (all accepted proofs78pass1skip). Request a second free review that reads tests too before accept.",
+      "at": "2026-10-22T13:16:38.853199+00:00",
+      "promoted": null
+    },
+    {
+      "n": 109,
+      "text": "T033 final free Gemini4 low review actually reads all3 files including test contents, confirmsde23777 and proof37/no residual findings/no extras/9refs done. Full1a9addf..HEAD production diff preserves snapshot/asset implementation and all existing tests; only unsafe partial timeout code replaced. Request threads/Node children finished. Accept T033, rerun task proof on branch. T034 alone owns enabling/draining terminal bridge.",
+      "at": "2026-10-22T13:20:30.387939+00:00",
       "promoted": null
     }
   ]
