@@ -322,7 +322,7 @@ Proof: `python -m pytest tests/test_central_web_flow.py -q`.
 
 ## Phase 7: Optional Orca backend (v0.4.1)
 
-- [ ] T036 [P] [US6] Define optional backend operations over accepted core in skill/crew-chief/scripts/crew_chief/central_backend.py, tests/test_central_backend.py; depends on T030, T035
+- [X] T036 [P] [US6] Define optional backend operations over accepted core in skill/crew-chief/scripts/crew_chief/central_backend.py, tests/test_central_backend.py; depends on T030, T035
 - [ ] T037 [P] [US6] Adapt probed Orca capabilities to the backend contract in skill/crew-chief/scripts/crew_chief/central_orca.py, tests/test_central_orca.py; depends on T036
 - [ ] T038 [US6] Connect explicit backend choice to launches and controls in tests/test_central_backend_cli.py, skill/crew-chief/scripts/crew_chief/central_launch.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_controls.py; depends on T036, T037
 
