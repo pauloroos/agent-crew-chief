@@ -463,6 +463,11 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
             return setup_data[key]
         return default
 
+    continuity = central_config.resolve_continuity_settings({}, {}, {
+        "stall_minutes": pick("stall_minutes", DEFAULT_STALL_MINUTES),
+        "on_coordinator_quota": pick("on_coordinator_quota", DEFAULT_ON_COORDINATOR_QUOTA),
+    })
+
     return Prefs(
         tools=tools,
         models=models,
@@ -498,10 +503,8 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
             "central_round_timeout_s", DEFAULT_CENTRAL_ROUND_TIMEOUT_S
         ),
         central_backend=pick("central_backend", DEFAULT_CENTRAL_BACKEND),
-        stall_minutes=pick("stall_minutes", DEFAULT_STALL_MINUTES),
-        on_coordinator_quota=pick(
-            "on_coordinator_quota", DEFAULT_ON_COORDINATOR_QUOTA
-        ),
+        stall_minutes=continuity["stall_minutes"],
+        on_coordinator_quota=continuity["on_coordinator_quota"],
         ignore_home_entries=list(
             dict.fromkeys(
                 [

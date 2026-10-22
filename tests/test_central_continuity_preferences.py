@@ -299,3 +299,10 @@ def test_prefs_error_names_the_offending_file(tmp_path):
     path = _project(tmp_path, 'on_coordinator_quota = "handoff:gemini"\n')
     with pytest.raises(PrefsError, match=re.escape(str(path))):
         load_prefs(tmp_path, global_path=tmp_path / "none.toml")
+
+@pytest.mark.parametrize('raw,expected', [(' WAIT ', 'wait'), ('Handoff:Codex', 'handoff:codex'), ('handoff:claude-code', 'handoff:claude')])
+def test_file_loader_returns_canonical_continuity_policy(tmp_path, raw, expected):
+    path = _project(tmp_path, 'on_coordinator_quota = ' + __import__('json').dumps(raw) + '\n')
+    before = path.read_bytes()
+    assert load_prefs(tmp_path, global_path=tmp_path / 'none.toml').on_coordinator_quota == expected
+    assert path.read_bytes() == before
