@@ -375,6 +375,8 @@ def _apply_job(
     _guard_job_storage(worktree, job_id)
 
     def change(job: dict) -> bool:
+        if job.get("id") != job_id:
+            raise UsageError("the job record id does not match its storage filename")
         return _entry(job, numbers, payload, event_id, note)
 
     try:

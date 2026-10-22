@@ -645,3 +645,21 @@ def test_job_lock_failure_is_not_reported_as_an_absent_job(tmp_path, worktree, m
     monkeypatch.setattr(records, "update_job", unavailable)
     with pytest.raises(UsageError, match="job"):
         central_usage.record_round_usage(root, record, round_result(round_id))
+
+
+@pytest.mark.parametrize("stored_id", ["job-2", "../escaped"])
+def test_job_contents_cannot_redirect_the_accounting_write(tmp_path, worktree, stored_id):
+    root = tmp_path / "central"
+    record = make_record(tmp_path, worktree, active_job_id="job-1")
+    job_path = make_job(worktree, "job-1")
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    job["id"] = stored_id
+    job_path.write_text(json.dumps(job), encoding="utf-8")
+    before = job_path.read_bytes()
+    redirected = job_path.parent / f"{stored_id}.json"
+    redirected.write_bytes(b"outside sentinel")
+    round_id, _ = write_round(root, record, active_job_id="job-1")
+    with pytest.raises(UsageError, match="job"):
+        central_usage.record_round_usage(root, record, round_result(round_id))
+    assert job_path.read_bytes() == before
+    assert redirected.read_bytes() == b"outside sentinel"
