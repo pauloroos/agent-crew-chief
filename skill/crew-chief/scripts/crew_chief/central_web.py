@@ -9,19 +9,20 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
+import queue
 from pathlib import Path
 import re
 import secrets
 import threading
-import uuid
 
-from . import briefcheck, central_controls, central_messages, central_snapshot
+from . import briefcheck, central_controls, central_messages, central_registry, central_snapshot
 
 _ASSETS = {"/": ("index.html", "text/html; charset=utf-8"),
            "/index.html": ("index.html", "text/html; charset=utf-8"),
            "/central.css": ("central.css", "text/css; charset=utf-8"),
            "/central.js": ("central.js", "text/javascript; charset=utf-8")}
-_PATH = re.compile(r"[A-Za-z]:[/\\][^\s<>\"']*|\\\\[^\s<>\"']+|(?<![\w:])/(?:[^\s<>\"']+)|~[/\\][^\s<>\"']*")
+_PATH = re.compile(r"[A-Za-z]:[/\\][^\s<>\"']*|\\\\[^\s<>\"']+|(?<![\w:<])/(?:[^\s<>\"']+)|~[/\\][^\s<>\"']*")
+_CREDENTIAL_TEXT = re.compile(r"(?i)(?:api[_-]?key|secret|password|passwd|token)\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)|Bearer\s+[^\s,;]+")
 _PRIVATE_KEYS = {"repo", "worktree", "path", "root", "request", "authorization", "session_id",
                  "password", "passwd", "secret", "token", "api_key", "credential", "credentials"}
 _TOP = {"schema_version", "generated_at", "coordinators", "questions", "totals", "diagnostics", "alerts"}
@@ -30,8 +31,27 @@ _ROW = {"id", "repo_label", "cli", "backend", "state", "worktree_available", "st
 
 # Bounded limits
 _MAX_BODY_BYTES = 80 * 1024  # 80 KiB
-_MAX_JSON_DEPTH = 16
 _MAX_ACTION_IDS = 1024
+
+
+def _private_key(key):
+    normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+    return (key.lower() in _PRIVATE_KEYS or normalized.endswith("token")
+            or any(word in normalized for word in ("password", "secret", "credential", "apikey", "privatekey"))
+            or normalized in ("authorization", "cookie", "setcookie"))
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+
+def _invalid_constant(value):
+    raise ValueError("non-finite JSON")
 
 
 def _public(value, depth=0):
@@ -44,12 +64,12 @@ def _public(value, depth=0):
             return "[redacted]"
         for _, pattern in briefcheck._SECRET_RULES:
             text = pattern.sub("[redacted]", text)
-        return _PATH.sub("[redacted]", text)
+        text = _CREDENTIAL_TEXT.sub("[redacted]", text)
+        # Do not leave a private path's space-delimited suffix in the response.
+        return "[redacted]" if _PATH.search(text) else text
     if isinstance(value, dict):
         return {str(k): _public(v, depth + 1) for k, v in list(value.items())[:2048]
-                if isinstance(k, str) and k.lower() not in _PRIVATE_KEYS
-                and not k.lower().endswith("token")
-                and not any(word in k.lower() for word in ("password", "secret", "credential", "api_key"))}
+                if isinstance(k, str) and not _private_key(k) and not _PATH.search(k)}
     if isinstance(value, list):
         return [_public(v, depth + 1) for v in value[:2048]]
     if isinstance(value, float) and not math.isfinite(value):
@@ -100,62 +120,27 @@ class _Handler(BaseHTTPRequestHandler):
         return self.headers.get_all("Host", []) in ([f"127.0.0.1:{port}"], [f"localhost:{port}"])
 
     def _origin_ok(self):
-        """Strict Origin check for POST requests."""
-        origin = self.headers.get("Origin", "")
-        port = self.server.server_port
-        if not origin:
-            return False
-        # Allow only same-origin loopback
-        return origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+        return self.headers.get_all("Origin", []) == ["http://" + self.headers.get("Host", "")]
 
-    def _read_json_body(self, max_bytes: int = _MAX_BODY_BYTES):
-        """Read and parse JSON body with bounds checking."""
-        content_length = self.headers.get("Content-Length")
-        if content_length is None:
-            return None, "missing Content-Length"
+    def _read_json_body(self):
+        if self.headers.get_all("Content-Type", []) not in (["application/json"], ["application/json; charset=utf-8"]):
+            return None, 415
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) != 1 or self.headers.get("Transfer-Encoding") is not None:
+            return None, 400
         try:
-            length = int(content_length)
-        except ValueError:
-            return None, "invalid Content-Length"
-        if length > max_bytes:
-            return None, "body too large"
-        if length < 0:
-            return None, "invalid body length"
-        raw = self.rfile.read(length)
-        if len(raw) != length:
-            return None, "truncated body"
-        try:
-            return json.loads(raw.decode("utf-8")), None
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return None, "invalid JSON"
-
-    def _validate_csrf(self, body: dict):
-        """Validate CSRF token from request body."""
-        token = body.get("csrf_token")
-        if not isinstance(token, str) or not token:
-            return False, "missing or invalid CSRF token"
-        if not hasattr(self.server, "csrf_token") or not self.server.csrf_token:
-            return False, "server CSRF token not initialized"
-        return secrets.compare_digest(token, self.server.csrf_token), None
-
-    def _check_action_id(self, action_id: str):
-        """Check and record action ID for idempotent deduplication."""
-        if not isinstance(action_id, str) or not action_id:
-            return False, "missing or invalid action_id"
-        try:
-            parsed = uuid.UUID(action_id)
-        except ValueError:
-            return False, "action_id must be a valid UUID"
-        if str(parsed) != action_id:
-            return False, "action_id must be canonical UUID"
-        with self.server.action_ids_lock:
-            if action_id in self.server.action_ids:
-                return False, "duplicate action_id"
-            if len(self.server.action_ids) >= _MAX_ACTION_IDS:
-                # Simple FIFO eviction - remove oldest
-                self.server.action_ids.pop()
-            self.server.action_ids.add(action_id)
-        return True, None
+            if not lengths[0].isascii() or not lengths[0].isdigit():
+                return None, 400
+            length = int(lengths[0])
+            if length > _MAX_BODY_BYTES:
+                return None, 413
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                return None, 400
+            data = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object, parse_constant=_invalid_constant)
+            return (data, None) if isinstance(data, dict) else (None, 400)
+        except (OSError, ValueError, RecursionError):
+            return None, 400
 
     def _guard(self):
         if not self._host_ok():
@@ -180,7 +165,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._reply(503, {"error": "snapshot unavailable"})
             return
         if self.path == "/api/csrf":
-            # Return CSRF token for bootstrapping the client
+            if self.headers.get("Origin") is not None and not self._origin_ok():
+                self._reply(403, {"error": "origin refused"})
+                return
             self._reply(200, {"csrf_token": self.server.csrf_token})
             return
         if self.path not in _ASSETS:
@@ -203,147 +190,89 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._guard():
             return
+        routes = {"/api/message", "/api/answer", "/api/pause", "/api/resume", "/api/attach"}
+        if self.path not in routes:
+            self._reply(404, {"error": "route not found"})
+            return
         if not self._origin_ok():
             self._reply(403, {"error": "origin refused"})
             return
-
-        # Read JSON body
         body, error = self._read_json_body()
         if error:
-            self._reply(400, {"error": error})
+            self._reply(error, {"error": "invalid request body"})
             return
-        if not isinstance(body, dict):
-            self._reply(400, {"error": "body must be a JSON object"})
+        token = body.get("csrf_token")
+        if not isinstance(token, str) or not token.isascii() or not secrets.compare_digest(token, self.server.csrf_token):
+            self._reply(403, {"error": "token refused"})
             return
-
-        # Validate CSRF token
-        ok, error = self._validate_csrf(body)
-        if not ok:
-            self._reply(403, {"error": error})
+        fields = {"coordinator_id", "action_id", "csrf_token"}
+        if self.path in ("/api/message", "/api/answer"):
+            fields.add("text")
+        if self.path == "/api/answer":
+            fields.add("question_id")
+        cid, aid = body.get("coordinator_id"), body.get("action_id")
+        if set(body) != fields or central_registry._canonical_uuid(cid) is None or central_registry._canonical_uuid(aid) is None:
+            self._reply(400, {"error": "invalid action fields"})
             return
-
-        # Validate action_id for deduplication
-        action_id = body.get("action_id")
-        ok, error = self._check_action_id(action_id)
-        if not ok:
-            self._reply(409, {"error": error})
+        if "text" in fields:
+            try:
+                valid_text = (isinstance(body["text"], str) and bool(body["text"].strip())
+                              and len(body["text"].encode("utf-8")) <= central_messages.BODY_MAX_BYTES)
+            except UnicodeError:
+                valid_text = False
+            if not valid_text:
+                self._reply(400, {"error": "invalid message text"})
+                return
+        if "question_id" in fields and central_registry._canonical_uuid(body["question_id"]) is None:
+            self._reply(400, {"error": "invalid question"})
             return
-
-        # Route to specific action
-        if self.path == "/api/message":
-            self._handle_message(body)
-        elif self.path == "/api/answer":
-            self._handle_answer(body)
-        elif self.path == "/api/pause":
-            self._handle_pause(body)
-        elif self.path == "/api/resume":
-            self._handle_resume(body)
-        elif self.path == "/api/attach":
-            self._handle_attach(body)
-        else:
-            self._reply(404, {"error": "route not found"})
-
-    def _handle_message(self, body: dict):
-        """POST /api/message - send a message to a coordinator."""
-        coordinator_id = body.get("coordinator_id")
-        text = body.get("text")
-        if not isinstance(coordinator_id, str) or not coordinator_id:
-            self._reply(400, {"error": "coordinator_id is required"})
-            return
-        if not isinstance(text, str) or not text:
-            self._reply(400, {"error": "text is required"})
-            return
-
+        # Check membership before any action writes. Never expose registry paths.
         try:
-            envelope = central_messages.owner_message(coordinator_id, text)
-            msg_id = central_messages.send(self.server.root, coordinator_id, envelope)
-            self._reply(200, {"ok": True, "message_id": msg_id})
-        except central_messages.MessageError as exc:
-            self._reply(400, {"error": str(exc)})
+            if cid not in central_registry.load_registry(self.server.root).get("coordinators", {}):
+                self._reply(404, {"error": "unknown coordinator"})
+                return
         except Exception:
-            self._reply(500, {"error": "message send failed"})
-
-    def _handle_answer(self, body: dict):
-        """POST /api/answer - reply to a question."""
-        coordinator_id = body.get("coordinator_id")
-        question_id = body.get("question_id")
-        text = body.get("text")
-        if not isinstance(coordinator_id, str) or not coordinator_id:
-            self._reply(400, {"error": "coordinator_id is required"})
+            self._reply(503, {"error": "registry unavailable"})
             return
-        if not isinstance(question_id, str) or not question_id:
-            self._reply(400, {"error": "question_id is required"})
-            return
-        if not isinstance(text, str) or not text:
-            self._reply(400, {"error": "text is required"})
-            return
+        signature = (self.path, {k: v for k, v in body.items() if k != "csrf_token"})
+        with self.server.action_ids_lock:
+            previous = self.server.action_ids.get(aid)
+            if previous is not None:
+                if previous[0] == signature:
+                    self._reply(200, previous[1])
+                else:
+                    self._reply(409, {"error": "action id conflict"})
+                return
+            # Fail closed: evicting remembered actions could replay mutations.
+            if len(self.server.action_ids) >= _MAX_ACTION_IDS:
+                self._reply(503, {"error": "action session full; reopen the view"})
+                return
+            try:
+                result = self._action(body)
+            except queue.Full:
+                self._reply(503, {"error": "terminal queue full"})
+                return
+            except (central_messages.MessageError, central_controls.ControlError, ValueError):
+                self._reply(400, {"error": "action refused"})
+                return
+            except Exception:
+                self._reply(503, {"error": "action unavailable"})
+                return
+            self.server.action_ids[aid] = (signature, result)
+            self._reply(200, result)
 
-        try:
-            envelope = central_messages.owner_message(coordinator_id, text, reply_to=question_id)
-            msg_id = central_messages.send(self.server.root, coordinator_id, envelope)
-            self._reply(200, {"ok": True, "message_id": msg_id})
-        except central_messages.MessageError as exc:
-            self._reply(400, {"error": str(exc)})
-        except Exception:
-            self._reply(500, {"error": "answer send failed"})
-
-    def _handle_pause(self, body: dict):
-        """POST /api/pause - pause a coordinator."""
-        coordinator_id = body.get("coordinator_id")
-        if not isinstance(coordinator_id, str) or not coordinator_id:
-            self._reply(400, {"error": "coordinator_id is required"})
-            return
-
-        try:
-            control_id = central_controls.request_control(self.server.root, coordinator_id, "pause")
-            self._reply(200, {"ok": True, "control_id": control_id})
-        except central_controls.ControlError as exc:
-            self._reply(400, {"error": str(exc)})
-        except Exception:
-            self._reply(500, {"error": "pause request failed"})
-
-    def _handle_resume(self, body: dict):
-        """POST /api/resume - resume a coordinator."""
-        coordinator_id = body.get("coordinator_id")
-        if not isinstance(coordinator_id, str) or not coordinator_id:
-            self._reply(400, {"error": "coordinator_id is required"})
-            return
-
-        try:
-            control_id = central_controls.request_control(self.server.root, coordinator_id, "resume")
-            self._reply(200, {"ok": True, "control_id": control_id})
-        except central_controls.ControlError as exc:
-            self._reply(400, {"error": str(exc)})
-        except Exception:
-            self._reply(500, {"error": "resume request failed"})
-
-    def _handle_attach(self, body: dict):
-        """POST /api/attach - queue attach intent for active terminal bridge."""
-        coordinator_id = body.get("coordinator_id")
-        if not isinstance(coordinator_id, str) or not coordinator_id:
-            self._reply(400, {"error": "coordinator_id is required"})
-            return
-
-        # Check if attach bridge is active (enabled via server config)
-        attach_bridge_active = getattr(self.server, "attach_bridge_active", False)
-
-        if attach_bridge_active:
-            # Queue the attach intent for the terminal bridge to consume
-            # For now, we just return success - the actual bridge integration
-            # will be handled in T034
-            self._reply(200, {
-                "ok": True,
-                "queued": True,
-                "message": "attach intent queued for terminal bridge"
-            })
-        else:
-            # Return copyable acc attach UUID fallback
-            self._reply(200, {
-                "ok": True,
-                "queued": False,
-                "attach_id": coordinator_id,
-                "message": f"no terminal bridge available; run: acc attach {coordinator_id}"
-            })
+    def _action(self, body):
+        cid = body["coordinator_id"]
+        if self.path in ("/api/message", "/api/answer"):
+            envelope = central_messages.owner_message(cid, body["text"], body.get("question_id"))
+            envelope["id"] = body["action_id"]
+            return {"ok": True, "message_id": central_messages.send(self.server.root, cid, envelope)}
+        if self.path in ("/api/pause", "/api/resume"):
+            return {"ok": True, "control_id": central_controls.request_control(self.server.root, cid, self.path.rsplit("/", 1)[1])}
+        if self.server.attach_bridge_active:
+            self.server.attach_intents.put_nowait(cid)
+            return {"ok": True, "queued": True}
+        return {"ok": True, "queued": False, "command": "acc attach " + cid}
 
 
 def create_server(root: Path, assets: Path, port: int = 0, *, attach_bridge_active: bool = False) -> ThreadingHTTPServer:
@@ -364,7 +293,8 @@ def create_server(root: Path, assets: Path, port: int = 0, *, attach_bridge_acti
     server.previous = None
     server.snapshot_lock = threading.Lock()
     server.csrf_token = secrets.token_urlsafe(32)
-    server.action_ids = set()
+    server.action_ids = {}
+    server.attach_intents = queue.Queue(maxsize=16)
     server.action_ids_lock = threading.Lock()
     server.attach_bridge_active = bool(attach_bridge_active)
     return server

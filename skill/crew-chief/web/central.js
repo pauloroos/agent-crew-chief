@@ -4,6 +4,7 @@
 
   var API = "/api/snapshot";
   var POLL_MS = 2000;
+  var actions = { token: null, snapshot: {}, busy: false, failed: null, select: null };
 
   function $(id) { return document.getElementById(id); }
 
@@ -367,8 +368,97 @@
     renderScoreboard(snapshot);
     renderTotals(snapshot);
     renderDiagnostics(snapshot);
+    actions.snapshot = snapshot;
+    updateControls();
     var status = $("status");
     if (status) status.textContent = "Updated " + text(snapshot.generated_at);
+  }
+
+  function updateControls() {
+    if (!actions.select) return;
+    var selected = actions.select.value;
+    clear(actions.select);
+    (actions.snapshot.coordinators || []).forEach(function (row) {
+      var option = make("option", null, (row.repo_label || "coordinator") + " (" + row.id + ")");
+      option.value = row.id;
+      actions.select.appendChild(option);
+    });
+    if ((actions.snapshot.coordinators || []).some(function (r) { return r.id === selected; })) actions.select.value = selected;
+    ["message", "reply", "pause", "resume", "attach"].forEach(function (name) {
+      var button = $("btn-" + name);
+      button.disabled = !actions.token || actions.busy || !actions.select.value;
+      button.style.cursor = button.disabled ? "not-allowed" : "pointer";
+    });
+  }
+
+  async function sendAction(route, payload) {
+    if (!actions.token || actions.busy) return;
+    var signature = JSON.stringify([route, payload]);
+    var id = actions.failed && actions.failed.signature === signature ? actions.failed.id : window.crypto.randomUUID();
+    actions.busy = true;
+    actions.failed = { signature: signature, id: id };
+    updateControls();
+    try {
+      var response = await fetch(route, { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({}, payload, { csrf_token: actions.token, action_id: id })) });
+      if (!response.ok) { actions.failed = null; throw new Error("action refused"); }
+      var result = await response.json();
+      actions.failed = null;
+      if (result.command) {
+        var command = $("attach-command");
+        if (!command) {
+          command = make("code"); command.id = "attach-command"; command.tabIndex = 0;
+          $("status").parentNode.appendChild(command);
+        }
+        command.textContent = result.command;
+      }
+      $("status").textContent = result.queued ? "Attach queued for terminal" : "Action recorded";
+      load();
+    } catch (error) {
+      $("status").textContent = "Action unavailable. Retry the same action to resend safely.";
+    } finally {
+      actions.busy = false;
+      updateControls();
+    }
+  }
+
+  function initializeActions() {
+    // Read-only rendering still works without interactive browser capabilities.
+    if (typeof window === "undefined" || !window.crypto || !window.crypto.randomUUID) return;
+    var select = make("select");
+    select.setAttribute("aria-label", "Coordinator");
+    actions.select = select;
+    $("btn-message").parentNode.insertBefore(select, $("btn-message"));
+    select.addEventListener("change", updateControls);
+    function bind(name, route, askText, answer) {
+      $("btn-" + name).addEventListener("click", function () {
+        if (actions.busy || !actions.token || !select.value) return;
+        var payload = { coordinator_id: select.value };
+        if (answer) {
+          var question = (actions.snapshot.questions || []).find(function (q) { return q.coordinator_id === select.value; });
+          if (!question) { $("status").textContent = "No pending question for this coordinator."; return; }
+          payload.question_id = question.id;
+        }
+        if (askText) {
+          payload.text = window.prompt(answer ? "Reply to question" : "Message to coordinator");
+          if (payload.text === null || !payload.text.trim()) return;
+        }
+        sendAction(route, payload);
+      });
+    }
+    bind("message", "/api/message", true, false);
+    bind("reply", "/api/answer", true, true);
+    bind("pause", "/api/pause", false, false);
+    bind("resume", "/api/resume", false, false);
+    bind("attach", "/api/attach", false, false);
+    fetch("/api/csrf", { credentials: "same-origin", cache: "no-store" })
+      .then(function (response) { if (!response.ok) throw new Error("authorization unavailable"); return response.json(); })
+      .then(function (data) {
+        if (typeof data.csrf_token !== "string" || !data.csrf_token) throw new Error("authorization unavailable");
+        actions.token = data.csrf_token; updateControls();
+      })
+      .catch(function () { $("status").textContent = "Actions unavailable; snapshot viewing continues."; });
   }
 
   function load() {
@@ -384,6 +474,7 @@
       });
   }
 
+  initializeActions();
   load();
   setInterval(load, POLL_MS);
 })();
