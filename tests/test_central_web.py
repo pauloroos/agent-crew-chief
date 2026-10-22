@@ -8,6 +8,7 @@ import threading
 import pytest
 
 from crew_chief import central_snapshot
+REAL_SNAPSHOT = central_snapshot.snapshot
 
 
 @contextmanager
@@ -123,6 +124,23 @@ def test_snapshot_error_is_generic(tmp_path, monkeypatch):
         monkeypatch.setattr(central_snapshot, "snapshot", fail)
         status, _, body = request(server, "/api/snapshot")
         assert status == 503 and str(tmp_path).encode() not in body
+
+
+def test_http_snapshot_preserves_injected_utc_clock(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    from crew_chief import central_web
+    with running(tmp_path, monkeypatch) as (server, _):
+        class Clock:
+            @staticmethod
+            def now(tz):
+                return datetime(2026, 1, 1, 0, 0, 10, tzinfo=timezone.utc)
+        monkeypatch.setattr(central_web, "datetime", Clock)
+        # Use the real shared snapshot: a double that ignores its clock would
+        # hide the transport bug. Empty temporary registry is sufficient.
+        # running() patches snapshot, so use the original function captured at import.
+        monkeypatch.setattr(central_snapshot, "snapshot", REAL_SNAPSHOT)
+        status, _, body = request(server, "/api/snapshot")
+        assert status == 200 and json.loads(body)["generated_at"] == "2026-01-01T00:00:10+00:00"
 
 
 def test_credential_key_variants_and_public_slashes():
