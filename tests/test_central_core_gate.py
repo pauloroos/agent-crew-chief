@@ -1,7 +1,7 @@
 """Core release gate for v0.4.0 (T030).
 
 Covers FR-018/019/021/022/023 and SC-001/004/005/006/007/008/011 by running
-the full suite, verifying the installed-bundle smoke path, checking release
+the installed `acc` command from this checkout, checking release
 pins in docs and changelog, and confirming no private data or AI co-author
 trailers leak into public artifacts. Stops before web/Orca phases.
 """
@@ -125,59 +125,35 @@ def test_no_ai_coauthor_trailers_in_artifacts(doc):
 
 
 # ---------------------------------------------------------------------------
-# Fake installed-bundle smoke path
+# Installed command smoke path
 # ---------------------------------------------------------------------------
 
 
-def test_fake_installed_bundle_smoke(tmp_path):
-    """SC-007 + FR-019: a fake installed bundle launches without live CLIs."""
-    # Build a minimal release tree with the package importable from scripts/.
-    release = tmp_path / "release"
-    scripts_dir = release / "skill" / "crew-chief" / "scripts"
-    pkg_dir = scripts_dir / "crew_chief"
-    pkg_dir.mkdir(parents=True)
-    (pkg_dir / "__init__.py").write_text(
-        f'__version__ = "{CURRENT_VERSION}"\n', encoding="utf-8"
-    )
-
-    # Simulate the installed wrapper invoking crew-chief via PYTHONPATH.
+def test_installed_command_runs_this_release(tmp_path):
+    """SC-007 + FR-001 + FR-019: install.py --command writes a wrapper that runs 0.4.0."""
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(scripts_dir) + os.pathsep + env.get("PYTHONPATH", "")
-    env["HOME"] = str(tmp_path / "home")
-    env["USERPROFILE"] = str(tmp_path / "home")
-    Path(env["HOME"]).mkdir(exist_ok=True)
-
-    code = (
-        "import sys; "
-        f"sys.path.insert(0, {str(scripts_dir)!r}); "
-        "import crew_chief; print(crew_chief.__version__)"
+    for name in ("HOME", "USERPROFILE", "LOCALAPPDATA"):
+        env[name] = str(tmp_path / "home")
+    bin_dir = tmp_path / "bin"
+    installed = subprocess.run(
+        [sys.executable, "-I", str(REPO_ROOT / "install.py"), "--command", "--bin-dir", str(bin_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=env, timeout=60,
     )
-    result = subprocess.run(
-        [sys.executable, "-I", "-c", code],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-    assert CURRENT_VERSION in result.stdout
+    assert installed.returncode == 0, installed.stderr
+    wrapper = bin_dir / ("acc.cmd" if os.name == "nt" else "acc")
+    assert wrapper.is_file()
 
+    def run(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [str(wrapper), *args], capture_output=True, text=True, encoding="utf-8",
+            errors="replace", env=env, timeout=60,
+        )
 
-# ---------------------------------------------------------------------------
-# Full suite gate
-# ---------------------------------------------------------------------------
-
-
-def test_full_suite_passes():
-    """SC-008: the entire test suite passes on this platform.
-
-    NOTE: This test is skipped when run inside the gate itself to avoid
-    recursive pytest invocation and timeout. Run ``python -m pytest -q``
-    manually or via CI to verify the full suite.
-    """
-    if os.environ.get("PYTEST_CURRENT_TEST", "").startswith(
-        "tests/test_central_core_gate.py::test_full_suite_passes"
-    ):
-        pytest.skip("recursive full-suite gate is verified externally")
+    version = run("--version")
+    assert version.returncode == 0, version.stderr
+    assert CURRENT_VERSION in version.stdout
+    helped = run("--help")
+    assert helped.returncode == 0, helped.stderr
+    for command in ("launch", "central", "message", "attach", "recover"):
+        assert command in helped.stdout
