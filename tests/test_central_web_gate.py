@@ -95,6 +95,27 @@ def _readline(stream, timeout_s: float = 30.0) -> str:
         return ""
 
 
+def _stop(proc: subprocess.Popen) -> None:
+    """Stop ``proc`` with its children and close its pipes.
+
+    A Windows venv ``python.exe`` is a launcher whose child interpreter holds
+    the port; terminating only the launcher leaves that child running.
+    """
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        proc.terminate()
+    proc.wait(timeout=10)
+    proc.stdout.close()
+    proc.stderr.close()
+
+
+def _released(port: int) -> bool:
+    with socket.socket() as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) != 0
+
+
 def _registry(central: Path) -> dict:
     path = central / "registry.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
@@ -166,12 +187,13 @@ def test_installed_bundle_fake_flow_default_orca_and_web(tmp_path, git_repo, fak
                        "--authorize-raw", *extra)
             assert done.returncode == 0, done.stderr
             cid = json.loads(done.stdout)["coordinator_id"]
+            # Registered for cleanup before any wait, so a timeout cannot leave it running.
+            assert _wait(lambda: isinstance(_supervisor_pid(central, cid), int), 30)
+            pid = _supervisor_pid(central, cid)
+            pids.append(pid)
             # The fake claude completes the first round; the supervisor then exits.
             assert _wait(lambda: _registry(central)["coordinators"][cid]["state"] == "completed"), \
                 _registry(central)["coordinators"][cid]
-            pid = _supervisor_pid(central, cid)
-            assert isinstance(pid, int)
-            pids.append(pid)
             assert _wait(lambda: not _alive(pid), 30), f"supervisor {pid} still alive"
             return _registry(central)["coordinators"][cid]
 
@@ -218,18 +240,13 @@ def test_installed_bundle_fake_flow_default_orca_and_web(tmp_path, git_repo, fak
         assert str(tmp_path).encode() not in body
     finally:
         if web is not None:
-            web.terminate()
-            web.wait(timeout=10)
-            web.stdout.close()
-            web.stderr.close()
+            _stop(web)
         for pid in pids:
             if _alive(pid):
                 os.kill(pid, signal.SIGTERM)
+        assert _wait(lambda: not any(_alive(pid) for pid in pids), 10)
     port = int(url.rsplit(":", 1)[1].rstrip("/"))
-    with socket.socket() as sock:
-        sock.settimeout(0.5)
-        assert sock.connect_ex(("127.0.0.1", port)) != 0
-    assert not any(_alive(pid) for pid in pids)
+    assert _wait(lambda: _released(port), 10)
 
 
 @pytest.mark.parametrize("layout", [".claude/skills", ".agents/skills"])
@@ -252,10 +269,7 @@ def test_web_view_serves_its_assets_from_an_installed_skill(tmp_path, git_repo, 
             status, served, _ = _get(url + path)
             assert (status, served.split(";")[0]) == (200, kind), path
     finally:
-        web.terminate()
-        web.wait(timeout=10)
-        web.stdout.close()
-        web.stderr.close()
+        _stop(web)
 
 
 # ---------------------------------------------------------------------------
@@ -283,13 +297,8 @@ def test_documented_fake_browser_smoke_runs_and_releases_its_socket():
         assert snapshot["questions"][0]["body"] == "<img src=x onerror=alert(1)>"
         assert snapshot["coordinators"][0]["repo_label"] == "demo"
     finally:
-        smoke.terminate()
-        smoke.wait(timeout=10)
-        smoke.stdout.close()
-        smoke.stderr.close()
-    with socket.socket() as sock:
-        sock.settimeout(0.5)
-        assert sock.connect_ex(("127.0.0.1", port)) != 0
+        _stop(smoke)
+    assert _wait(lambda: _released(port), 10)
 
 
 # ---------------------------------------------------------------------------
