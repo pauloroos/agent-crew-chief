@@ -6963,7 +6963,12 @@
           "role": "review"
         }
       ],
-      "next_attempt": 11
+      "next_attempt": 11,
+      "accepted": {
+        "attempt": 9,
+        "branch": "crew/20261021-0722-central-37-self",
+        "at": "2026-10-22T14:50:13.125912+00:00"
+      }
     },
     {
       "n": 38,
@@ -6975,7 +6980,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T038",
-      "task_text": "Connect explicit backend choice to launches and controls in tests/test_central_backend_cli.py, skill/crew-chief/scripts/crew_chief/central_launch.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_controls.py; depends on T036, T037"
+      "task_text": "Connect explicit backend choice to launches and controls in tests/test_central_backend_cli.py, skill/crew-chief/scripts/crew_chief/central_launch.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_controls.py; depends on T036, T037",
+      "picks": [
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 58.5 (opencode:opencode-go/minimax-m3.1-flash-free); tier free",
+          "at": "2026-10-22T14:51:02.821720+00:00"
+        }
+      ]
     },
     {
       "n": 39,
