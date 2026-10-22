@@ -13,7 +13,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import central_config, central_preflight, central_registry, central_worktrees
 from . import coordinator_claude, coordinator_codex
@@ -90,6 +90,8 @@ def prepare_launch(
     request_file: Path,
     options: dict[str, Any] | None,
     root: Path,
+    *,
+    worktree_creator: Callable[..., dict] | None = None,
 ) -> dict[str, Any]:
     """Prepare one authorized coordinator launch.
 
@@ -97,6 +99,9 @@ def prepare_launch(
     coordinator record, the selected adapter and a bounded diagnostic. The
     launch stops before any supervisor or model is started; a failed preflight
     keeps the worktree and the record for inspection.
+
+    ``worktree_creator`` is an internal backend seam. It replaces only checkout
+    creation; all validation, authorization and persistence below remain shared.
     """
     options = options or {}
     if not isinstance(options, dict):
@@ -148,7 +153,7 @@ def prepare_launch(
         return _failure(str(exc))
 
     backend = settings["central_backend"]
-    if backend != _BACKEND:
+    if backend != _BACKEND and not (backend == "orca" and worktree_creator is not None):
         return _failure(
             f"backend {backend!r} is not supported yet; only {_BACKEND!r} is"
         )
@@ -156,7 +161,7 @@ def prepare_launch(
     coordinator_id = str(uuid.uuid4())
     cli = settings["coordinator_default"]
     try:
-        worktree_info = central_worktrees.create(
+        worktree_info = (worktree_creator or central_worktrees.create)(
             repo_path, coordinator_id, base=options.get("base") or "HEAD"
         )
     except central_worktrees.WorktreeError as exc:
