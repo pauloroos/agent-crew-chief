@@ -146,6 +146,39 @@ def test_attach_is_intent_or_copyable_fallback(tmp_path, monkeypatch):
         assert server.attach_intents.empty()
 
 
+def test_a_fast_bridge_result_is_not_overwritten_by_queued(tmp_path, monkeypatch):
+    """The queued state is written before the terminal thread can take the request."""
+    import queue
+
+    from crew_chief import central_screen
+
+    with running(tmp_path, monkeypatch) as server:
+        server.attach_bridge_active = True
+        monkeypatch.setattr(central_screen, "_attach", lambda *a, **k: {"ok": False, "reason": "coordinator is stopped"})
+
+        class EagerQueue(queue.Queue):
+            def put_nowait(self, item):  # the terminal thread drains right after the put
+                super().put_nowait(item)
+                central_screen._drain_attach_intents(server.root, server, None)
+
+        server.attach_intents = EagerQueue(maxsize=16)
+        aid = str(uuid.uuid4())
+        assert exchange(server, "/api/attach", {"action_id": aid})[1]["queued"] is True
+        result = server.attach_results[aid]
+        assert result["state"] == "failed" and "coordinator is stopped" in result["reason"]
+        assert result["command"].startswith("acc attach " + CID)
+
+
+def test_a_full_attach_queue_leaves_no_queued_result(tmp_path, monkeypatch):
+    with running(tmp_path, monkeypatch) as server:
+        server.attach_bridge_active = True
+        for _ in range(16):
+            assert exchange(server, "/api/attach")[0] == 200
+        aid = str(uuid.uuid4())
+        assert exchange(server, "/api/attach", {"action_id": aid})[0] == 503
+        assert aid not in server.attach_results
+
+
 def test_dedup_limit_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(central_web, "_MAX_ACTION_IDS", 1)
     with running(tmp_path, monkeypatch) as server:

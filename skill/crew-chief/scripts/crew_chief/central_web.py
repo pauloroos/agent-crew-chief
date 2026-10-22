@@ -282,8 +282,13 @@ class _Handler(BaseHTTPRequestHandler):
             return {"ok": True, "control_id": central_controls.request_control(self.server.root, cid, self.path.rsplit("/", 1)[1])}
         if self.server.attach_bridge_active:
             attach_id = body["action_id"]
-            self.server.attach_intents.put_nowait((cid, attach_id))
+            # Queued first: the terminal thread may publish its outcome as soon as it takes the request.
             self.server.attach_results[attach_id] = {"state": "queued"}
+            try:
+                self.server.attach_intents.put_nowait((cid, attach_id))
+            except queue.Full:
+                del self.server.attach_results[attach_id]
+                raise
             return {"ok": True, "queued": True, "attach_id": attach_id}
         return {"ok": True, "queued": False, "command": attach_command(cid, self.server.central_dir)}
 
