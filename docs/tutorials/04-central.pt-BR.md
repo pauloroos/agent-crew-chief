@@ -185,15 +185,20 @@ porta efêmera), e é servida a partir dos assets estáticos empacotados
 externos; texto não confiável é exibido só via `textContent`, nunca como
 markup.
 
-As ações locais (mensagem, resposta, pausar, retomar, entrar pelo terminal)
-são autorizadas por servidor: a página primeiro busca um token CSRF e depois
-o envia, junto com um id de nova tentativa, em todo POST; o servidor exige
-Origin/Host estritos e não tem CORS. Os botões ficam desativados até o token
-chegar.
+As ações locais (mensagem, resposta a uma pergunta, pausar, retomar, parar,
+entrar pelo terminal) são autorizadas por servidor: a página primeiro busca
+um token CSRF e depois o envia, junto com um id de nova tentativa, em todo
+POST; o servidor exige Origin/Host estritos e não tem CORS. Os botões ficam
+desativados até o token chegar. A barra de ações age sobre a coordenadora
+que você selecionou; se ela sumir, a página pede que você escolha de novo.
+Cada pergunta tem o seu próprio botão Reply, e Stop pede confirmação dizendo
+qual coordenadora vai parar.
 
 A entrada pelo terminal é controlada: Attach enfileira um pedido para uma
-tela de terminal ativa, que faz a mesma passagem de controle do `Enter`. Sem
-ponte de terminal disponível, a página mostra uma instrução para copiar:
+tela de terminal ativa, que faz a mesma passagem de controle do `Enter`, e a
+página mostra depois se a sessão abriu ou por que falhou. Sem ponte de
+terminal disponível, ou depois de uma falha, a página mostra uma instrução
+para copiar (com `--central-dir` quando você abriu a visão com essa opção):
 
 ```bash
 acc attach COORDINATOR_ID
@@ -201,6 +206,10 @@ acc attach COORDINATOR_ID
 
 Ela não afirma que abriu a sessão; rode esse comando no seu próprio
 terminal.
+
+As contagens de tokens avisam "includes estimates" ou "partial" quando parte
+do uso foi estimada ou não foi informada. Se a página perde a conexão, ela
+mantém os últimos dados, marcados como desatualizados, e tenta de novo.
 
 Smoke reproduzível com navegador falso (só fixtures sintéticas, sem
 coordenadora real, sem registro real):

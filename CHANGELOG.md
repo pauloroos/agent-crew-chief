@@ -19,6 +19,10 @@ All notable changes to this project are documented here. Versions follow
 
 ### Fixed
 - Accepted pieces no longer show as pending in the central snapshot.
+- `acc central --web` run from a project's installed skill (`.claude/skills` or `.agents/skills`) served no assets (404).
+- The web snapshot now redacts credentials written as quoted JSON keys, such as `{"password": "x"}`.
+- A browser attach request reports whether the session opened or why it failed, with the copyable command; the command keeps an explicit `--central-dir` (home shown as `~`, which `acc` now expands itself).
+- The browser view refreshes one request at a time and never shows an older snapshot after a newer one, keeps the selected coordinator by id instead of retargeting, draws proportional bars, labels estimated or partial token counts, announces only new questions, alerts and connection loss, gives each question its own Reply, confirms Stop and can stop a coordinator (`/api/stop`), and shows the scoreboard as a table (`scoreboard_rows` in the snapshot).
 
 ## [0.4.0] - 2026-10-22
 

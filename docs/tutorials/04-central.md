@@ -181,14 +181,20 @@ ephemeral port) and is served from the packaged static assets
 or stylesheet; untrusted text renders through `textContent` only, never as
 markup.
 
-Local actions (message, reply, pause, resume, terminal entry) are
-authorized per server: the page first fetches a CSRF token, then sends it
-with a retry id on every POST, and the server enforces strict Origin/Host
-checks with no CORS. Buttons stay disabled until the token arrives.
+Local actions (message, reply to a question, pause, resume, stop, terminal
+entry) are authorized per server: the page first fetches a CSRF token, then
+sends it with a retry id on every POST, and the server enforces strict
+Origin/Host checks with no CORS. Buttons stay disabled until the token
+arrives. The toolbar acts on the coordinator you select; if that
+coordinator disappears, the page asks you to choose again. Each question
+has its own Reply, and Stop asks for confirmation naming the coordinator.
 
 Terminal entry is controlled: Attach queues an intent for an active
-terminal view, which performs the same handoff as `Enter`. With no
-available terminal bridge the page shows a copyable instruction instead:
+terminal view, which performs the same handoff as `Enter`, and the page
+then shows whether the session opened or why it failed. With no
+available terminal bridge, or after a failure, the page shows a copyable
+instruction instead (with `--central-dir` when you started the view with
+one):
 
 ```bash
 acc attach COORDINATOR_ID
@@ -196,6 +202,10 @@ acc attach COORDINATOR_ID
 
 It does not claim it opened the session; run that command in your own
 terminal.
+
+Token counts say "includes estimates" or "partial" when some usage was
+estimated or not reported. If the page loses the connection it keeps the
+last data, marked stale, and retries.
 
 Reproducible fake-browser smoke (synthetic fixtures only, no live
 coordinator, no real registry):
