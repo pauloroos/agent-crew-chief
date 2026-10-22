@@ -12,6 +12,10 @@ Public API
     Write one validated control file into the coordinator's ``control/``
     directory.  Returns the canonical message id used as the filename stem.
 
+``registered_backend(root, coordinator_id)``
+    The stored row of one coordinator and the backend it was launched with,
+    so every command routes by the record, never by current preferences.
+
 The supervisor (:mod:`central_supervisor`) reads these files between rounds;
 ``stop`` is cooperative and never signals a process.
 """
@@ -24,10 +28,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import central_messages, central_registry, records
+from . import central_launch, central_messages, central_registry, records
 
 __all__ = [
     "ControlError",
+    "registered_backend",
     "request_control",
 ]
 
@@ -113,3 +118,27 @@ def request_control(
     path = control_dir / f"{message_id}.json"
     records.write_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return message_id
+
+
+def registered_backend(root: Path, coordinator_id: Any) -> tuple[dict | None, Any]:
+    """The stored row of ``coordinator_id`` and the backend it was launched with.
+
+    Returns ``(None, None)`` when no such coordinator is registered. The
+    stored ``backend`` decides, never current preferences; an unreadable
+    registry or an unknown or unusable backend raises :class:`ControlError`
+    instead of falling back to another backend.
+    """
+    from .central_backend import BackendError
+
+    canonical = _canonical_uuid(coordinator_id)
+    try:
+        rows = central_registry.load_registry(Path(root)).get("coordinators", {})
+    except central_registry.RegistryError as exc:
+        raise ControlError(str(exc)) from exc
+    row = rows.get(canonical) if canonical is not None else None
+    if not isinstance(row, dict):
+        return None, None
+    try:
+        return row, central_launch.select_backend(Path(root), row.get("backend"))
+    except BackendError as exc:
+        raise ControlError(f"coordinator {canonical}: {exc}") from exc

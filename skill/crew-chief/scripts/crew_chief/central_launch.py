@@ -10,6 +10,7 @@ inspection, and the source checkout is never touched.
 from __future__ import annotations
 
 import os
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,12 +21,14 @@ from . import coordinator_claude, coordinator_codex
 from .config import PrefsError, load_prefs
 from .central_messages import MessageError, _coordinator_dir
 
-__all__ = ["adapter_for", "prepare_launch"]
+__all__ = ["adapter_for", "launch_backend", "prepare_launch", "select_backend"]
 
 #: Boolean launch flags; only a real boolean is accepted.
 _FLAGS = ("approved", "authorize_raw", "install_worktree_acc")
-#: The only backend this phase supports.
+#: The backend that needs no optional executable.
 _BACKEND = "default"
+#: The optional backend a launch may select explicitly.
+_ORCA = "orca"
 
 
 def adapter_for(cli: str) -> Any:
@@ -85,6 +88,68 @@ def _caller(options: dict[str, Any]) -> str | None:
     return options.get("caller") or os.environ.get(central_config.COORDINATOR_ENV)
 
 
+def _settings(repo: Path, options: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    """Launch settings from flags, then preferences; or a diagnostic."""
+    # Preferences are validated, never swallowed: a malformed file is an error.
+    try:
+        prefs = load_prefs(repo)
+    except PrefsError as exc:
+        return None, str(exc)
+    try:
+        return central_config.resolve_settings(
+            {}, _preference_tier(prefs), options, _caller(options)
+        ), None
+    except central_config.CentralConfigError as exc:
+        return None, str(exc)
+
+
+def select_backend(root: Path, name: Any) -> Any:
+    """The backend called ``name``, usable now; never another one.
+
+    The default backend resolves no optional executable. A missing,
+    incompatible or unknown backend raises ``BackendError``: there is no
+    fallback, so a launch or a stored coordinator never switches backend.
+    """
+    from .central_backend import BackendError, default_backend
+
+    if name == _BACKEND:
+        return default_backend(root)
+    if name != _ORCA:
+        raise BackendError(f"unknown backend {name!r}; expected one of {_BACKEND!r}, {_ORCA!r}")
+    from .central_orca import orca_backend
+
+    executable = shutil.which(_ORCA)
+    if executable is None:
+        raise BackendError(
+            "backend 'orca' is unavailable: no 'orca' executable on PATH; "
+            "no fallback to the default backend"
+        )
+    backend = orca_backend(root, executable)
+    probe = backend.probe()
+    if not probe.get("ok"):
+        raise BackendError(
+            f"backend 'orca' is unavailable: {probe.get('error')}; "
+            "no fallback to the default backend"
+        )
+    return backend
+
+
+def launch_backend(repo: Path, options: dict[str, Any], root: Path) -> tuple[Any, str | None]:
+    """Resolve the backend of one launch once: the flag, else preferences.
+
+    Returns ``(backend, None)`` or ``(None, diagnostic)``.
+    """
+    from .central_backend import BackendError
+
+    settings, error = _settings(Path(repo), options)
+    if error:
+        return None, error
+    try:
+        return select_backend(root, settings["central_backend"]), None
+    except BackendError as exc:
+        return None, str(exc)
+
+
 def prepare_launch(
     repo: Path,
     request_file: Path,
@@ -140,22 +205,15 @@ def prepare_launch(
     spec_dir = options.get("spec_dir")
     spec_dir = Path(spec_dir) if spec_dir is not None else None
 
-    # Preferences are validated, never swallowed: a malformed file is an error.
-    try:
-        prefs = load_prefs(repo_path)
-    except PrefsError as exc:
-        return _failure(str(exc))
-    try:
-        settings = central_config.resolve_settings(
-            {}, _preference_tier(prefs), options, _caller(options)
-        )
-    except central_config.CentralConfigError as exc:
-        return _failure(str(exc))
+    settings, error = _settings(repo_path, options)
+    if error:
+        return _failure(error)
 
     backend = settings["central_backend"]
-    if backend != _BACKEND and not (backend == "orca" and worktree_creator is not None):
+    if backend != _BACKEND and not (backend == _ORCA and worktree_creator is not None):
         return _failure(
-            f"backend {backend!r} is not supported yet; only {_BACKEND!r} is"
+            f"backend {backend!r} cannot be prepared by the default backend; "
+            "select it explicitly, there is no fallback"
         )
 
     coordinator_id = str(uuid.uuid4())

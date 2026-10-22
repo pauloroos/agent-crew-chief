@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from crew_chief import central_messages, central_registry
+from crew_chief import central_messages, central_registry, central_supervisor, cli
 from crew_chief.central_backend import default_backend
-from crew_chief.central_cli import add_central_subcommands, handle_launch
+from crew_chief.central_cli import handle_launch
 from crew_chief import coordinator_claude
 
 RELEASE_VERSION = "0.4.0"
@@ -60,6 +60,16 @@ def isolated_probes(monkeypatch):
 def calling_cli(monkeypatch):
     """The launch runs inside a Claude Code session."""
     monkeypatch.setenv("CREW_CHIEF_COORDINATOR", "claude")
+
+
+@pytest.fixture(autouse=True)
+def no_installed_orca(monkeypatch):
+    """Hide any Orca installed on this machine: only a test's fake may resolve."""
+    keep = [
+        part for part in os.environ.get("PATH", "").split(os.pathsep)
+        if part and shutil.which("orca", path=part) is None
+    ]
+    monkeypatch.setenv("PATH", os.pathsep.join(keep))
 
 
 @pytest.fixture
@@ -180,8 +190,11 @@ def test_explicit_orca_is_rejected_when_unavailable(
     exit_code = handle_launch(args)
 
     assert exit_code == 1
-    captured = capsys.readouterr()
-    assert "backend" in captured.err.lower() or "not supported" in captured.err.lower()
+    err = capsys.readouterr().err
+    assert "error: launch failed: backend 'orca' is unavailable" in err
+    assert "no 'orca' executable" in err
+    assert "no fallback" in err
+    assert not (root / "registry.json").exists()
 
 
 # --- incompatible explicit selection -----------------------------------------
@@ -196,20 +209,10 @@ def test_incompatible_backend_choice_fails_without_switching(
     exit_code = handle_launch(args)
 
     assert exit_code == 1
-    captured = capsys.readouterr()
-    assert "nonexistent" in captured.err or "not supported" in captured.err.lower()
-
-    # No coordinator was registered under the rejected backend.
-    if root.exists():
-        try:
-            registry = central_registry.load_registry(root)
-        except Exception:
-            registry = {"coordinators": {}}
-        bad = [
-            c for c in registry.get("coordinators", {}).values()
-            if isinstance(c, dict) and c.get("backend") == "nonexistent"
-        ]
-        assert bad == []
+    assert "unknown backend 'nonexistent'" in capsys.readouterr().err
+    # Refused before any checkout or registry row exists.
+    assert not (root / "registry.json").exists()
+    assert not (repo.parent / "repo.crew").exists()
 
 
 # --- backend immutability per launch ----------------------------------------
@@ -271,39 +274,22 @@ def test_json_output_preserves_shape_on_success(
 
 
 def test_json_error_preserves_shape_on_failure(
-    repo, release, root, tmp_path, capsys
+    repo, request_file, release, root, capsys
 ):
-    """A launch-time failure (not an argument error) preserves the error shape."""
-    import argparse
+    """A launch-time failure under --json keeps the v0.4.0 error shape.
 
-    # Use a valid request file but an invalid mode to trigger a launch failure
-    # after argument validation passes (exit 1, not exit 2).
-    req = tmp_path / "req.md"
-    req.write_text("# r\n", encoding="utf-8")
-    args = argparse.Namespace(
-        repo=str(repo),
-        request_file=str(req),
-        mode="raw-request",
-        approved=False,
-        authorize_raw=False,  # missing --authorize-raw triggers exit 2
-        install_worktree_acc=False,
-        spec_dir=None,
-        base=None,
-        cli=None,
-        backend=None,
-        restricted=False,
-        unrestricted=False,
-        release_root=str(release),
-        central_dir=str(root),
-        json=True,
-    )
+    Exit 1, one ``error: launch failed: ...`` line on stderr and nothing on
+    stdout, so no consumer can parse a failure as a launched coordinator.
+    """
+    args = _launch_args(repo, request_file, release, root, backend="orca", json=True)
 
     exit_code = handle_launch(args)
 
-    # Argument-level validation returns 2; that is the preserved shape.
-    assert exit_code == 2
+    assert exit_code == 1
     captured = capsys.readouterr()
-    assert "error" in captured.err.lower()
+    assert captured.out == ""
+    assert captured.err.startswith("error: launch failed: backend 'orca' is unavailable")
+    assert len(captured.err.splitlines()) == 1
     assert "Traceback" not in captured.err
 
 
@@ -338,3 +324,267 @@ def test_default_cli_launch_never_resolves_orca(
 
     assert "orca" not in looked_up
     assert not marker.exists()
+
+
+# --- explicit Orca through the public CLI, with a fake ``orca`` on PATH ------
+
+FAKE_ORCA = r"""
+import json, os, subprocess, sys
+from pathlib import Path
+args = sys.argv[1:]
+with open(os.environ['FAKE_ORCA_LOG'], 'a', encoding='utf-8') as log:
+    log.write(json.dumps(args) + '\n')
+mode = os.environ.get('FAKE_ORCA_MODE', '')
+if args == ['--version']:
+    print('unsupported' if mode == 'version' else '1.4.237')
+elif args == ['--help']:
+    print('orca agent-context worktree create --json')
+elif args == ['agent-context', '--json']:
+    flags = ['repo', 'name', 'setup', 'base-branch', 'no-parent', 'json']
+    print(json.dumps({'schemaVersion': 1,
+                      'commands': [{'command': 'worktree create', 'flags': flags}]}))
+elif args[:2] == ['worktree', 'create']:
+    repo = args[args.index('--repo') + 1][len('path:'):]
+    name = args[args.index('--name') + 1]
+    base = args[args.index('--base-branch') + 1]
+    wt = str(Path(repo).parent / ('orca-' + name))
+    subprocess.run(['git', 'worktree', 'add', '-b', name, wt, base],
+                   cwd=repo, check=True, capture_output=True)
+    print(json.dumps({'ok': True, 'result': {'worktree': {'id': 'repo-fixture::' + wt}}}))
+else:
+    raise SystemExit('unexpected orca command: ' + repr(args))
+"""
+
+
+@pytest.fixture
+def fake_orca(fake_bin, tmp_path, monkeypatch) -> Path:
+    """A fake ``orca`` on PATH; returns its call log (one JSON argv per line)."""
+    log = tmp_path / "orca-calls.jsonl"
+    monkeypatch.setenv("FAKE_ORCA_LOG", str(log))
+    monkeypatch.delenv("FAKE_ORCA_MODE", raising=False)
+    fake_bin("orca", FAKE_ORCA)
+    return log
+
+
+@pytest.fixture
+def started(monkeypatch) -> list[str]:
+    """Record supervisor starts instead of leaving a detached process behind."""
+    calls: list[str] = []
+
+    def fake_start(record, root):
+        calls.append(record["id"])
+        return {"ok": True, "error": None, "coordinator_id": record["id"], "pid": None, "argv": []}
+
+    monkeypatch.setattr(central_supervisor, "start_supervisor", fake_start)
+    return calls
+
+
+def _orca_calls(log: Path) -> list[list[str]]:
+    if not log.exists():
+        return []
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+
+
+def _acc(*argv: str) -> int:
+    return cli.main(list(argv))
+
+
+def _cli_launch(repo, request_file, release, root, *extra: str) -> int:
+    return _acc(
+        "launch", "--json", "--repo", str(repo), "--request-file", str(request_file),
+        "--mode", "raw-request", "--authorize-raw", "--release-root", str(release),
+        "--central-dir", str(root), *extra,
+    )
+
+
+def _launched(capsys, root) -> dict:
+    coordinator_id = json.loads(capsys.readouterr().out)["coordinator_id"]
+    return central_registry.load_registry(root)["coordinators"][coordinator_id]
+
+
+def _controls(root: Path, coordinator_id: str) -> list[Path]:
+    control = root / "coordinators" / coordinator_id / "control"
+    return sorted(control.glob("*.json")) if control.exists() else []
+
+
+def test_orca_launch_creates_and_starts_through_orca(
+    repo, request_file, release, root, fake_orca, started, capsys
+):
+    assert _cli_launch(repo, request_file, release, root, "--backend", "orca") == 0
+
+    row = _launched(capsys, root)
+    assert row["backend"] == "orca"
+    assert row["authorization"]["settings"]["central_backend"] == "orca"
+    assert Path(row["worktree"]).name == f"orca-central-{row['id']}"
+    assert started == [row["id"]]
+    calls = _orca_calls(fake_orca)
+    assert calls[:3] == [["--version"], ["--help"], ["agent-context", "--json"]]
+    assert sum(c[:2] == ["worktree", "create"] for c in calls) == 1
+    # The default checkout was never made: no switch after selection.
+    assert not (repo.parent / "repo.crew").exists()
+
+
+def test_orca_launch_with_missing_binary_fails_without_fallback(
+    repo, request_file, release, root, started, capsys
+):
+    assert _cli_launch(repo, request_file, release, root, "--backend", "orca") == 1
+
+    err = capsys.readouterr().err
+    assert "backend 'orca' is unavailable: no 'orca' executable" in err
+    assert started == []
+    assert not (root / "registry.json").exists()
+    assert not (repo.parent / "repo.crew").exists()
+
+
+def test_orca_launch_with_incompatible_version_fails_without_fallback(
+    repo, request_file, release, root, fake_orca, started, capsys, monkeypatch
+):
+    monkeypatch.setenv("FAKE_ORCA_MODE", "version")
+
+    assert _cli_launch(repo, request_file, release, root, "--backend", "orca") == 1
+
+    err = capsys.readouterr().err
+    assert "backend 'orca' is unavailable: unsupported Orca version" in err
+    assert "no fallback" in err
+    assert started == []
+    assert not any(c[:2] == ["worktree", "create"] for c in _orca_calls(fake_orca))
+    assert not (root / "registry.json").exists()
+    assert not (repo.parent / "repo.crew").exists()
+
+
+@pytest.fixture
+def orca_row(repo, request_file, release, root, fake_orca, started, capsys) -> dict:
+    assert _cli_launch(repo, request_file, release, root, "--backend", "orca") == 0
+    row = _launched(capsys, root)
+    fake_orca.unlink()
+    return row
+
+
+def test_message_to_orca_row_is_routed_through_orca(root, orca_row, fake_orca, capsys):
+    assert _acc("message", orca_row["id"], "--text", "hi orca", "--central-dir", str(root)) == 0
+
+    assert "sent message" in capsys.readouterr().out
+    assert ["--version"] in _orca_calls(fake_orca)
+    assert [m["body"] for m in central_messages.pending(root, orca_row["id"], "in")] == ["hi orca"]
+
+
+def test_message_to_orca_row_fails_when_orca_breaks_without_fallback(
+    root, orca_row, fake_orca, capsys, monkeypatch
+):
+    monkeypatch.setenv("FAKE_ORCA_MODE", "version")
+
+    assert _acc("message", orca_row["id"], "--text", "hi", "--central-dir", str(root)) == 1
+
+    assert "unsupported Orca version" in capsys.readouterr().err
+    assert central_messages.pending(root, orca_row["id"], "in") == []
+
+
+def test_attach_to_orca_row_is_routed_through_orca(root, orca_row, fake_orca, capsys):
+    # A test terminal is not interactive, so the core attach answers with its fallback.
+    assert _acc("attach", orca_row["id"], "--central-dir", str(root)) == 1
+
+    assert "non-interactive" in capsys.readouterr().err
+    assert ["--version"] in _orca_calls(fake_orca)
+
+
+def test_attach_to_orca_row_fails_when_orca_breaks(
+    root, orca_row, fake_orca, capsys, monkeypatch
+):
+    monkeypatch.setenv("FAKE_ORCA_MODE", "version")
+
+    assert _acc("attach", orca_row["id"], "--central-dir", str(root)) == 1
+
+    assert "unsupported Orca version" in capsys.readouterr().err
+    assert _controls(root, orca_row["id"]) == []
+
+
+@pytest.mark.parametrize("action", ["pause", "resume", "stop"])
+def test_controls_on_orca_row_are_routed_through_orca(
+    root, orca_row, fake_orca, capsys, action
+):
+    assert _acc(action, orca_row["id"], "--json", "--central-dir", str(root)) == 0
+
+    control_id = json.loads(capsys.readouterr().out)["control_id"]
+    path = root / "coordinators" / orca_row["id"] / "control" / f"{control_id}.json"
+    assert json.loads(path.read_text(encoding="utf-8"))["command"] == action
+    assert ["--version"] in _orca_calls(fake_orca)
+
+
+def test_stop_on_orca_row_fails_when_orca_breaks_without_writing_a_control(
+    root, orca_row, fake_orca, capsys, monkeypatch
+):
+    monkeypatch.setenv("FAKE_ORCA_MODE", "version")
+
+    assert _acc("stop", orca_row["id"], "--central-dir", str(root)) == 1
+
+    assert "unsupported Orca version" in capsys.readouterr().err
+    assert _controls(root, orca_row["id"]) == []
+
+
+def test_unknown_stored_backend_is_a_clear_error(root, tmp_path, capsys):
+    stamp = "2026-01-01T00:00:00+00:00"
+    row = {
+        "schema_version": 1, "id": str(uuid.uuid4()),
+        "repo": str(tmp_path), "worktree": str(tmp_path),
+        "branch": "central/x", "base_commit": "0" * 40, "backend": "mystery",
+        "cli": "claude", "cli_version": "", "acc_version": "", "session_id": None,
+        "mode": "raw-request", "authorization": {}, "job_ids": [],
+        "active_job_id": None, "state": "running", "created_at": stamp,
+        "updated_at": stamp, "last_error": None, "supervisor_nonce": None,
+    }
+    central_registry.register(root, row)
+
+    for argv in (["message", row["id"], "--text", "x"], ["attach", row["id"]], ["stop", row["id"]]):
+        assert _acc(*argv, "--central-dir", str(root)) == 1
+        assert "unknown backend 'mystery'" in capsys.readouterr().err
+    assert central_messages.pending(root, row["id"], "in") == []
+    assert _controls(root, row["id"]) == []
+
+
+def test_preference_change_after_launch_never_switches_backend(
+    repo, request_file, release, root, fake_orca, started, capsys
+):
+    prefs = repo / "docs" / "crew-chief" / "preferences.toml"
+    prefs.parent.mkdir(parents=True)
+    prefs.write_text('central_backend = "default"\n', encoding="utf-8")
+    assert _cli_launch(repo, request_file, release, root) == 0
+    default_row = _launched(capsys, root)
+    assert _cli_launch(repo, request_file, release, root, "--backend", "orca") == 0
+    orca_row = _launched(capsys, root)
+    fake_orca.unlink()
+
+    prefs.write_text('central_backend = "orca"\n', encoding="utf-8")
+    assert _acc("message", default_row["id"], "--text", "d", "--central-dir", str(root)) == 0
+    assert _orca_calls(fake_orca) == []
+
+    prefs.write_text('central_backend = "default"\n', encoding="utf-8")
+    assert _acc("message", orca_row["id"], "--text", "o", "--central-dir", str(root)) == 0
+    assert ["--version"] in _orca_calls(fake_orca)
+
+    rows = central_registry.load_registry(root)["coordinators"]
+    assert rows[default_row["id"]]["backend"] == "default"
+    assert rows[orca_row["id"]]["backend"] == "orca"
+
+
+def test_orca_and_default_rows_meet_the_same_contract(
+    repo, request_file, release, root, fake_orca, started, capsys
+):
+    from crew_chief.central_orca import orca_backend
+
+    assert _cli_launch(repo, request_file, release, root) == 0
+    default_row = _launched(capsys, root)
+    assert _cli_launch(repo, request_file, release, root, "--backend", "orca") == 0
+    orca_row = _launched(capsys, root)
+
+    assert set(default_row) == set(orca_row)
+    assert default_row["state"] == orca_row["state"] == "created"
+    assert started == [default_row["id"], orca_row["id"]]
+    default_state = default_backend(root).state(default_row)
+    orca_state = orca_backend(root, shutil.which("orca")).state(orca_row)
+    assert set(default_state) == set(orca_state)
+    assert (default_state["ok"], default_state["backend"]) == (True, "default")
+    assert (orca_state["ok"], orca_state["backend"]) == (True, "orca")
+    for row in (default_row, orca_row):
+        assert _acc("message", row["id"], "--text", "same", "--json", "--central-dir", str(root)) == 0
+        message_id = json.loads(capsys.readouterr().out)["message_id"]
+        assert central_messages._canonical_uuid(message_id) == message_id
