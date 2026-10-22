@@ -247,6 +247,13 @@ def test_empty_dom_states():
     assert "No scoreboard data" in result["scoreboard"]
 
 
+def test_multi_coordinator_chart_does_not_guess_missing_aggregate():
+    model = {"model": "same-model", "role": "exec", "tier": "free", "tokens_total": 7}
+    result = render_js({"coordinators": [{"models": [model]}, {"models": [model]}], "totals": {}})
+    assert "Aggregate model data unavailable" in result["text"]["charts"]
+    assert "same-model" not in result["text"]["charts"]
+
+
 def smoke():
     """Manual fake-browser fixture; never loads a real registry or launches CLIs."""
     from tempfile import TemporaryDirectory

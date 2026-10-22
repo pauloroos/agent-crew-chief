@@ -249,18 +249,18 @@
     var root = $("charts");
     clear(root);
     var coordinators = Array.isArray(snapshot.coordinators) ? snapshot.coordinators : [];
-    // Aggregate model rows across coordinators.
-    var rows = [];
-    coordinators.forEach(function (c) {
-      if (!c || !Array.isArray(c.models)) return;
-      c.models.forEach(function (m) {
-        if (!m || typeof m !== "object") return;
-        rows.push(m);
-      });
-    });
-    // The shared aggregate already deduplicates jobs referenced by two views.
-    if (snapshot.totals && Array.isArray(snapshot.totals.models)) rows = snapshot.totals.models;
-    // Also totals-level model chart if present in totals? none.
+    // Prefer the shared aggregate: it deduplicates jobs referenced by two views.
+    var rows;
+    if (snapshot.totals && Array.isArray(snapshot.totals.models)) {
+      rows = snapshot.totals.models;
+    } else if (coordinators.length === 1 && Array.isArray(coordinators[0].models)) {
+      rows = coordinators[0].models;
+    } else if (coordinators.length > 1) {
+      root.appendChild(make("p", "muted", "Aggregate model data unavailable."));
+      return;
+    } else {
+      rows = [];
+    }
     if (!rows.length) {
       root.appendChild(make("p", "muted", "No model token data."));
       return;
