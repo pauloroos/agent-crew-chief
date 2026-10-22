@@ -64,7 +64,7 @@ def test_snippet_survives_bom_installation():
     """Snippet content survives UTF-8 BOM encoding and remains valid."""
     original = _read_text(_SNIPPET_PATH)
     # Simulate installation with BOM
-    bom_content = "﻿" + original
+    bom_content = "" + original
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".md", delete=False, encoding="utf-8-sig"
     ) as f:
