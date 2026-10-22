@@ -228,7 +228,7 @@ plano. O trecho instalado diz isso numa linha.
 ## Instalação
 
 ```bash
-git clone --branch v0.3.4 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.4.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
