@@ -95,10 +95,17 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
-def test_version_is_0_3_4_and_changelog_has_its_section():
-    assert __version__ == "0.3.4"
+def test_version_is_current_and_changelog_has_its_section():
+    """T030: version is 0.4.0 and CHANGELOG has both current and historical entries."""
+    assert __version__ == "0.4.0"
     text = _read(CHANGELOG)
-    section = text.split("## [0.3.4]", 1)[1].split("\n## [", 1)[0]
+    # Current release entry exists with central coordinator content.
+    assert "## [0.4.0]" in text
+    current_section = text.split("## [0.4.0]", 1)[1].split("\n## [", 1)[0]
+    assert "Central coordinator" in current_section or "central coordinator" in current_section.lower()
+    # Historical 0.3.4 section preserved intact.
+    assert "## [0.3.4]" in text
+    section_034 = text.split("## [0.3.4]", 1)[1].split("\n## [", 1)[0]
     for needle in (
         "--exclude",
         "opencode-go",
@@ -111,7 +118,7 @@ def test_version_is_0_3_4_and_changelog_has_its_section():
         "SKILL.md",
         "0.3.4",
     ):
-        assert needle in section, needle
+        assert needle in section_034, needle
 
 
 def test_changelog_keeps_the_0_3_3_section():
@@ -135,10 +142,10 @@ def test_changelog_keeps_the_0_3_3_section():
 
 
 def test_install_pins_the_current_release():
-    """The install commands pin the released tag, not an older one."""
+    """T030: install commands pin the current release tag (v0.4.0), not an older one."""
     for path in (README, README_PT, TUTORIAL_01, TUTORIAL_01_PT):
         text = _read(path)
-        assert "v0.3.4" in text, path.name
+        assert "v0.4.0" in text, f"{path.name} must pin v0.4.0"
         assert "v0.3.3" not in text, path.name
 
 
