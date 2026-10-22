@@ -177,7 +177,7 @@ def test_browser_actions_are_bootstrapped_and_guarded():
     js = (Path(__file__).resolve().parents[1] / "skill/crew-chief/web/central.js").read_text(encoding="utf-8")
     assert '"/api/csrf"' in js and "csrf_token" in js
     assert "randomUUID" in js and "action_id" in js
-    for action in ("message", "answer", "pause", "resume", "attach"):
+    for action in ("message", "answer", "pause", "resume", "stop", "attach"):
         assert '"/api/' + action + '"' in js
     assert "innerHTML" not in js and "textContent" in js
 
@@ -267,7 +267,7 @@ const fetch=async (url, opts={})=>{
  return {ok:true,json:async()=>({ok:true,queued:false,command:'acc attach coord'})};
 };
 const window={crypto:{randomUUID(){return 'action-'+(++ids);}},prompt(){return 'hello';}};
-vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),{document,window,fetch,setInterval(){}});
+vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),{document,window,fetch,setTimeout(){},clearTimeout(){}});
 const tick=()=>new Promise(setImmediate);
 (async()=>{
  await tick();

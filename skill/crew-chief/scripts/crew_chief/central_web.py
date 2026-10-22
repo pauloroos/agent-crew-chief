@@ -21,7 +21,8 @@ from .central_backend import BackendError
 _ASSETS = {"/": ("index.html", "text/html; charset=utf-8"),
            "/index.html": ("index.html", "text/html; charset=utf-8"),
            "/central.css": ("central.css", "text/css; charset=utf-8"),
-           "/central.js": ("central.js", "text/javascript; charset=utf-8")}
+           "/central.js": ("central.js", "text/javascript; charset=utf-8"),
+           "/favicon.svg": ("favicon.svg", "image/svg+xml")}
 _PATH = re.compile(r"[A-Za-z]:[/\\][^\s<>\"']*|\\\\[^\s<>\"']+|(?<![\w:<])/(?:[^\s<>\"']+)|~[/\\][^\s<>\"']*")
 # The optional quote after the key also catches JSON/dict fragments such as {"password": "x"}.
 _CREDENTIAL_TEXT = re.compile(r"(?i)(?:api[_-]?key|secret|password|passwd|token)[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)|Bearer\s+[^\s,;]+")
@@ -29,7 +30,7 @@ _PRIVATE_KEYS = {"repo", "worktree", "path", "root", "request", "authorization",
                  "password", "passwd", "secret", "token", "api_key", "credential", "credentials"}
 _TOP = {"schema_version", "generated_at", "coordinators", "questions", "totals", "diagnostics", "alerts"}
 _ROW = {"id", "repo_label", "cli", "backend", "state", "worktree_available", "stale", "accepted",
-        "total", "active_pieces", "jobs", "metrics", "models", "scoreboard", "last_error", "continuity"}
+        "total", "active_pieces", "jobs", "metrics", "models", "scoreboard", "scoreboard_rows", "last_error", "continuity"}
 
 # Bounded limits
 _MAX_BODY_BYTES = 80 * 1024  # 80 KiB

@@ -4,37 +4,47 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
 <title>ACC Central</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/central.css">
 </head>
 <body>
+<a class="skip-link" href="#app">Skip to content</a>
 <header class="topbar">
-  <h1>ACC Central</h1>
-  <p class="subtitle">Local, read-only dashboard for coordinator snapshots</p>
-  <div class="toolbar" aria-label="Controls (disabled until authorized)">
+  <div class="title">
+    <h1>ACC Central</h1>
+    <p class="subtitle">Local supervision of your coordinators</p>
+  </div>
+  <div class="toolbar" id="toolbar" role="group" aria-label="Actions for the selected coordinator">
     <button type="button" id="btn-message" disabled>Message</button>
-    <button type="button" id="btn-reply" disabled>Reply</button>
     <button type="button" id="btn-pause" disabled>Pause</button>
     <button type="button" id="btn-resume" disabled>Resume</button>
+    <button type="button" id="btn-stop" class="danger" disabled>Stop…</button>
     <button type="button" id="btn-attach" disabled>Attach</button>
-    <span id="status" class="status" role="status" aria-live="polite">Loading…</span>
   </div>
+  <div class="statusbar">
+    <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+    <p id="connection" class="connection"></p>
+    <p id="clock" class="clock">Loading…</p>
+  </div>
+  <div id="announcer" class="visually-hidden" role="status" aria-live="polite"></div>
 </header>
 
-<main id="app">
-  <section id="alerts-section" class="panel" hidden>
+<main id="app" tabindex="-1">
+  <section id="alerts-section" class="panel alerts" hidden>
     <h2>Alerts</h2>
     <ul id="alerts" class="list"></ul>
-  </section>
-
-  <section id="coordinators-section" class="panel">
-    <h2>Cards</h2>
-    <div id="cards" class="cards"></div>
   </section>
 
   <section id="questions-section" class="panel">
     <h2>Questions</h2>
     <div id="questions" class="stack"></div>
+  </section>
+
+  <section id="coordinators-section" class="panel">
+    <h2>Coordinators</h2>
+    <div id="coordinators" class="cards"></div>
   </section>
 
   <section id="history-section" class="panel">
@@ -43,7 +53,7 @@
   </section>
 
   <section id="charts-section" class="panel">
-    <h2>Model token charts</h2>
+    <h2>Model tokens</h2>
     <div id="charts" class="charts"></div>
   </section>
 
@@ -62,6 +72,18 @@
     <ul id="diagnostics" class="list"></ul>
   </section>
 </main>
+
+<dialog id="stop-dialog" aria-labelledby="stop-dialog-title">
+  <form method="dialog">
+    <h2 id="stop-dialog-title">Stop this coordinator?</h2>
+    <p>Stop <strong id="stop-dialog-name"></strong>? It finishes its current round, then stops.
+      Its worktree and messages stay; <code>acc recover</code> brings it back.</p>
+    <div class="dialog-actions">
+      <button type="submit" value="cancel" id="stop-cancel" autofocus>Cancel</button>
+      <button type="submit" value="stop" class="danger">Stop coordinator</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="/central.js" defer></script>
 </body>

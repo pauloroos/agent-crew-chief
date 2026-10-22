@@ -1,10 +1,21 @@
-/* ACC Central browser view. Uses only the local snapshot API. */
+/* ACC Central browser view. Uses only the local snapshot and action API. */
 (function () {
   "use strict";
 
   var API = "/api/snapshot";
   var POLL_MS = 2000;
-  var actions = { token: null, snapshot: {}, busy: false, failed: null, select: null };
+  var TIMEOUT_MS = 8000;
+  var ATTACH_POLL_MS = 1000;
+  var ATTACH_POLLS = 120;
+  var BUTTONS = ["message", "pause", "resume", "stop", "attach"];
+  var state = {
+    token: null, snapshot: null, busy: false, failed: null,
+    select: null, placeholder: null, options: {}, selected: "", everSelected: false,
+    loading: false, reloadAfter: false, timer: null,
+    // Bumped after every action: a snapshot requested before it is dropped.
+    actionEpoch: 0,
+    announced: {}, open: {}, lastGood: null, lost: false
+  };
 
   function $(id) { return document.getElementById(id); }
 
@@ -20,150 +31,68 @@
   function make(tag, className, content) {
     var node = document.createElement(tag);
     if (className) node.className = className;
-    if (content !== undefined && content !== null) {
-      node.textContent = text(content);
-    }
+    if (content !== undefined && content !== null) node.textContent = text(content);
     return node;
   }
 
+  function button(label, className) {
+    var node = make("button", className || "secondary", label);
+    node.type = "button";
+    return node;
+  }
+
+  function hasClass(node, name) {
+    return (" " + text(node.className) + " ").indexOf(" " + name + " ") >= 0;
+  }
+
+  function setClass(node, name, on) {
+    if (!node) return;
+    var names = text(node.className).split(/\s+/).filter(function (n) { return n && n !== name; });
+    if (on) names.push(name);
+    node.className = names.join(" ");
+  }
+
   function kv(parent, label, value) {
-    var dt = document.createElement("dt");
-    dt.textContent = text(label);
+    var dt = make("dt", null, label);
     var dd = document.createElement("dd");
-    dd.textContent = text(value);
+    if (value && typeof value === "object") dd.appendChild(value); else dd.textContent = text(value);
     parent.appendChild(dt);
     parent.appendChild(dd);
   }
 
-  function renderAlerts(snapshot) {
-    var section = $("alerts-section");
-    var list = $("alerts");
-    clear(list);
-    var alerts = Array.isArray(snapshot.alerts) ? snapshot.alerts : [];
-    if (!alerts.length) { section.hidden = true; return; }
-    section.hidden = false;
-    alerts.forEach(function (alert) {
-      var li = document.createElement("li");
-      if (alert && typeof alert === "object") {
-        var cid = text(alert.coordinator_id);
-        var reason = text(alert.reason);
-        var stopped = text(alert.stopped_at || "unknown");
-        var reset = text(alert.quota_reset_at || "unknown");
-        li.textContent = cid + ": " + reason + " stopped=" + stopped + " reset=" + reset;
-      } else {
-        li.textContent = text(alert);
-      }
-      list.appendChild(li);
-    });
+  function list(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") return Object.values(value);
+    return [];
   }
 
-  function renderCards(snapshot) {
-    var root = $("cards");
-    clear(root);
-    var coordinators = snapshot.coordinators;
-    if (!Array.isArray(coordinators)) {
-      if (coordinators && typeof coordinators === "object") {
-        coordinators = Object.values(coordinators);
-      } else {
-        coordinators = [];
-      }
-    }
-    coordinators.forEach(function (row) {
-      if (!row || typeof row !== "object") return;
-      var card = make("article", "card");
-      var title = make("h3", null, row.repo_label || row.id || "coordinator");
-      card.appendChild(title);
+  function coordinators(snapshot) {
+    return list(snapshot && snapshot.coordinators).filter(function (row) { return row && typeof row === "object"; });
+  }
 
-      var meta = make("p", "meta");
-      meta.textContent = "cli=" + text(row.cli) + "  state=" + text(row.state) +
-        (row.stale ? "  STALE" : "") +
-        (row.worktree_available === false ? "  (unavailable)" : "");
-      card.appendChild(meta);
+  function shortId(id) { return text(id).slice(0, 8); }
 
-      if (row.last_error) {
-        var err = make("p", "muted", "error=" + text(row.last_error));
-        card.appendChild(err);
-      }
+  function label(row) {
+    return text(row && row.repo_label || "coordinator") + " · " + shortId(row && row.id);
+  }
 
-      var dl = document.createElement("dl");
-      dl.className = "kv";
-      kv(dl, "pieces", text(row.accepted) + "/" + text(row.total));
-      var metrics = row.metrics;
-      if (metrics && typeof metrics === "object") {
-        var fp = metrics.free_piece_share;
-        var ft = metrics.free_token_share;
-        if (fp && typeof fp === "object") kv(dl, "free pieces", fmtRatio(fp.value));
-        if (ft && typeof ft === "object") kv(dl, "free tokens", fmtRatio(ft.value));
-        var ms = metrics.mean_score;
-        if (ms && typeof ms === "object") kv(dl, "score", fmtNumber(ms.value));
-      }
-      card.appendChild(dl);
+  function rowById(id) {
+    return coordinators(state.snapshot).filter(function (row) { return row.id === id; })[0] || { id: id };
+  }
 
-      var pieces = row.active_pieces;
-      if (Array.isArray(pieces) && pieces.length) {
-        var wrap = make("div", "pieces");
-        pieces.forEach(function (p) {
-          if (!p || typeof p !== "object") return;
-          var line = make("div", "piece");
-          line.textContent = text(p.ref) + " " + text(p.title) +
-            "  type=" + text(p.work_type || p.type) +
-            "  exec=" + text(p.executor) +
-            "  state=" + text(p.status) +
-            "  time=" + fmtSeconds(p.elapsed_s);
-          wrap.appendChild(line);
-        });
-        card.appendChild(wrap);
-      }
+  // --- formatting -----------------------------------------------------------
 
-      var jobs = row.jobs;
-      if (Array.isArray(jobs) && jobs.length) {
-        var jwrap = make("div", "pieces");
-        var jh = make("div", "muted", "jobs:");
-        jwrap.appendChild(jh);
-        jobs.forEach(function (j) {
-          if (!j || typeof j !== "object") return;
-          var jline = make("div", "piece");
-          jline.textContent = text(j.id) + " " + text(j.title) +
-            "  state=" + text(j.state) +
-            "  start=" + text(j.start) +
-            "  end=" + text(j.end);
-          jwrap.appendChild(jline);
-        });
-        card.appendChild(jwrap);
-      }
+  var dateFormat = null;
+  try {
+    dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch (error) { dateFormat = null; }
 
-      var models = row.models;
-      if (Array.isArray(models) && models.length) {
-        var mwrap = make("div", "pieces");
-        var mh = make("div", "muted", "models:");
-        mwrap.appendChild(mh);
-        models.forEach(function (m) {
-          if (!m || typeof m !== "object") return;
-          var mline = make("div", "piece");
-          mline.textContent = text(m.role) + "/" + text(m.model) +
-            "  tier=" + text(m.tier) +
-            "  in=" + fmtNumber(m.tokens_in) +
-            "  out=" + fmtNumber(m.tokens_out) +
-            "  total=" + fmtNumber(m.tokens_total) +
-            "  coverage=" + text(m.coverage);
-          mwrap.appendChild(mline);
-        });
-        card.appendChild(mwrap);
-      }
-
-      var scoreboard = row.scoreboard;
-      if (typeof scoreboard === "string" && scoreboard.trim()) {
-        var sb = make("div", "pieces");
-        var sh = make("div", "muted", "scoreboard:");
-        sb.appendChild(sh);
-        var pre = make("pre", null, scoreboard);
-        sb.appendChild(pre);
-        card.appendChild(sb);
-      }
-
-      root.appendChild(card);
-    });
-    if (!coordinators.length) root.appendChild(make("p", "muted", "No coordinators yet."));
+  function timeNode(value, fallback) {
+    var date = value ? new Date(value) : null;
+    if (!date || isNaN(date.getTime())) return make("span", null, fallback || "unknown");
+    var node = make("time", null, dateFormat ? dateFormat.format(date) : text(value));
+    node.setAttribute("datetime", text(value));
+    return node;
   }
 
   function fmtNumber(value) {
@@ -178,153 +107,309 @@
   }
 
   function fmtRatio(value) {
-    if (value === null || value === undefined) return "unknown";
     if (typeof value !== "number" || !isFinite(value)) return "unknown";
     if (value >= 0 && value <= 1) return (value * 100).toFixed(0) + "%";
     return fmtNumber(value);
   }
 
-  function fmtSeconds(value) {
-    if (value === null || value === undefined) return "unknown";
+  function fmtDuration(value) {
     if (typeof value !== "number" || !isFinite(value)) return "unknown";
-    if (value < 0) value = 0;
-    if (value === Math.trunc(value) && value < 1e9) return Math.trunc(value) + "s";
-    return value.toFixed(1) + "s";
+    var s = Math.max(0, Math.round(value));
+    if (s < 60) return s + "s";
+    if (s < 3600) return Math.floor(s / 60) + "m " + (s % 60) + "s";
+    if (s < 86400) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+    return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
+  }
+
+  // How exact a token count is: estimates and missing coverage are always said.
+  function qualifier(estimated, coverage) {
+    if (coverage === "incomplete" || coverage === "unknown") return " · partial (some usage not reported)";
+    if (estimated || coverage === "estimated") return " · includes estimates";
+    return "";
+  }
+
+  function tokens(value, estimated, coverage) {
+    return fmtNumber(value) + " tokens" + qualifier(estimated, coverage);
+  }
+
+  function rowCoverage(row) {
+    var models = list(row.models);
+    if (models.some(function (m) { return m && (m.coverage === "incomplete" || m.coverage === "unknown"); })) return "incomplete";
+    if (models.some(function (m) { return m && (m.estimated || m.coverage === "estimated"); })) return "estimated";
+    return "measured";
+  }
+
+  // --- announcements and feedback -------------------------------------------
+
+  function announce(key, message) {
+    if (state.announced[key]) return;
+    state.announced[key] = true;
+    var node = $("announcer");
+    if (node) node.textContent = message;
+  }
+
+  function feedback(message, kind) {
+    var node = $("feedback");
+    if (!node) return node;
+    clear(node);
+    node.textContent = message;
+    node.className = "feedback" + (kind ? " " + kind : "");
+    if (kind === "error") {
+      // Errors stay until the next action or until dismissed.
+      var dismiss = button("Dismiss");
+      dismiss.addEventListener("click", function () { clear(node); node.textContent = ""; node.className = "feedback"; });
+      node.appendChild(dismiss);
+    }
+    return node;
+  }
+
+  function showCommand(intro, command, kind) {
+    var node = feedback(intro, kind || "info");
+    if (!node || !command) return;
+    var code = make("code", "command", command);
+    node.appendChild(code);
+    var copy = button("Copy");
+    copy.addEventListener("click", function () {
+      var clipboard = typeof navigator !== "undefined" && navigator.clipboard;
+      if (!clipboard) { copy.textContent = "Select and copy"; return; }
+      clipboard.writeText(command).then(function () { copy.textContent = "Copied"; },
+        function () { copy.textContent = "Select and copy"; });
+    });
+    node.appendChild(copy);
+  }
+
+  function setConnection(ok) {
+    var node = $("connection");
+    if (ok) {
+      if (state.lost) delete state.announced["connection-lost"];
+      state.lost = false;
+      if (node) { clear(node); node.textContent = ""; }
+      setClass($("app"), "stale", false);
+      return;
+    }
+    state.lost = true;
+    if (node) {
+      clear(node);
+      node.textContent = "Connection lost; retrying. Showing stale data";
+      if (state.lastGood) { node.appendChild(make("span", null, " from")); node.appendChild(timeNode(state.lastGood)); }
+    }
+    setClass($("app"), "stale", true);
+    announce("connection-lost", "Connection to ACC Central lost; the page shows the last data received.");
+  }
+
+  // --- rendering ------------------------------------------------------------
+
+  function renderAlerts(snapshot) {
+    var section = $("alerts-section");
+    var root = $("alerts");
+    clear(root);
+    var alerts = list(snapshot.alerts);
+    if (section) section.hidden = !alerts.length;
+    alerts.forEach(function (alert) {
+      var li = make("li", "alert");
+      if (!alert || typeof alert !== "object") { li.textContent = text(alert); root.appendChild(li); return; }
+      var row = rowById(alert.coordinator_id);
+      var reason = alert.reason === "quota" ? "stopped by quota" : alert.reason === "stall" ? "stalled" : text(alert.reason);
+      li.appendChild(make("strong", null, label(row) + ": " + reason));
+      var when = make("span", "muted");
+      when.appendChild(make("span", null, " stopped "));
+      when.appendChild(timeNode(alert.stopped_at));
+      when.appendChild(make("span", null, ", quota resets "));
+      when.appendChild(timeNode(alert.quota_reset_at));
+      when.appendChild(make("span", null, ", policy " + text(alert.policy || "ask")));
+      li.appendChild(when);
+      var stop = button("Stop…", "danger");
+      stop.disabled = !state.token || state.busy;
+      stop.addEventListener("click", function () { confirmStop(row.id, stop); });
+      li.appendChild(stop);
+      root.appendChild(li);
+      announce("alert:" + text(alert.coordinator_id) + ":" + text(alert.reason) + ":" + text(alert.stopped_at),
+        label(row) + " " + reason + ".");
+    });
   }
 
   function renderQuestions(snapshot) {
     var root = $("questions");
     clear(root);
-    var questions = Array.isArray(snapshot.questions) ? snapshot.questions : [];
-    if (!questions.length) {
-      var none = make("p", "muted", "No pending questions.");
-      root.appendChild(none);
-      return;
-    }
+    var questions = list(snapshot.questions).filter(function (q) { return q && typeof q === "object"; });
+    if (!questions.length) { root.appendChild(make("p", "muted", "No pending questions.")); return; }
     questions.forEach(function (q) {
-      if (!q || typeof q !== "object") return;
-      var item = make("div", "item");
-      var h = make("h4", null, text(q.id) + " (coordinator " + text(q.coordinator_id) + ")");
-      item.appendChild(h);
-      if (q.body) {
-        var body = make("p", null, text(q.body));
-        item.appendChild(body);
-      }
-      var refs = q.task_refs;
-      if (Array.isArray(refs) && refs.length) {
-        var refp = make("p", "muted", "refs=" + refs.map(text).join(","));
-        item.appendChild(refp);
-      }
+      var row = rowById(q.coordinator_id);
+      var item = make("article", "item question");
+      item.appendChild(make("h3", null, label(row) + " asks"));
+      if (q.body) item.appendChild(make("p", "body", q.body));
+      var refs = list(q.task_refs);
+      if (refs.length) item.appendChild(make("p", "muted", "Tasks: " + refs.map(text).join(", ")));
+      var reply = button("Reply", "primary");
+      reply.disabled = !state.token || state.busy;
+      reply.addEventListener("click", function () {
+        var answer = window.prompt("Reply to " + label(row) + ": " + text(q.body).slice(0, 200));
+        if (answer === null || answer === undefined || !String(answer).trim()) return;
+        act("/api/answer", { coordinator_id: q.coordinator_id, question_id: q.id, text: answer }, "Reply recorded.");
+      });
+      item.appendChild(reply);
       root.appendChild(item);
+      announce("question:" + text(q.id), "New question from " + label(row) + ".");
     });
+  }
+
+  function renderCoordinators(snapshot) {
+    var root = $("coordinators");
+    clear(root);
+    var rows = coordinators(snapshot);
+    var questions = list(snapshot.questions);
+    rows.forEach(function (row) {
+      var selected = row.id === state.selected;
+      var card = make("article", "card" + (selected ? " selected" : ""));
+      if (selected) card.setAttribute("aria-current", "true");
+      var head = make("div", "card-head");
+      head.appendChild(make("h3", null, label(row)));
+      head.appendChild(make("span", "badge state-" + text(row.state || "unknown"), row.state || "unknown"));
+      card.appendChild(head);
+      var pending = questions.filter(function (q) { return q && q.coordinator_id === row.id; }).length;
+      var summary = make("p", "summary",
+        text(row.accepted) + "/" + text(row.total) + " pieces accepted · " +
+        pending + (pending === 1 ? " question" : " questions") + " pending" +
+        (row.stale ? " · stale record" : "") + (row.worktree_available === false ? " · worktree unavailable" : ""));
+      card.appendChild(summary);
+      if (row.last_error) card.appendChild(make("p", "error", "Error: " + text(row.last_error)));
+      var choose = button(selected ? "Selected" : "Select");
+      choose.setAttribute("aria-pressed", selected ? "true" : "false");
+      choose.addEventListener("click", function () { choose_(row.id); });
+      card.appendChild(choose);
+
+      var details = make("details");
+      if (state.open[row.id]) details.open = true;
+      details.addEventListener("toggle", function () { state.open[row.id] = !!details.open; });
+      details.appendChild(make("summary", null, "Details"));
+      var dl = make("dl", "kv");
+      kv(dl, "id", text(row.id));
+      kv(dl, "cli", text(row.cli));
+      kv(dl, "backend", text(row.backend));
+      var metrics = row.metrics && typeof row.metrics === "object" ? row.metrics : {};
+      var coverage = rowCoverage(row);
+      if (metrics.free_piece_share) kv(dl, "free pieces", fmtRatio(metrics.free_piece_share.value));
+      if (metrics.free_token_share) kv(dl, "free tokens", fmtRatio(metrics.free_token_share.value) + qualifier(false, coverage));
+      if (metrics.mean_score) kv(dl, "score", fmtNumber(metrics.mean_score.value));
+      details.appendChild(dl);
+      list(row.active_pieces).forEach(function (p) {
+        if (!p || typeof p !== "object") return;
+        details.appendChild(make("p", "piece", text(p.ref) + " " + text(p.title) + " · " +
+          text(p.work_type || p.type) + " · " + text(p.executor) + " · " + text(p.status) +
+          " · " + fmtDuration(p.elapsed_s)));
+      });
+      card.appendChild(details);
+      root.appendChild(card);
+    });
+    if (!rows.length) root.appendChild(make("p", "muted", "No coordinators yet."));
   }
 
   function renderHistory(snapshot) {
     var root = $("history");
     clear(root);
-    var coordinators = Array.isArray(snapshot.coordinators) ? snapshot.coordinators : [];
-    var hasAny = false;
-    coordinators.forEach(function (row) {
-      if (!row || !Array.isArray(row.jobs) || !row.jobs.length) return;
-      hasAny = true;
+    var any = false;
+    coordinators(snapshot).forEach(function (row) {
+      var jobs = list(row.jobs).filter(function (j) { return j && typeof j === "object"; });
+      if (!jobs.length) return;
+      any = true;
       var item = make("div", "item");
-      var h = make("h4", null, text(row.repo_label || row.id));
-      item.appendChild(h);
-      row.jobs.forEach(function (j) {
-        if (!j || typeof j !== "object") return;
-        var line = make("div", "muted");
-        line.textContent = text(j.id) + " " + text(j.title) +
-          "  state=" + text(j.state) +
-          "  start=" + text(j.start) +
-          "  end=" + text(j.end);
+      item.appendChild(make("h3", null, label(row)));
+      jobs.forEach(function (j) {
+        var line = make("p", "muted", text(j.id) + " " + text(j.title) + " · " + text(j.state || "state not reported") + " · started ");
+        line.appendChild(timeNode(j.start, "not reported"));
+        line.appendChild(make("span", null, " · ended "));
+        line.appendChild(timeNode(j.end, "not finished"));
         item.appendChild(line);
       });
       root.appendChild(item);
     });
-    if (!hasAny) {
-      root.appendChild(make("p", "muted", "No job history."));
-    }
+    if (!any) root.appendChild(make("p", "muted", "No job history."));
   }
 
   function renderCharts(snapshot) {
     var root = $("charts");
     clear(root);
-    var coordinators = Array.isArray(snapshot.coordinators) ? snapshot.coordinators : [];
+    var rows = coordinators(snapshot);
+    var totals = snapshot.totals && typeof snapshot.totals === "object" ? snapshot.totals : {};
     // Prefer the shared aggregate: it deduplicates jobs referenced by two views.
-    var rows;
-    if (snapshot.totals && Array.isArray(snapshot.totals.models)) {
-      rows = snapshot.totals.models;
-    } else if (coordinators.length === 1 && Array.isArray(coordinators[0].models)) {
-      rows = coordinators[0].models;
-    } else if (coordinators.length > 1) {
-      root.appendChild(make("p", "muted", "Aggregate model data unavailable."));
-      return;
-    } else {
-      rows = [];
-    }
-    if (!rows.length) {
-      root.appendChild(make("p", "muted", "No model token data."));
-      return;
-    }
-    // Group by model+tier for totals.
-    var maxTotal = 0;
-    rows.forEach(function (m) {
-      var t = (typeof m.tokens_total === "number" && isFinite(m.tokens_total)) ? m.tokens_total : 0;
-      if (t > maxTotal) maxTotal = t;
+    var models;
+    if (Array.isArray(totals.models)) models = totals.models;
+    else if (rows.length === 1) models = list(rows[0].models);
+    else if (rows.length > 1) { root.appendChild(make("p", "muted", "Aggregate model data unavailable.")); return; }
+    else models = [];
+    models = models.filter(function (m) { return m && typeof m === "object"; });
+    if (!models.length) { root.appendChild(make("p", "muted", "No model token data.")); return; }
+    var max = 0;
+    models.forEach(function (m) {
+      if (typeof m.tokens_total === "number" && isFinite(m.tokens_total) && m.tokens_total > max) max = m.tokens_total;
     });
-    if (maxTotal <= 0) maxTotal = 1;
-    rows.forEach(function (m) {
-      var row = make("div", "chart-row");
-      var label = make("div", null, text(m.role) + "/" + text(m.model) + " (" + text(m.tier) + ")");
-      row.appendChild(label);
-      var barWrap = make("div", null);
-      var bar = make("div", "chart-bar");
-      bar.hidden = typeof m.tokens_total !== "number" || !isFinite(m.tokens_total);
-      var t = (typeof m.tokens_total === "number" && isFinite(m.tokens_total)) ? m.tokens_total : 0;
-      bar.style.width = Math.max(2, (t / maxTotal) * 100) + "%";
-      if (m.tier === "free") bar.style.background = "var(--free)";
-      if (m.tier === "paid") bar.style.background = "var(--paid)";
-      barWrap.appendChild(bar);
-      row.appendChild(barWrap);
-      var val = make("div", null, fmtNumber(m.tokens_total) + " tok" + (m.estimated ? " (estimated)" : ""));
-      row.appendChild(val);
-      root.appendChild(row);
+    models.forEach(function (m) {
+      var known = typeof m.tokens_total === "number" && isFinite(m.tokens_total);
+      var line = make("div", "chart-row");
+      line.appendChild(make("div", "chart-label", text(m.role) + "/" + text(m.model) + " (" + text(m.tier) + ")"));
+      var lane = make("div", "lane");
+      var bar = make("div", "chart-bar tier-" + text(m.tier));
+      bar.hidden = !known;
+      bar.style.width = (known && max > 0 ? Math.max(0, Math.min(100, m.tokens_total / max * 100)) : 0) + "%";
+      lane.appendChild(bar);
+      line.appendChild(lane);
+      line.appendChild(make("div", "chart-value", tokens(m.tokens_total, m.estimated, m.coverage)));
+      root.appendChild(line);
     });
-    // Tier summary
-    var totals = snapshot.totals;
-    if (totals && typeof totals === "object") {
-      var tierTokens = totals.tier_tokens || totals.tokens_by_tier;
-      if (tierTokens && typeof tierTokens === "object") {
-        var summary = make("div", "item");
-        var h = make("h4", null, "Tokens by tier");
-        summary.appendChild(h);
-        Object.keys(tierTokens).forEach(function (k) {
-          var v = tierTokens[k];
-          var line = make("div", "muted", text(k) + ": " + fmtNumber(v));
-          summary.appendChild(line);
-        });
-        root.appendChild(summary);
-      }
+    var tiers = totals.tier_tokens || totals.tokens_by_tier;
+    if (tiers && typeof tiers === "object") {
+      var summary = make("div", "item");
+      summary.appendChild(make("h3", null, "Tokens by tier" + qualifier(totals.estimated, totals.coverage_label)));
+      Object.keys(tiers).forEach(function (k) { summary.appendChild(make("p", "muted", text(k) + ": " + fmtNumber(tiers[k]))); });
+      root.appendChild(summary);
     }
+  }
+
+  var SCORE_COLUMNS = [["type", "type"], ["executor", "executor"], ["score", "score"], ["n", "n"],
+    ["attempts_per_pass", "attempts/pass"], ["mean_tokens", "mean tokens"],
+    ["mean_duration_s", "mean duration"], ["last", "last graded"]];
+
+  function scoreCell(entry, key) {
+    var value = entry[key];
+    if (key === "mean_tokens") return value === null || value === undefined ? "—" : (entry.tokens_estimated ? "~" : "") + fmtNumber(Math.round(value));
+    if (key === "mean_duration_s") return value === null || value === undefined ? "—" : fmtDuration(value);
+    if (key === "last") return value ? text(value).slice(0, 10) : "—";
+    if (key === "score" || key === "attempts_per_pass") return value === null || value === undefined ? "—" : fmtNumber(Math.round(value * 10) / 10);
+    return text(value);
   }
 
   function renderScoreboard(snapshot) {
     var root = $("scoreboard");
     clear(root);
-    var coordinators = Array.isArray(snapshot.coordinators) ? snapshot.coordinators : [];
-    var hasAny = false;
-    coordinators.forEach(function (c) {
-      if (!c || typeof c.scoreboard !== "string" || !c.scoreboard.trim()) return;
-      hasAny = true;
+    var any = false;
+    coordinators(snapshot).forEach(function (row) {
+      var entries = list(row.scoreboard_rows).filter(function (e) { return e && typeof e === "object"; });
+      var legacy = typeof row.scoreboard === "string" && row.scoreboard.trim() && !Array.isArray(row.scoreboard_rows);
+      if (!entries.length && !legacy) return;
+      any = true;
       var item = make("div", "item");
-      var h = make("h4", null, text(c.repo_label || c.id));
-      item.appendChild(h);
-      item.appendChild(make("pre", null, c.scoreboard));
+      item.appendChild(make("h3", null, label(row)));
+      if (legacy) {
+        item.appendChild(make("pre", null, row.scoreboard));
+      } else {
+        var wrap = make("div", "table-wrap");
+        var table = make("table");
+        var head = make("tr");
+        SCORE_COLUMNS.forEach(function (c) { var th = make("th", null, c[1]); th.setAttribute("scope", "col"); head.appendChild(th); });
+        var thead = make("thead"); thead.appendChild(head); table.appendChild(thead);
+        var tbody = make("tbody");
+        entries.forEach(function (entry) {
+          var tr = make("tr");
+          SCORE_COLUMNS.forEach(function (c) { tr.appendChild(make("td", null, scoreCell(entry, c[0]))); });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        item.appendChild(wrap);
+      }
       root.appendChild(item);
     });
-    if (!hasAny) {
-      root.appendChild(make("p", "muted", "No scoreboard data."));
-    }
+    if (!any) root.appendChild(make("p", "muted", "No scoreboard data."));
   }
 
   function renderTotals(snapshot) {
@@ -337,144 +422,250 @@
     kv(root, "questions", fmtNumber(totals.questions));
     kv(root, "pieces", fmtNumber(totals.accepted_pieces) + "/" + fmtNumber(totals.pieces) + " accepted");
     kv(root, "score", fmtNumber(totals.mean_score));
-    kv(root, "total tokens", fmtNumber(totals.total_tokens));
+    kv(root, "total tokens", tokens(totals.total_tokens, totals.estimated, totals.coverage_label));
+    if (typeof totals.free_token_share === "number") kv(root, "free tokens", fmtRatio(totals.free_token_share) + qualifier(totals.estimated, totals.coverage_label));
   }
 
   function renderDiagnostics(snapshot) {
     var root = $("diagnostics");
     clear(root);
     var section = $("diagnostics-section");
-    var diags = Array.isArray(snapshot.diagnostics) ? snapshot.diagnostics : [];
-    if (!diags.length) { section.hidden = true; return; }
-    section.hidden = false;
+    var diags = list(snapshot.diagnostics);
+    if (section) section.hidden = !diags.length;
     diags.forEach(function (d) {
-      var li = document.createElement("li");
-      if (d && typeof d === "object") {
-        li.textContent = text(d.record) + ": " + text(d.message);
-      } else {
-        li.textContent = text(d);
-      }
-      root.appendChild(li);
+      root.appendChild(make("li", null, d && typeof d === "object" ? text(d.record) + ": " + text(d.message) : text(d)));
     });
   }
 
   function render(snapshot) {
     if (!snapshot || typeof snapshot !== "object") snapshot = {};
+    state.snapshot = snapshot;
+    updateSelect();
     renderAlerts(snapshot);
-    renderCards(snapshot);
     renderQuestions(snapshot);
+    renderCoordinators(snapshot);
     renderHistory(snapshot);
     renderCharts(snapshot);
     renderScoreboard(snapshot);
     renderTotals(snapshot);
     renderDiagnostics(snapshot);
-    actions.snapshot = snapshot;
     updateControls();
-    var status = $("status");
-    if (status) status.textContent = "Updated " + text(snapshot.generated_at);
+    var clock = $("clock");
+    if (clock) {
+      clear(clock);
+      clock.textContent = "Updated ";
+      clock.appendChild(timeNode(snapshot.generated_at));
+    }
+  }
+
+  // --- selection and controls -----------------------------------------------
+
+  function choose_(id) {
+    state.selected = id || "";
+    if (state.selected) state.everSelected = true;
+    if (state.select) state.select.value = state.selected;
+    if (state.snapshot) renderCoordinators(state.snapshot);
+    updateControls();
+  }
+
+  function updateSelect() {
+    var rows = coordinators(state.snapshot);
+    var ids = rows.map(function (row) { return row.id; });
+    if (state.selected && ids.indexOf(state.selected) < 0) {
+      // Never retarget: the owner picks the next coordinator explicitly.
+      feedback("The selected coordinator " + label(rowById(state.selected)) + " is gone; choose another.", "error");
+      state.selected = "";
+    }
+    if (!state.selected && !state.everSelected && rows.length === 1) {
+      state.selected = rows[0].id;
+      state.everSelected = true;
+    }
+    var select = state.select;
+    if (!select) return;
+    Object.keys(state.options).forEach(function (id) {
+      if (ids.indexOf(id) < 0) { select.removeChild(state.options[id]); delete state.options[id]; }
+    });
+    rows.forEach(function (row) {
+      var option = state.options[row.id];
+      if (!option) {
+        option = make("option");
+        option.value = row.id;
+        select.appendChild(option);
+        state.options[row.id] = option;
+      }
+      option.textContent = label(row);
+    });
+    select.value = state.selected;
   }
 
   function updateControls() {
-    if (!actions.select) return;
-    var selected = actions.select.value;
-    clear(actions.select);
-    (actions.snapshot.coordinators || []).forEach(function (row) {
-      var option = make("option", null, (row.repo_label || "coordinator") + " (" + row.id + ")");
-      option.value = row.id;
-      actions.select.appendChild(option);
-    });
-    if ((actions.snapshot.coordinators || []).some(function (r) { return r.id === selected; })) actions.select.value = selected;
-    ["message", "reply", "pause", "resume", "attach"].forEach(function (name) {
-      var button = $("btn-" + name);
-      button.disabled = !actions.token || actions.busy || !actions.select.value;
-      button.style.cursor = button.disabled ? "not-allowed" : "pointer";
+    BUTTONS.forEach(function (name) {
+      var node = $("btn-" + name);
+      if (node) node.disabled = !state.token || state.busy || !state.selected;
     });
   }
 
-  async function sendAction(route, payload) {
-    if (!actions.token || actions.busy) return;
+  // --- actions --------------------------------------------------------------
+
+  async function sendAction(route, payload, pendingText) {
+    if (!state.token || state.busy) return null;
     var signature = JSON.stringify([route, payload]);
-    var id = actions.failed && actions.failed.signature === signature ? actions.failed.id : window.crypto.randomUUID();
-    actions.busy = true;
-    actions.failed = { signature: signature, id: id };
+    // A lost answer is retried with the same id, so the server applies it once.
+    var id = state.failed && state.failed.signature === signature ? state.failed.id : window.crypto.randomUUID();
+    state.busy = true;
+    state.failed = { signature: signature, id: id };
+    feedback(pendingText || "Sending…", "pending");
     updateControls();
     try {
       var response = await fetch(route, { method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.assign({}, payload, { csrf_token: actions.token, action_id: id })) });
-      if (!response.ok) { actions.failed = null; throw new Error("action refused"); }
+        body: JSON.stringify(Object.assign({}, payload, { csrf_token: state.token, action_id: id })) });
+      if (!response.ok) { state.failed = null; feedback("Action refused by the server.", "error"); return null; }
       var result = await response.json();
-      actions.failed = null;
-      if (result.command) {
-        var command = $("attach-command");
-        if (!command) {
-          command = make("code"); command.id = "attach-command"; command.tabIndex = 0;
-          $("status").parentNode.appendChild(command);
-        }
-        command.textContent = result.command;
-      }
-      $("status").textContent = result.queued ? "Attach queued for terminal" : "Action recorded";
-      load();
+      state.failed = null;
+      state.actionEpoch += 1;
+      return result;
     } catch (error) {
-      $("status").textContent = "Action unavailable. Retry the same action to resend safely.";
+      feedback("Action unavailable. Retry the same action to resend safely.", "error");
+      return null;
     } finally {
-      actions.busy = false;
+      state.busy = false;
       updateControls();
+      refreshNow();
     }
   }
 
+  function act(route, payload, done) {
+    return sendAction(route, payload).then(function (result) {
+      if (result) feedback(done, "ok");
+      return result;
+    });
+  }
+
+  function confirmStop(cid, opener) {
+    if (!cid) return;
+    var name = label(rowById(cid));
+    var dialog = $("stop-dialog");
+    if (!dialog || typeof dialog.showModal !== "function") {
+      if (window.confirm("Stop " + name + "? It finishes its current round, then stops.")) {
+        act("/api/stop", { coordinator_id: cid }, "Stop requested for " + name + ".");
+      }
+      return;
+    }
+    $("stop-dialog-name").textContent = name;
+    dialog.returnValue = "";
+    function closed() {
+      dialog.removeEventListener("close", closed);
+      var done = dialog.returnValue === "stop"
+        ? act("/api/stop", { coordinator_id: cid }, "Stop requested for " + name + ".") : Promise.resolve();
+      // After the action: a busy (disabled) button cannot take focus back.
+      done.then(function () { if (opener && opener.focus) opener.focus(); });
+    }
+    dialog.addEventListener("close", closed);
+    dialog.showModal();
+    $("stop-cancel").focus();
+  }
+
+  function attach(cid) {
+    sendAction("/api/attach", { coordinator_id: cid }, "Requesting the terminal session…").then(function (result) {
+      if (!result) return;
+      if (result.queued) {
+        feedback("Attach requested; queued for the terminal view.", "pending");
+        pollAttach(result.attach_id, 0);
+      } else {
+        showCommand("The browser cannot open the session. Run this in your terminal:", result.command);
+      }
+    });
+  }
+
+  function pollAttach(id, count) {
+    if (count >= ATTACH_POLLS) { feedback("The terminal view has not taken the attach request yet.", "error"); return; }
+    setTimeout(function () {
+      fetch("/api/attach/" + encodeURIComponent(id), { credentials: "same-origin", cache: "no-store" })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (result) {
+          if (!result || result.state === "queued") return pollAttach(id, count + 1);
+          if (result.state === "opened") feedback("The session was opened in the terminal.", "ok");
+          else showCommand("Attach failed: " + text(result.reason) + ". Run this in your terminal instead:", result.command, "error");
+        }, function () { pollAttach(id, count + 1); });
+    }, ATTACH_POLL_MS);
+  }
+
   function initializeActions() {
-    // Read-only rendering still works without interactive browser capabilities.
+    // Viewing still works without interactive browser capabilities.
     if (typeof window === "undefined" || !window.crypto || !window.crypto.randomUUID) return;
     var select = make("select");
-    select.setAttribute("aria-label", "Coordinator");
-    actions.select = select;
+    select.setAttribute("aria-label", "Coordinator for the actions");
+    state.placeholder = make("option", null, "Choose a coordinator");
+    state.placeholder.value = "";
+    select.appendChild(state.placeholder);
+    state.select = select;
     $("btn-message").parentNode.insertBefore(select, $("btn-message"));
-    select.addEventListener("change", updateControls);
-    function bind(name, route, askText, answer) {
-      $("btn-" + name).addEventListener("click", function () {
-        if (actions.busy || !actions.token || !select.value) return;
-        var payload = { coordinator_id: select.value };
-        if (answer) {
-          var question = (actions.snapshot.questions || []).find(function (q) { return q.coordinator_id === select.value; });
-          if (!question) { $("status").textContent = "No pending question for this coordinator."; return; }
-          payload.question_id = question.id;
-        }
-        if (askText) {
-          payload.text = window.prompt(answer ? "Reply to question" : "Message to coordinator");
-          if (payload.text === null || !payload.text.trim()) return;
-        }
-        sendAction(route, payload);
+    select.addEventListener("change", function () { choose_(select.value); });
+    $("btn-message").addEventListener("click", function () {
+      if (!state.selected || state.busy || !state.token) return;
+      var cid = state.selected;
+      var body = window.prompt("Message to " + label(rowById(cid)));
+      if (body === null || body === undefined || !String(body).trim()) return;
+      act("/api/message", { coordinator_id: cid, text: body }, "Message recorded.");
+    });
+    [["pause", "/api/pause", "Pause requested."], ["resume", "/api/resume", "Resume requested."]].forEach(function (item) {
+      $("btn-" + item[0]).addEventListener("click", function () {
+        if (state.selected) act(item[1], { coordinator_id: state.selected }, item[2]);
       });
-    }
-    bind("message", "/api/message", true, false);
-    bind("reply", "/api/answer", true, true);
-    bind("pause", "/api/pause", false, false);
-    bind("resume", "/api/resume", false, false);
-    bind("attach", "/api/attach", false, false);
+    });
+    $("btn-stop").addEventListener("click", function () { confirmStop(state.selected, $("btn-stop")); });
+    $("btn-attach").addEventListener("click", function () { if (state.selected) attach(state.selected); });
     fetch("/api/csrf", { credentials: "same-origin", cache: "no-store" })
       .then(function (response) { if (!response.ok) throw new Error("authorization unavailable"); return response.json(); })
       .then(function (data) {
         if (typeof data.csrf_token !== "string" || !data.csrf_token) throw new Error("authorization unavailable");
-        actions.token = data.csrf_token; updateControls();
+        state.token = data.csrf_token;
+        updateControls();
+        if (state.snapshot) render(state.snapshot);
       })
-      .catch(function () { $("status").textContent = "Actions unavailable; snapshot viewing continues."; });
+      .catch(function () { feedback("Actions are unavailable; viewing continues.", "error"); });
+  }
+
+  // --- refresh: one request in flight, the next one scheduled after it ------
+
+  function schedule(delay) {
+    if (state.timer !== null) clearTimeout(state.timer);
+    state.timer = setTimeout(load, delay);
+  }
+
+  function refreshNow() {
+    if (state.loading) state.reloadAfter = true; else schedule(0);
   }
 
   function load() {
-    fetch(API, { credentials: "same-origin" })
-      .then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.json();
-      })
-      .then(render)
-      .catch(function (err) {
-        var status = $("status");
-        if (status) status.textContent = "Snapshot unavailable";
-      });
+    state.timer = null;
+    if (state.loading) { state.reloadAfter = true; return; }
+    state.loading = true;
+    var epoch = state.actionEpoch;
+    var timer = null;
+    var timeout = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () { reject(new Error("timeout")); }, TIMEOUT_MS);
+    });
+    var request = fetch(API, { credentials: "same-origin", cache: "no-store" }).then(function (response) {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.json();
+    });
+    Promise.race([request, timeout]).then(function (snapshot) {
+      // Requested before the latest action: a fresher answer follows.
+      if (epoch !== state.actionEpoch) { state.reloadAfter = true; return; }
+      setConnection(true);
+      render(snapshot);
+      state.lastGood = snapshot && snapshot.generated_at;
+    }, function () {
+      setConnection(false);
+    }).then(function () {
+      clearTimeout(timer);
+      state.loading = false;
+      if (state.reloadAfter) { state.reloadAfter = false; schedule(0); } else schedule(POLL_MS);
+    });
   }
 
   initializeActions();
   load();
-  setInterval(load, POLL_MS);
 })();

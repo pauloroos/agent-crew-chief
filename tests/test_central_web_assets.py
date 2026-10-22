@@ -204,7 +204,7 @@ const fetch = async (url) => {
   if (url !== '/api/snapshot') throw new Error('unexpected request');
   return {ok: true, json: async () => fixture};
 };
-vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {document, fetch, setInterval() {}});
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {document, fetch, setTimeout() {}, clearTimeout() {}});
 setImmediate(() => console.log(JSON.stringify({
   text: Object.fromEntries(Object.entries(elements).map(([k, v]) => [k, v.textContent])), created, calls
 })));
@@ -222,7 +222,7 @@ def test_dom_renders_actual_snapshot_safely():
         "models": [{"model": "unknown-model", "role": "exec", "tier": "free", "tokens_total": None}]}],
         "questions": [{"id": "q1", "body": malicious}], "totals": {"total_tokens": None}}
     result = render_js(sample)
-    assert malicious in result["text"]["cards"] and malicious in result["text"]["questions"]
+    assert malicious in result["text"]["coordinators"] and malicious in result["text"]["questions"]
     assert "img" not in result["created"] and "script" not in result["created"]
     assert "history title" in result["text"]["history"]
     assert "score 85" in result["text"]["scoreboard"]
