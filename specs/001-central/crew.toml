@@ -443,3 +443,48 @@ proof = "python -m pytest -q"
 expect = "passed"
 depends = ["T035", "T038", "T039"]
 interfaces = { consumes = "All earlier tasks accepted; full existing/new suite; CI matrix accepted at T028.", produces = "Version 0.4.1 and changelog; installed-bundle fake end-to-end gate includes web/default/Orca modes.", verification = "Run full suite and installed-bundle fake flow, inspect public artifacts, require three-OS CI and documented fake browser smoke evidence before release review; no push/tag/release without owner action.", design = "Read the relevant contract only in specs/001-central/plan.md: Delivery split and gates" }
+
+[tasks.T041]
+task = "Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002"
+type = "code"
+risk = "medium"
+accept = ["FR-027", "FR-028", "US7/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/central_config.py", "skill/crew-chief/scripts/crew_chief/config.py", "skill/crew-chief/templates/preferences.example.toml", "tests/test_central_continuity_preferences.py"]
+proof = "python -m pytest tests/test_central_continuity_preferences.py -q"
+expect = "passed"
+depends = ["T002"]
+interfaces = { design = "Read plan.md section Coordinator continuity after quota or stall (US7, owner-approved 2026-10-21)", verification = "Defaults 40/ask; launch/project/global precedence; finite positive stall timing and strict supported-target policy; BOM/CRLF and unchanged settings sentinels." }
+
+[tasks.T042]
+task = "Detect and hold quota or stalled coordinators with durable policy in skill/crew-chief/scripts/crew_chief/central_continuity.py, skill/crew-chief/scripts/crew_chief/central_rounds.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_continuity.py; depends on T020, T041"
+type = "code"
+risk = "high"
+accept = ["FR-027", "FR-028", "SC-012", "US7/AC1", "US7/AC3", "US7/AC5"]
+files = ["skill/crew-chief/scripts/crew_chief/central_continuity.py", "skill/crew-chief/scripts/crew_chief/central_rounds.py", "skill/crew-chief/scripts/crew_chief/central_supervisor.py", "skill/crew-chief/scripts/crew_chief/central_registry.py", "tests/test_central_continuity.py"]
+proof = "python -m pytest tests/test_central_continuity.py -q"
+expect = "passed"
+depends = ["T020", "T041"]
+interfaces = { design = "Read plan.md section Coordinator continuity after quota or stall (US7, owner-approved 2026-10-21)", verification = "Fake running-child output/progress clocks prove both-window stall detection; quota output/exit and known/unknown resets; durable ask, exact-session automatic wait/resume, explicit stop; registry compatibility, no idle calls." }
+
+[tasks.T043]
+task = "Transfer the same job exclusively with persisted takeover evidence in skill/crew-chief/scripts/crew_chief/central_handoff.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_cli.py, tests/test_central_handoff.py; depends on T042"
+type = "code"
+risk = "high"
+accept = ["FR-029", "FR-028", "SC-013", "US7/AC4", "US7/AC5", "US7/AC6"]
+files = ["skill/crew-chief/scripts/crew_chief/central_handoff.py", "skill/crew-chief/scripts/crew_chief/central_supervisor.py", "skill/crew-chief/scripts/crew_chief/central_cli.py", "tests/test_central_handoff.py"]
+proof = "python -m pytest tests/test_central_handoff.py -q"
+expect = "passed"
+depends = ["T042"]
+interfaces = { design = "Read plan.md section Coordinator continuity after quota or stall (US7, owner-approved 2026-10-21)", verification = "Fake installed CLIs and temporary real job records prove same job/worktree, accepted preservation, bounded spec status/pending/open attempt/rulings/messages brief; explicit cost-target consent, lease exclusion and idempotent ruling/registry crash reconciliation; public wait/handoff/stop action boundary." }
+
+[tasks.T044]
+task = "Show coordinator interruption alerts and continuity actions in skill/crew-chief/scripts/crew_chief/central_snapshot.py, skill/crew-chief/scripts/crew_chief/central_terminal.py, skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_continuity_view.py; depends on T025, T043"
+type = "code"
+risk = "medium"
+accept = ["FR-030", "SC-014", "US7/AC2"]
+files = ["skill/crew-chief/scripts/crew_chief/central_snapshot.py", "skill/crew-chief/scripts/crew_chief/central_terminal.py", "skill/crew-chief/scripts/crew_chief/central_screen.py", "tests/test_central_continuity_view.py"]
+proof = "python -m pytest tests/test_central_continuity_view.py -q"
+expect = "passed"
+depends = ["T025", "T043"]
+interfaces = { design = "Read plan.md section Coordinator continuity after quota or stall (US7, owner-approved 2026-10-21)", verification = "Synthetic snapshot and fake actions prove top-priority quota/stall alerts, stopped/reset/unknown, wait/handoff/stop routing, no model polling and read-only viewing." }
+

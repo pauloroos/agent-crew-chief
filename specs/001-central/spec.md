@@ -94,6 +94,21 @@ works with plain Git/Python or integrates with my existing terminals.
 2. **Given** no Orca executable, **When** I use default launch/monitoring, **Then** all v0.4.0 features work without it.
 3. **Given** explicit Orca mode in v0.4.1, **When** its capability probe succeeds, **Then** worktree/terminal/message behavior meets the same backend contract; incompatibility fails without switching backend mid-launch.
 
+### User Story 7 - Continue after coordinator quota or stall (Priority: P1)
+
+As an owner, I want a stopped coordinator to remain visible and resumable so
+that the same approved job can finish without losing accepted work or silently
+increasing cost. Approved owner addition: 2026-10-21.
+
+**Acceptance Scenarios**:
+
+1. **Given** CLI output or exit reporting quota, or no job progress AND no output for `stall_minutes` (default 40), **When** supervision observes it, **Then** persist quota/stalled state, stopped-at UTC time and quota-reset UTC time when known; keep unknown reset explicit.
+2. **Given** a quota/stalled coordinator, **When** the central is viewed, **Then** its alert is at the top with stop/reset times and wait, handoff and stop options.
+3. **Given** an explicit wait choice or `on_coordinator_quota = "wait"`, **When** a known quota reset arrives, **Then** resume automatically in the same session and worktree without polling a model; unknown reset requires a new observed reset or explicit owner action, never a guessed reset.
+4. **Given** an owner-selected installed supported coordinator CLI, **When** handoff occurs after exclusive ownership is released, **Then** continue the SAME job in the SAME worktree with a new target-CLI session and a bounded takeover brief built from spec status, pending pieces, open attempt, rulings and durable messages, never old-session memory; accepted tasks remain accepted.
+5. **Given** `on_coordinator_quota = "ask" | "wait" | "handoff:<cli>"` (default `ask`), **When** quota/stall occurs, **Then** apply that choice; ask creates a durable pending question, stop preserves records, and no costlier CLI is selected without the owner's explicit choice of that CLI. A configured handoff target is an explicit owner choice, not permission to choose another target.
+6. **Given** any handoff, **When** it is attempted or completed, **Then** record a stable handoff ID, source/target/session/job/time/outcome in the central registry and a ruling in the same job, with crash-safe idempotent reconciliation and no concurrent writer.
+
 ## Requirements
 
 - **FR-001**: Add explicit user-scoped `install.py --command` for the `acc` wrapper without requiring project installation; retain the old script and never edit global preferences or PATH silently.
@@ -123,6 +138,11 @@ works with plain Git/Python or integrates with my existing terminals.
 - **FR-025**: Capture CLI-reported coordinator usage, otherwise mark character estimates; use stable event IDs to record usage exactly once in the active job and accept attributed central-session usage without guessing totals.
 - **FR-026**: Use one read-only terminal/web/JSON snapshot contract sourcing live worktree jobs and registry metadata, without a mutable metrics database or viewing side effects.
 
+- **FR-027**: Detect coordinator quota from CLI output/exit and a stall only when both job progress and output have been absent for finite positive `stall_minutes` (default 40); persist stopped/reset timestamps, with unknown reset explicit.
+- **FR-028**: Apply validated `on_coordinator_quota` ask/wait/handoff:<cli> policy; ask durably, wait without model calls until known reset then resume the exact session, or explicitly stop. No implicit cost escalation.
+- **FR-029**: Transfer the same job/worktree exclusively to an installed supported owner-chosen CLI using only bounded persisted job/spec/message evidence; record every handoff idempotently as a job ruling and central registry event, retaining accepted tasks and open attempts.
+- **FR-030**: Put quota/stall alerts at the top of the shared central view with stopped-at/reset-at (or unknown) and explicit wait/handoff/stop actions.
+
 ## Done when
 
 - **SC-001**: Fake-CLI integration covers two repositories and two worktrees of one repository, unique sessions/branches, unchanged source checkouts and no merge/push command.
@@ -136,6 +156,10 @@ works with plain Git/Python or integrates with my existing terminals.
 - **SC-009**: v0.4.1 web tests cover snapshot parity, actions, escaping, Origin/token checks, traversal, loopback binding and cleanup without live coordinators.
 - **SC-010**: v0.4.1 Orca fake-executable tests cover supported/missing/incompatible cases, session/message identity and Orca-independent default behavior.
 - **SC-011**: Release docs give exact install/launch/monitor/message/attach/pause/stop/recovery flow, split, estimate limitations and owner-controlled integration.
+
+- **SC-012**: Isolated fake-clock/CLI tests prove quota detection, both-conditions stall threshold, continuing output/progress avoiding false stall, known-reset exact-session resume, unknown-reset hold, default ask and explicit stop with zero idle model calls.
+- **SC-013**: Temporary job/worktree tests prove bounded takeover from spec status/pending/open attempt/rulings/messages, unchanged accepted tasks, installed-target and cost-choice checks, exclusive release, crash/retry idempotence and matching ruling/registry audit IDs.
+- **SC-014**: Snapshot/render/action tests put stopped coordinator alerts first and show stop/reset times plus wait/handoff/stop without model polling or accepting unapproved tasks.
 
 ## Boundaries and edge cases
 

@@ -4911,6 +4911,54 @@
       "grades": {},
       "ref": "T040",
       "task_text": "Gate the v0.4.1 web and Orca release in tests/test_central_web_gate.py, skill/crew-chief/scripts/crew_chief/__init__.py, CHANGELOG.md; depends on T035, T038, T039"
+    },
+    {
+      "n": 41,
+      "title": "T041 Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002",
+      "type": "code",
+      "risk": "medium",
+      "attempts": [],
+      "corrections": [],
+      "escalations": [],
+      "grades": {},
+      "ref": "T041",
+      "task_text": "Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002"
+    },
+    {
+      "n": 42,
+      "title": "T042 Detect and hold quota or stalled coordinators with durable policy in skill/crew-chief/scripts/crew_chief/central_continuity.py, skill/crew-chief/scripts/crew_chief/central_rounds.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_continuity.py; depends on T020, T041",
+      "type": "code",
+      "risk": "high",
+      "attempts": [],
+      "corrections": [],
+      "escalations": [],
+      "grades": {},
+      "ref": "T042",
+      "task_text": "Detect and hold quota or stalled coordinators with durable policy in skill/crew-chief/scripts/crew_chief/central_continuity.py, skill/crew-chief/scripts/crew_chief/central_rounds.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_continuity.py; depends on T020, T041"
+    },
+    {
+      "n": 43,
+      "title": "T043 Transfer the same job exclusively with persisted takeover evidence in skill/crew-chief/scripts/crew_chief/central_handoff.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_cli.py, tests/test_central_handoff.py; depends on T042",
+      "type": "code",
+      "risk": "high",
+      "attempts": [],
+      "corrections": [],
+      "escalations": [],
+      "grades": {},
+      "ref": "T043",
+      "task_text": "Transfer the same job exclusively with persisted takeover evidence in skill/crew-chief/scripts/crew_chief/central_handoff.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_cli.py, tests/test_central_handoff.py; depends on T042"
+    },
+    {
+      "n": 44,
+      "title": "T044 Show coordinator interruption alerts and continuity actions in skill/crew-chief/scripts/crew_chief/central_snapshot.py, skill/crew-chief/scripts/crew_chief/central_terminal.py, skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_continuity_view.py; depends on T025, T043",
+      "type": "code",
+      "risk": "medium",
+      "attempts": [],
+      "corrections": [],
+      "escalations": [],
+      "grades": {},
+      "ref": "T044",
+      "task_text": "Show coordinator interruption alerts and continuity actions in skill/crew-chief/scripts/crew_chief/central_snapshot.py, skill/crew-chief/scripts/crew_chief/central_terminal.py, skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_continuity_view.py; depends on T025, T043"
     }
   ],
   "spec_dir": "specs/001-central",
@@ -5453,6 +5501,12 @@
       "n": 90,
       "text": "RELATORIO FINAL DA FASE 2: T007-T014 aceitas, 8/8; nenhuma pulada; nenhuma pendente nesta fase. Nesta retomada foram concluidas T012 e T014; as seis previamente aceitas foram preservadas. Provas imediatas na branch apos accept: T012 24 passed (11.66s), T014 39 passed (2.43s). Suite COMPLETA apos ultima alteracao de codigo: python -m pytest -q -> 1318 passed, 5 skipped in 577.92s (9m37s), exit 0; nenhum rerun de flaky necessario. Diff de cada entrega conferido: nenhum teste/codigo preexistente removido indevidamente; remocoes do instalador sao substituicoes previstas para --command.\nExecutores de trabalho: apenas OpenCode *-free (DeepSeek, Beam, MiniMax, GLM, LongCat); tentativas Flint/Mimo/Nemotron e outras rotas ficaram em quota. Revisores gratuitos de outras familias: Antigravity Claude Opus/Sonnet, Gemini Flash/Argon, GPT-OSS e OpenCode-Go Muse contributor (somente revisao). Fallback do coordenador em T012 e T014 autorizado apenas apos duas falhas gratuitas de trabalho, explicitamente registrado e revisado em HEAD final por Gemini antes da entrega da fase. Quatro esperas completas de 15 minutos por quota cumpridas antes de retomar T014. Nenhum executor incluido/cheap/paid despachado, nenhum setup ou alteracao das preferencias globais.\nPerguntas para Paulo: nenhuma; nenhum arquivo de perguntas necessario. Fase 3 esta tecnicamente desbloqueada, mas a sua proxima execucao deve PRIMEIRO criar US7 conforme ruling 89, validar spec import/status e commitar antes de implementar. Nenhuma tarefa de fase 3+ foi iniciada; web/Orca 0.4.1 continuam nao autorizadas. Job permanece aberto para as proximas fases; nao executar close global. Branch feat/v0.4-central e worktree preservados; sem push, tag ou merge em main. Todos os commits da fase usam a autoria exigida e nao tem Co-Authored-By. Nenhum processo de dispatch deste job ficou ativo ao final.\nEconomia final do job (somente tokens efetivamente registrados; uso do coordenador indisponivel, nao inventado):\nfree work: 100% of pieces, 100% of recorded tokens · coordinator: not recorded · 3.1 attempts/piece · mean score 60\nalert: 3.1 attempts per piece (limit 2.5)\nalert: job took 773 min (limit 180)",
       "at": "2026-10-22T00:27:18.530162+00:00",
+      "promoted": null
+    },
+    {
+      "n": 91,
+      "text": "Phase 3 start: prior job records already clean/committed at 9db637c; phases 1/2 remain accepted. Owner-approved US7 added before implementation with FR027-030, SC012-014 and small T041-043 in Phase 3, T044 UI only in Phase 4. spec import/status validated: Phase 3 0/9, ready T015/T041, no warnings. Planning=deep, context=dependency, verification=task proofs plus independent free-family review and final FULL suite, delegation=ACC free CLI dispatch only. Owner quota fallback overrides older four-wait rulings: one 15-minute wait/retry, then coordinator fallback with explicit ruling; normal fallback only after two failed free attempts. No setup/global-preference edit; no phase 4+, web/Orca, push/tag/main merge.",
+      "at": "2026-10-22T00:30:04.333941+00:00",
       "promoted": null
     }
   ]

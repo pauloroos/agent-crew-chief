@@ -364,3 +364,45 @@ Phase 1 commits only docs/preferences/spec/ACC records. No dispatch, accept,
 close, install, merge, push or release command. After owner approval, render
 piece 1 of the recorded job with the separate released ACC and explicit project,
 then pick/dispatch/review/grade/accept in order. Stop again after phase 5.
+
+## Coordinator continuity after quota or stall (US7, owner-approved 2026-10-21)
+
+Phase 3 adds validated preferences (T041), detection/policy integration (T042)
+and same-job handoff (T043), after the existing lifecycle foundation. Phase 4
+adds display/actions (T044) after the snapshot/terminal owners. No web/Orca work.
+Use `stall_minutes = 40` (finite positive) and
+`on_coordinator_quota = "ask"` by default; allow `wait` or `handoff:claude` /
+`handoff:codex` with normal launch/project/global precedence, read-only settings.
+An explicitly configured target counts as owner choice of that CLI; installation
+alone never establishes permission to use a costlier CLI.
+
+Track output activity and durable job progress separately using injected clocks.
+During a child round, observe activity through the round runner; stall requires
+BOTH inactivity windows to expire, even when the normal finite round timeout is
+longer. Normal timeout remains distinct. Persist a continuity object with
+reason, stopped_at, quota_reset_at (nullable), policy, pending question/action and
+handoff history in the strict registry schema with backwards-compatible defaults.
+Never infer quota from an arbitrary generic error. Use adapter-normalized quota
+and recognized output/exit evidence; parse only explicit supported reset data.
+Wait until a known reset without model calls and resume the exact old session;
+unknown reset and stalled wait remain held until explicit evidence/action. Ask
+uses an idempotent durable question. Stop uses existing ownership-safe controls.
+
+Handoff first cooperatively ends the current round and acquires exclusive owner
+lease; never use a persisted PID as kill authority. Validate supported installed
+target and explicit owner choice before starting it. Keep central ID, worktree,
+authorization, active job and every accepted piece; clear only the old CLI session
+for a new target session. Preserve source session in the audit. Build the bounded
+brief from actual ACC spec status plus persisted pending pieces/open attempts,
+rulings and inbox/outbox. Never consume prior chat/session memory. Reject corrupt,
+oversized, traversal or mismatched-job evidence visibly rather than fabricate a
+brief. Stable handoff IDs and prepared/committed journal states reconcile a crash
+between ruling and registry updates without duplicate ruling or target launch;
+uncertain launches require explicit recovery. Every attempt and outcome remains
+visible in registry audit and same-job rulings. Existing executor spending gates
+remain unchanged. Tests invoke fake CLIs only.
+
+T044 reads continuity metadata through the shared snapshot, prioritizes alerts
+above ordinary questions/rows, shows UTC stopped/reset or unknown, and routes
+wait/handoff/stop through the phase-3 public action boundary. This phase-4 UI work
+is specified now but MUST NOT be implemented during the phase-3-only run.

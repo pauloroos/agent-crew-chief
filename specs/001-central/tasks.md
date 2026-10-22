@@ -1,6 +1,6 @@
 # Tasks: ACC central
 
-**Status**: Awaiting owner approval. No task has been implemented.
+**Status**: Owner-approved implementation; phases 1 and 2 accepted. US7 added per owner instruction on phase-3 start.
 
 The numbered phases below are implementation phases, not authorization to start.
 This planning session is phase 1 of the owner workflow and stops before T001.
@@ -13,14 +13,14 @@ independent-family review at the correct HEAD, grade and accept. Only accept che
 | --- | --- | --- |
 | 1: Foundation (v0.4.0) | T001–T006 | 6 |
 | 2: Launch and adapters (v0.4.0) | T007–T014 | 8 |
-| 3: Supervision and lifecycle (v0.4.0) | T015–T020 | 6 |
-| 4: Metrics and terminal (v0.4.0) | T021–T026 | 6 |
+| 3: Supervision and lifecycle (v0.4.0) | T015-T020, T041-T043 | 9 |
+| 4: Metrics and terminal (v0.4.0) | T021-T026, T044 | 7 |
 | 5: Core verification and release gate (v0.4.0) | T027–T030 | 4 |
 | 6: Web view (v0.4.1, separate approval) | T031–T035 | 5 |
 | 7: Optional Orca backend (v0.4.1) | T036–T038 | 3 |
 | 8: Web and Orca release gate (v0.4.1) | T039–T040 | 2 |
 
-Total: **40 tasks** — **30 core** and **10 follow-up**.
+Total: **44 tasks**: **34 core** and **10 follow-up**.
 Stop after T030 for owner review. Do not start T031 merely because it becomes ready.
 
 ## Phase 1: Foundation (v0.4.0)
@@ -172,6 +172,28 @@ Two coordinator fake jobs share same-family expiry, unrelated families proceed, 
 
 Proof: `python -m pytest tests/test_central_quota.py -q`.
 
+- [ ] T041 [US7] Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002
+- [ ] T042 [US7] Detect and hold quota or stalled coordinators with durable policy in skill/crew-chief/scripts/crew_chief/central_continuity.py, skill/crew-chief/scripts/crew_chief/central_rounds.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_continuity.py; depends on T020, T041
+- [ ] T043 [US7] Transfer the same job exclusively with persisted takeover evidence in skill/crew-chief/scripts/crew_chief/central_handoff.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_cli.py, tests/test_central_handoff.py; depends on T042
+
+### T041: verification boundary
+
+Defaults 40/ask; launch/project/global precedence; finite positive stall timing and strict supported-target policy; BOM/CRLF and unchanged settings sentinels.
+
+Proof: `python -m pytest tests/test_central_continuity_preferences.py -q`.
+
+### T042: verification boundary
+
+Fake running-child output/progress clocks prove both-window stall detection; quota output/exit and known/unknown resets; durable ask, exact-session automatic wait/resume, explicit stop; registry compatibility, no idle calls.
+
+Proof: `python -m pytest tests/test_central_continuity.py -q`.
+
+### T043: verification boundary
+
+Fake installed CLIs and temporary real job records prove same job/worktree, accepted preservation, bounded spec status/pending/open attempt/rulings/messages brief; explicit cost-target consent, lease exclusion and idempotent ruling/registry crash reconciliation; public wait/handoff/stop action boundary.
+
+Proof: `python -m pytest tests/test_central_handoff.py -q`.
+
 ## Phase 4: Metrics and terminal (v0.4.0)
 
 - [ ] T021 [P] [US4] Aggregate raw economy counts with coverage labels in skill/crew-chief/scripts/crew_chief/central_metrics.py, tests/test_central_metrics.py; depends on T014, T020
@@ -216,6 +238,14 @@ Proof: `python -m pytest tests/test_central_screen.py -q`.
 Render a synthetic central-runner brief and verify the quoted protocol/constraints survive installation and BOM/CRLF handling; existing job-only path remains valid; no AI trailer instruction.
 
 Proof: `python -m pytest tests/test_central_skill.py -q`.
+
+- [ ] T044 [US7] Show coordinator interruption alerts and continuity actions in skill/crew-chief/scripts/crew_chief/central_snapshot.py, skill/crew-chief/scripts/crew_chief/central_terminal.py, skill/crew-chief/scripts/crew_chief/central_screen.py, tests/test_central_continuity_view.py; depends on T025, T043
+
+### T044: verification boundary
+
+Synthetic snapshot and fake actions prove top-priority quota/stall alerts, stopped/reset/unknown, wait/handoff/stop routing, no model polling and read-only viewing.
+
+Proof: `python -m pytest tests/test_central_continuity_view.py -q`.
 
 ## Phase 5: Core verification and release gate (v0.4.0)
 
