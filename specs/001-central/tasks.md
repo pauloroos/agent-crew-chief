@@ -173,7 +173,7 @@ Two coordinator fake jobs share same-family expiry, unrelated families proceed, 
 Proof: `python -m pytest tests/test_central_quota.py -q`.
 
 - [X] T041 [US7] Add validated coordinator continuity preferences in skill/crew-chief/scripts/crew_chief/central_config.py, skill/crew-chief/scripts/crew_chief/config.py, skill/crew-chief/templates/preferences.example.toml, tests/test_central_continuity_preferences.py; depends on T002
-- [ ] T042 [US7] Detect and hold quota or stalled coordinators with durable policy in skill/crew-chief/scripts/crew_chief/central_continuity.py, skill/crew-chief/scripts/crew_chief/central_rounds.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_continuity.py; depends on T020, T041
+- [X] T042 [US7] Detect and hold quota or stalled coordinators with durable policy in skill/crew-chief/scripts/crew_chief/central_continuity.py, skill/crew-chief/scripts/crew_chief/central_rounds.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_registry.py, tests/test_central_continuity.py; depends on T020, T041
 - [ ] T043 [US7] Transfer the same job exclusively with persisted takeover evidence in skill/crew-chief/scripts/crew_chief/central_handoff.py, skill/crew-chief/scripts/crew_chief/central_supervisor.py, skill/crew-chief/scripts/crew_chief/central_cli.py, tests/test_central_handoff.py; depends on T042
 
 ### T041: verification boundary
