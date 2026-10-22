@@ -249,7 +249,7 @@ Proof: `python -m pytest tests/test_central_continuity_view.py -q`.
 
 ## Phase 5: Core verification and release gate (v0.4.0)
 
-- [ ] T027 [P] [US1] Prove the core multi-worktree coordinator flow in tests/test_central_flow.py; depends on T019, T020, T025, T026
+- [X] T027 [P] [US1] Prove the core multi-worktree coordinator flow in tests/test_central_flow.py; depends on T019, T020, T025, T026
 - [ ] T028 [P] [US6] Extend isolated core verification to macOS CI in tests/test_central_isolation.py, .github/workflows/ci.yml; depends on T027
 - [ ] T029 [P] [US6] Document core installation launch and recovery in tests/test_central_docs.py, README.md, docs/tutorials/04-central.md; depends on T025, T026, T027
 - [ ] T030 [US6] Gate the v0.4.0 core release in tests/test_central_core_gate.py, skill/crew-chief/scripts/crew_chief/__init__.py, CHANGELOG.md; depends on T027, T028, T029
