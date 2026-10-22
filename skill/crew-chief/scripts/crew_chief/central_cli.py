@@ -308,8 +308,8 @@ def handle_central(args: argparse.Namespace, browser_open: Any = None) -> int:
         if browser_open is None:
             browser_open = getattr(args, "browser_open", None)
         root = _central_dir(args)
-        release_root = Path(getattr(args, "release_root", None) or _RELEASE_ROOT)
-        assets = release_root / "skill" / "crew-chief" / "web"
+        # Beside the package, so a project's .claude/skills or .agents/skills copy works too.
+        assets = Path(__file__).resolve().parents[2] / "web"
         return central_screen.run_web(
             root,
             {"poll": poll},

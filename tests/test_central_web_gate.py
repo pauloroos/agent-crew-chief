@@ -28,6 +28,8 @@ import time
 from http.client import HTTPConnection
 from pathlib import Path
 
+import pytest
+
 from test_central_backend_cli import FAKE_ORCA
 from test_central_supervisor import CLAUDE_HELP, FAKE_CLI
 
@@ -228,6 +230,32 @@ def test_installed_bundle_fake_flow_default_orca_and_web(tmp_path, git_repo, fak
         sock.settimeout(0.5)
         assert sock.connect_ex(("127.0.0.1", port)) != 0
     assert not any(_alive(pid) for pid in pids)
+
+
+@pytest.mark.parametrize("layout", [".claude/skills", ".agents/skills"])
+def test_web_view_serves_its_assets_from_an_installed_skill(tmp_path, git_repo, fake_bin, layout):
+    """``acc central --web`` run from a project's installed skill finds its packaged assets."""
+    bin_dir = fake_bin("browser", "raise SystemExit(0)\n")
+    installed = subprocess.run([sys.executable, "-I", str(REPO_ROOT / "install.py"), str(git_repo)],
+                               capture_output=True, text=True, timeout=120)
+    assert installed.returncode == 0, installed.stderr
+    entry = git_repo / layout / "crew-chief" / "scripts" / "crew-chief.py"
+    env = {**os.environ, "AGENT_CREW_CHIEF_CENTRAL_DIR": str(tmp_path / "central"),
+           "BROWSER": str(bin_dir / ("browser.cmd" if os.name == "nt" else "browser"))}
+    web = subprocess.Popen([sys.executable, "-I", str(entry), "central", "--web", "--port", "0"],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           text=True, encoding="utf-8", env=env)
+    try:
+        url = _readline(web.stdout).strip()
+        assert re.fullmatch(r"http://127\.0\.0\.1:\d+/", url), (url, web.poll())
+        for path, kind in (("", "text/html"), ("central.css", "text/css"), ("central.js", "text/javascript")):
+            status, served, _ = _get(url + path)
+            assert (status, served.split(";")[0]) == (200, kind), path
+    finally:
+        web.terminate()
+        web.wait(timeout=10)
+        web.stdout.close()
+        web.stderr.close()
 
 
 # ---------------------------------------------------------------------------
