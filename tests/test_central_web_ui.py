@@ -236,6 +236,20 @@ def test_clock_is_outside_the_live_region_and_new_questions_are_announced_once()
     """)
 
 
+def test_simultaneous_events_are_announced_together():
+    _run(r"""
+    respond('/api/csrf', { csrf_token: 'tok' });
+    respond('/api/snapshot', snap([row(A, { repo_label: 'alpha' }), row(B, { repo_label: 'beta' })], {
+      alerts: [{ coordinator_id: A, reason: 'quota', stopped_at: '2026-01-01T00:00:00+00:00' }],
+      questions: [{ id: 'q-a', coordinator_id: A, body: 'one?' }, { id: 'q-b', coordinator_id: B, body: 'two?' }] }));
+    run(); await settle();
+    const said = text('announcer');
+    assert.match(said, /alpha · aaaaaaaa stopped by quota/);
+    assert.match(said, /question from alpha · aaaaaaaa/);
+    assert.match(said, /question from beta · bbbbbbbb/);
+    """)
+
+
 def test_reply_is_bound_to_its_own_question():
     _run(r"""
     respond('/api/csrf', { csrf_token: 'tok' });

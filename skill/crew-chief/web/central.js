@@ -146,8 +146,14 @@
   function announce(key, message) {
     if (state.announced[key]) return;
     state.announced[key] = true;
+    state.announcements.push(message);
+  }
+
+  // One live-region update per refresh, so simultaneous events are all read.
+  function flushAnnouncements() {
     var node = $("announcer");
-    if (node) node.textContent = message;
+    if (node && state.announcements.length) node.textContent = state.announcements.join(" ");
+    state.announcements = [];
   }
 
   function feedback(message, kind) {
@@ -197,6 +203,7 @@
     }
     setClass($("app"), "stale", true);
     announce("connection-lost", "Connection to ACC Central lost; the page shows the last data received.");
+    flushAnnouncements();
   }
 
   // --- rendering ------------------------------------------------------------
@@ -454,6 +461,7 @@
     renderTotals(snapshot);
     renderDiagnostics(snapshot);
     updateControls();
+    flushAnnouncements();
     var clock = $("clock");
     if (clock) {
       clear(clock);
