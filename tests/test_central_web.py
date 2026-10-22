@@ -169,3 +169,22 @@ def test_invalid_port_refused(tmp_path, port):
     from crew_chief.central_web import create_server
     with pytest.raises(ValueError):
         create_server(tmp_path, tmp_path, port)
+
+
+@pytest.mark.parametrize("text", [
+    '{"password": "x"}', '{"api_key": "y"}', "{'secret': 'z'}", '{"access_token":"tok"}',
+    'config {"passwd" : "hunter"} applied', '"API-KEY"="abc"'])
+def test_quoted_json_credentials_are_redacted_in_questions_and_diagnostics(text):
+    from crew_chief.central_web import public_snapshot
+    data = {"schema_version": 1, "coordinators": [],
+            "questions": [{"id": "q1", "body": text}], "diagnostics": [text]}
+    result = public_snapshot(data)
+    assert result["questions"][0]["body"] == "[redacted]"
+    assert result["diagnostics"] == ["[redacted]"]
+
+
+def test_plain_words_about_credentials_stay_readable():
+    from crew_chief.central_web import public_snapshot
+    text = 'Should the "password" reset flow keep its token-free design?'
+    data = {"schema_version": 1, "coordinators": [], "questions": [{"id": "q1", "body": text}]}
+    assert public_snapshot(data)["questions"][0]["body"] == text

@@ -23,7 +23,8 @@ _ASSETS = {"/": ("index.html", "text/html; charset=utf-8"),
            "/central.css": ("central.css", "text/css; charset=utf-8"),
            "/central.js": ("central.js", "text/javascript; charset=utf-8")}
 _PATH = re.compile(r"[A-Za-z]:[/\\][^\s<>\"']*|\\\\[^\s<>\"']+|(?<![\w:<])/(?:[^\s<>\"']+)|~[/\\][^\s<>\"']*")
-_CREDENTIAL_TEXT = re.compile(r"(?i)(?:api[_-]?key|secret|password|passwd|token)\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)|Bearer\s+[^\s,;]+")
+# The optional quote after the key also catches JSON/dict fragments such as {"password": "x"}.
+_CREDENTIAL_TEXT = re.compile(r"(?i)(?:api[_-]?key|secret|password|passwd|token)[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)|Bearer\s+[^\s,;]+")
 _PRIVATE_KEYS = {"repo", "worktree", "path", "root", "request", "authorization", "session_id",
                  "password", "passwd", "secret", "token", "api_key", "credential", "credentials"}
 _TOP = {"schema_version", "generated_at", "coordinators", "questions", "totals", "diagnostics", "alerts"}
