@@ -5838,6 +5838,53 @@
           "tokens_estimated": false,
           "cost_usd": null,
           "cost_known": false
+        },
+        {
+          "n": 6,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T13:28:49.524722+00:00",
+          "duration_s": 0,
+          "note": "Narrow privacy correction based on accepted67b5d9c, no task reset. Red1 labelled multiword secret left fragments, fixed by masking whole text field, combined79passed1skip. Review this exact2-file correction and focused38 proof before landing. No paid executor.",
+          "branch": "crew/20261021-0722-central-33-privacy",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-33-self",
+          "start_sha": "67b5d9c45df3ae5518db00a14c27b2b54dab27b4",
+          "end_sha": "37484184fb22bee8eacece940c20caaa10f62f22",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_web_actions.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 7,
+          "executor": "antigravity:claude-opus-5-5-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T13:29:09.032114+00:00",
+          "duration_s": 35.9,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I checked HEAD before and after the review: both times it was **3748418**, so the review went ahead. I made no edits.\n\n**Diff (67b5d9c..HEAD), 2 files:** In [central_web.py](file:///E:/DEV/acc-v041.crew/20261021-0722-central-33-self/skill/crew-chief/scripts/crew_chief/central_web.py#L65-L66), the old code swapped only each matched secret for `[redacted]`. Now, if `_CREDENTIAL_TEXT` or any `briefcheck._SECRET_RULES` pattern matches, the whole string becomes `[redacted]`. The regex at L25 stopped at the first space, which is why `password=alpha beta gamma` used to leak `beta gamma`. Since the full string is now replaced, nothing after the match can leak. The new regression test, [test_labelled_secret_with_spaces_never_leaves_fragments](file:///E:/DEV/acc-v041.crew/20261021-0722-central-33-self/tests/test_central_web_actions.py#L162-L167), checks that case.\n\n**Proof:** `python -m pytest tests/test_central_web_actions.py -q` gave **38 passed**, which matches the focused count of 38 in the brief.\n\n**Spec verdict:** This was a narrow privacy fix, so I judged it only against FR-016/FR-024 and US5/AC3: **done**. The other criteria were already accepted and this diff doesn't touch them. Extra: none.\n\n**Quality verdict:**\n- Critical: none.\n- Important: none.\n- Minor: `central_web.py` L65 now hides the whole string. A harmless message that contains `token: …` loses its entire body, including the useful context around it. That matches the \"mask entire string\" intent, so it's an accepted trade-off.\n- Minor: `test_central_web_actions.py` L163 only tests `password=`. It doesn't cover a quoted value, `Bearer` with trailing words, or a `_SECRET_RULES` match in the middle of a sentence.\n\n**Verdict: accept.**\n",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 79727,
+          "tokens_out": 1241,
+          "tokens_total": 27690,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
       "corrections": [
@@ -5845,6 +5892,11 @@
           "reason": "Salvaged timeout backend had no JS/tests; red16failed14passed proved unknown coordinator/extra argv fields accepted, duplicate retry conflict/eviction and no actual attach queue. Added strict JSON/framing/CSRF-Origin-Host/known IDs, safe errors, bounded fail-closed dedup and real attach queue; strengthened short credentials/space-path privacy. Separate surrogate red1 fixed; green37 plus accepted web proofs78passed1skip.",
           "executor": "opencode:opencode/nemotron-3-ultra-free",
           "at": "2026-10-22T13:15:01.204048+00:00"
+        },
+        {
+          "reason": "Integration privacy review proved one remaining case: unquoted labelled credential with spaces left value fragments. Red1failed then mask entire recognized credential text, green38 own/79combined1skip. Narrow security correction to accepted implementation, no accepted task reset/reimplementation; T033 already has two failed free attempts and owner exception.",
+          "executor": "coordinator:self",
+          "at": "2026-10-22T13:28:49.307815+00:00"
         }
       ],
       "escalations": [],
@@ -5861,15 +5913,15 @@
           "graded_at": "2026-10-22T13:20:29.619596+00:00"
         },
         "coordinator:self": {
-          "score": 100,
-          "explain": "adherence 9/9 → 100; 0 corrections; 0 extra; penalties none → 100",
-          "corrections": 0,
+          "score": 85,
+          "explain": "adherence 9/9 → 100; 1 correction −15; 0 extra; penalties none → 85",
+          "corrections": 1,
           "done": 9,
           "missing": 0,
           "extra": 0,
           "penalties": [],
           "executor": "coordinator:self",
-          "graded_at": "2026-10-22T13:20:29.864360+00:00"
+          "graded_at": "2026-10-22T13:30:21.468779+00:00"
         }
       },
       "ref": "T033",
@@ -5896,16 +5948,71 @@
           "reason": "unrated, no history (antigravity:gemini-4-argon-low); tier free; reviewer outside the family of: coordinator:self",
           "at": "2026-10-22T13:16:49.395201+00:00",
           "role": "review"
+        },
+        {
+          "pick": "antigravity:claude-opus-5-5-low",
+          "reason": "unrated, no history (antigravity:claude-opus-5-5-low); tier free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T13:28:57.949741+00:00",
+          "role": "review"
         }
       ],
-      "next_attempt": 6
+      "next_attempt": 8,
+      "accepted": {
+        "attempt": 3,
+        "branch": "crew/20261021-0722-central-33-self",
+        "at": "2026-10-22T13:20:31.142689+00:00"
+      }
     },
     {
       "n": 34,
       "title": "T034 Wire acc central --web startup and shutdown in tests/test_central_web_cli.py, skill/crew-chief/scripts/crew_chief/cli.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_screen.py; depends on T025, T033",
       "type": "code",
       "risk": "medium",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode-go/beam-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T13:20:47.347602+00:00",
+          "duration_s": 301.5,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "pts\\\\crew_chief\\\\central_screen.py\",\"oldString\":\"            central_screen.run_screen(\\n                root,\\\"\\\"\\\"\",\"newString\":\"            run_screen(\\n                root,\\\"\\\"\"},\"error\":\"Could not find oldString in E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-34-1\\\\skill\\\\crew-chief\\\\scripts\\\\crew_chief\\\\central_screen.py. It must match exactly, including whitespace and indentation.\",\"metadata\":{\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"path\\\": \\\"E:\\\\\\\\DEV\\\\\\\\acc-v041.crew\\\\\\\\20261021-0722-central-34-1\\\\\\\\skill\\\\\\\\crew-chief\\\\\\\\scripts\\\\\\\\crew_chief\\\\\\\\central_screen.py\\\", \\\"oldString\\\": \\\"            central_screen.run_screen(\\\\n                root,\\\\\\\"\\\\\\\"\\\\\\\"\\\", \\\"newString\\\": \\\"            run_screen(\\\\n                root,\\\\\\\"\\\\\\\"\\\"}\"},\"time\":{\"start\":1792675507274,\"end\":1792675507929}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792675508004,\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"part\":{\"id\":\"prt_163c96f24001O3PvX0CMo3xfWt\",\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"messageID\":\"msg_163c966260011LUY9qWhy7ifuF\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"9590d93f6a3e9aaf7a96584cfaf0246c0b04977c\",\"cost\":0,\"tokens\":{\"input\":470,\"output\":92,\"reasoning\":60,\"cache\":{\"read\":119488,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792675509197,\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"part\":{\"id\":\"prt_163c973cd0017wEgVTtibpGZyC\",\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"messageID\":\"msg_163c96f3c001h62EKA0ArXEJcX\",\"type\":\"step-start\",\"snapshot\":\"9590d93f6a3e9aaf7a96584cfaf0246c0b04977c\"}}\n{\"type\":\"tool_use\",\"timestamp\":1792675509981,\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"part\":{\"partID\":\"prt_163c974150017oPTVriKPpt3tL\",\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"messageID\":\"msg_163c96f3c001h62EKA0ArXEJcX\",\"type\":\"tool\",\"id\":\"call-216f4a9d-c3ff-4f09-bb33-a3d970f30ae9\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:/DEV/acc-v041.crew/20261021-0722-central-34-1\\\" && python - << 'PY'\\nimport re\\np=\\\"skill/crew-chief/scripts/crew_chief/central_screen.py\\\"\\ns=open(p).read()\\ns=s.replace(\\\"            central_screen.run_screen(\\\\n\\\", \\\"            run_screen(\\\\n\\\")\\nopen(p,\\\"w\\\").write(s)\\nprint(\\\"done\\\")\\nPY\\ngrep -n \\\"run_screen(\\\" skill/crew-chief/scripts/crew_chief/central_screen.py | tail\"},\"output\":\"done\\r\\n12:``run_screen(root, options, io, clock) -> int``\\n215:def run_screen(\\n450:            run_screen(\\n\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"exit\":0},\"content\":[{\"type\":\"text\",\"text\":\"done\\r\\n12:``run_screen(root, options, io, clock) -> int``\\n215:def run_screen(\\n450:            run_screen(\\n\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\": \\\"cd \\\\\\\"E:/DEV/acc-v041.crew/20261021-0722-central-34-1\\\\\\\" && python - << 'PY'\\\\nimport re\\\\np=\\\\\\\"skill/crew-chief/scripts/crew_chief/central_screen.py\\\\\\\"\\\\ns=open(p).read()\\\\ns=s.replace(\\\\\\\"            central_screen.run_screen(\\\\\\\\n\\\\\\\", \\\\\\\"            run_screen(\\\\\\\\n\\\\\\\")\\\\nopen(p,\\\\\\\"w\\\\\\\").write(s)\\\\nprint(\\\\\\\"done\\\\\\\")\\\\nPY\\\\ngrep -n \\\\\\\"run_screen(\\\\\\\" skill/crew-chief/scripts/crew_chief/central_screen.py | tail\\\"}\"},\"time\":{\"start\":1792675509269,\"end\":1792675509981}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792675510055,\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"part\":{\"id\":\"prt_163c97727001yiVvZqIrOEXELM\",\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"messageID\":\"msg_163c96f3c001h62EKA0ArXEJcX\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"9590d93f6a3e9aaf7a96584cfaf0246c0b04977c\",\"cost\":0,\"tokens\":{\"input\":264,\"output\":134,\"reasoning\":16,\"cache\":{\"read\":119936,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792675511108,\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"part\":{\"id\":\"prt_163c97b44001CPIGElrozWSAae\",\"sessionID\":\"ses_e9c3a8633ffeJYPHKdMfxbAGpE\",\"messageID\":\"msg_163c97736001Kevhe5Sh6fu8Ro\",\"type\":\"step-start\",\"snapshot\":\"9590d93f6a3e9aaf7a96584cfaf0246c0b04977c\"}}\n",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_cli.py",
+              "added": 50,
+              "deleted": 2
+            },
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_screen.py",
+              "added": 245,
+              "deleted": 35
+            },
+            {
+              "file": "tests/test_central_web_cli.py",
+              "added": 128,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-34-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-34-1",
+          "base": null,
+          "steps": 48,
+          "tokens_in": 4066640,
+          "tokens_out": 21036,
+          "tokens_total": 4087676,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "67b5d9c45df3ae5518db00a14c27b2b54dab27b4",
+          "end_sha": "03590fc093974e1e1287f6d92c46fe00e0d2f98d"
+        }
+      ],
       "corrections": [],
       "escalations": [],
       "grades": {},
@@ -5916,8 +6023,14 @@
           "pick": "opencode:opencode-go/beam-free",
           "reason": "best score 59.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
           "at": "2026-10-22T13:15:31.121835+00:00"
+        },
+        {
+          "pick": "opencode:opencode/nemotron-3-ultra-free",
+          "reason": "best score 18 (opencode:opencode/nemotron-3-ultra-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
+          "at": "2026-10-22T13:26:13.725433+00:00"
         }
-      ]
+      ],
+      "next_attempt": 3
     },
     {
       "n": 35,
@@ -5929,7 +6042,14 @@
       "escalations": [],
       "grades": {},
       "ref": "T035",
-      "task_text": "Prove terminal and web parity through HTTP actions in tests/test_central_web_flow.py; depends on T031, T032, T033, T034"
+      "task_text": "Prove terminal and web parity through HTTP actions in tests/test_central_web_flow.py; depends on T031, T032, T033, T034",
+      "picks": [
+        {
+          "pick": "opencode:opencode/nemotron-3.5-lightning-free",
+          "reason": "unrated, no history (opencode:opencode/nemotron-3.5-lightning-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/glm-5.3-flash-free, opencode:opencode/mimo-v2.6-flash-free",
+          "at": "2026-10-22T13:21:40.345882+00:00"
+        }
+      ]
     },
     {
       "n": 36,
@@ -7026,6 +7146,12 @@
       "n": 109,
       "text": "T033 final free Gemini4 low review actually reads all3 files including test contents, confirmsde23777 and proof37/no residual findings/no extras/9refs done. Full1a9addf..HEAD production diff preserves snapshot/asset implementation and all existing tests; only unsafe partial timeout code replaced. Request threads/Node children finished. Accept T033, rerun task proof on branch. T034 alone owns enabling/draining terminal bridge.",
       "at": "2026-10-22T13:20:30.387939+00:00",
+      "promoted": null
+    },
+    {
+      "n": 110,
+      "text": "Narrow T033 privacy correction3748418 reviewed by free Opus low at exact HEAD, focused38 passed, no Critical/Important/no extras. Whole-field masking is deliberate owner privacy tradeoff, preventing trailing fragments of multiword credentials; data/model/date counts unaffected. Existing T033 remains accepted, no reset/reimplementation or repeat of earlier phases. Land only2-file security correction and repeat focused proof; T034 runs separately with disjoint files.",
+      "at": "2026-10-22T13:30:21.712003+00:00",
       "promoted": null
     }
   ]
