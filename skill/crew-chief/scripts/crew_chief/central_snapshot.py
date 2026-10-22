@@ -228,6 +228,9 @@ def _unavailable_row(record: dict[str, Any], now_dt: datetime, error: str, workt
         repo = record.get("worktree")
     repo_label = Path(repo).name if isinstance(repo, str) and repo else ""
     metrics = central_metrics.aggregate([], [], None, now_dt)
+    continuity = record.get("continuity")
+    if not isinstance(continuity, dict):
+        continuity = None
     return {
         "id": coord_id,
         "repo_label": repo_label,
@@ -244,6 +247,7 @@ def _unavailable_row(record: dict[str, Any], now_dt: datetime, error: str, workt
         "models": [],
         "scoreboard": None,
         "last_error": error if error else record.get("last_error"),
+        "continuity": continuity,
     }
 
 
@@ -337,6 +341,10 @@ def _build_row(
     except Exception:
         scoreboard = None
 
+    continuity = record.get("continuity")
+    if not isinstance(continuity, dict):
+        continuity = None
+
     row = {
         "id": coord_id,
         "repo_label": repo_label,
@@ -353,6 +361,7 @@ def _build_row(
         "models": metrics_result.get("models", []),
         "scoreboard": scoreboard,
         "last_error": record.get("last_error"),
+        "continuity": continuity,
     }
     return row, diagnostics, valid_jobs
 
@@ -420,9 +429,34 @@ def snapshot(root: Path, now: Any, previous: dict | None = None) -> dict[str, An
     for key, value in aggregate_result.items():
         totals[key] = value
 
+    # --- continuity alerts (FR-030, US7) ------------------------------------
+    alerts: list[dict[str, Any]] = []
+    for row in coordinators:
+        if not isinstance(row, dict):
+            continue
+        continuity = row.get("continuity")
+        if not isinstance(continuity, dict):
+            continue
+        reason = continuity.get("reason")
+        if reason not in ("quota", "stall"):
+            continue
+        stopped_at = continuity.get("stopped_at")
+        quota_reset_at = continuity.get("quota_reset_at")
+        policy = continuity.get("policy", "ask")
+        actions = ["wait", "handoff", "stop"]
+        alerts.append({
+            "coordinator_id": row.get("id") or row.get("coordinator_id"),
+            "reason": reason,
+            "stopped_at": stopped_at,
+            "quota_reset_at": quota_reset_at,
+            "policy": policy,
+            "actions": actions,
+        })
+
     return {
         "schema_version": _SCHEMA_VERSION,
         "generated_at": generated_at,
+        "alerts": alerts,
         "coordinators": coordinators,
         "questions": questions,
         "totals": totals,

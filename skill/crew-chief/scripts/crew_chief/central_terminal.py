@@ -134,7 +134,27 @@ def render(snapshot: Any, selected: Any = None, width: int = 80, details: bool =
     if not isinstance(questions, list):
         questions = []
 
-    # Pending questions first.
+    # Continuity alerts first (FR-030, US7/AC2).
+    alerts = snapshot.get("alerts")
+    if isinstance(alerts, list) and alerts:
+        lines.append(_truncate("Coordinator alerts:", width))
+        for alert in alerts:
+            if not isinstance(alert, dict):
+                lines.append(_truncate(f"  ! {alert!r}", width))
+                continue
+            cid = alert.get("coordinator_id", "unknown")
+            reason = alert.get("reason", "unknown")
+            stopped_at = alert.get("stopped_at") or "unknown"
+            quota_reset_at = alert.get("quota_reset_at") or "unknown"
+            actions = alert.get("actions") or []
+            action_text = "/".join(str(a) for a in actions) if actions else "none"
+            lines.append(_truncate(
+                f"  ! {cid}: {reason} stopped={stopped_at} reset={quota_reset_at} [{action_text}]",
+                width,
+            ))
+        lines.append("")
+
+    # Pending questions next.
     if questions:
         lines.append(_truncate(f"Pending questions ({len(questions)}):", width))
         for question in questions:
