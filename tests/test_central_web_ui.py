@@ -312,6 +312,30 @@ def test_stop_asks_for_confirmation_naming_the_session():
     """)
 
 
+def test_stop_dialog_names_the_session_focuses_cancel_and_returns_focus():
+    _run(r"""
+    respond('/api/csrf', { csrf_token: 'tok' });
+    respond('/api/snapshot', snap([row(A)]));
+    run(); await settle();
+    const dialog = nativeDialog();
+    elements['btn-stop'].click(); await settle();
+    assert(dialog.open);
+    assert.equal(confirms.length, 0);
+    assert.match(text('stop-dialog-name'), /demo · aaaaaaaa/);
+    assert.equal(focused, document.getElementById('stop-cancel'));
+    dialog.close('cancel'); await settle();
+    assert.equal(posts('/api/stop').length, 0);
+    assert.equal(focused, elements['btn-stop']);
+    respond('/api/stop', { ok: true, control_id: 'c' });
+    respond('/api/snapshot', snap([row(A)]));
+    elements['btn-stop'].click(); await settle();
+    dialog.close('stop'); await settle();
+    assert.equal(posts('/api/stop')[0].body.coordinator_id, A);
+    assert.match(text('feedback'), /Stop requested for demo · aaaaaaaa/);
+    assert.equal(focused, elements['btn-stop']);
+    """)
+
+
 def test_attach_failure_is_shown_with_the_server_command_and_a_copy_button():
     _run(r"""
     respond('/api/csrf', { csrf_token: 'tok' });
