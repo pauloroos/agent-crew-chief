@@ -6975,7 +6975,99 @@
       "title": "T038 Connect explicit backend choice to launches and controls in tests/test_central_backend_cli.py, skill/crew-chief/scripts/crew_chief/central_launch.py, skill/crew-chief/scripts/crew_chief/central_cli.py, skill/crew-chief/scripts/crew_chief/central_controls.py; depends on T036, T037",
       "type": "code",
       "risk": "high",
-      "attempts": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T14:51:17.466883+00:00",
+          "duration_s": 361.5,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll start by reading the brief.\n\nNow let me explore the working directory and relevant files.\n\nNow I'll implement. Starting with `central_backend.py`:\n\nNow the backend resolution helpers:\n\nNow `central_launch.py` — the shared settings resolution and the persisted executable:\n\nNow persist the chosen executable with the launch authorization:",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_backend.py",
+              "added": 84,
+              "deleted": 0
+            },
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_cli.py",
+              "added": 2,
+              "deleted": 1
+            },
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_launch.py",
+              "added": 31,
+              "deleted": 9
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-38-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-38-1",
+          "base": null,
+          "steps": 40,
+          "tokens_in": 3763873,
+          "tokens_out": 48647,
+          "tokens_total": 3812520,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "92b1df6bbe8134714ba6de3c51b9303ca52cf815",
+          "end_sha": "6560f9124ed222680a661a6e436bfa33309413e9"
+        },
+        {
+          "n": 3,
+          "executor": "opencode:opencode-go/beam-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T15:03:43.706101+00:00",
+          "duration_s": 902.1,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "t\":0,\"tokens\":{\"input\":759,\"output\":63,\"reasoning\":372,\"cache\":{\"read\":118144,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792682141218,\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"part\":{\"id\":\"prt_1642ea622001Q8mAlrY5C4zDOC\",\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"messageID\":\"msg_1642ea090001uDJpmtV5NkOltF\",\"type\":\"step-start\",\"snapshot\":\"065030667cac7909592358c05a3993004d3eadfb\"}}\n{\"type\":\"tool_use\",\"timestamp\":1792682265563,\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"part\":{\"partID\":\"prt_1642ea875001GOpT0UbJGgm2ct\",\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"messageID\":\"msg_1642ea090001uDJpmtV5NkOltF\",\"type\":\"tool\",\"id\":\"call-7c6e9a54-399b-4c1a-9435-6515e93fd02f\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-38-3\\\" && timeout 590 python -m pytest -q 2>&1 | tail -15\"},\"output\":\"(no output)\\n\\nCommand exceeded timeout of 120000 ms. Retry with a larger timeout if the command is expected to take longer.\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"timeout\":true},\"content\":[{\"type\":\"text\",\"text\":\"(no output)\\n\\nCommand exceeded timeout of 120000 ms. Retry with a larger timeout if the command is expected to take longer.\"},{\"type\":\"text\",\"text\":\"Timed out before completion\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\": \\\"cd \\\\\\\"E:\\\\\\\\DEV\\\\\\\\acc-v041.crew\\\\\\\\20261021-0722-central-38-3\\\\\\\" && timeout 590 python -m pytest -q 2>&1 | tail -15\\\"}\"},\"time\":{\"start\":1792682141813,\"end\":1792682265563}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792682265638,\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"part\":{\"id\":\"prt_164308c26001W42l2sLpZTOWLd\",\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"messageID\":\"msg_1642ea090001uDJpmtV5NkOltF\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"065030667cac7909592358c05a3993004d3eadfb\",\"cost\":0,\"tokens\":{\"input\":509,\"output\":68,\"reasoning\":89,\"cache\":{\"read\":118848,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792682266626,\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"part\":{\"id\":\"prt_164309002001sSa1IzCDSO3dtr\",\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"messageID\":\"msg_164308c4a001wx2BLXZdKXb9Aq\",\"type\":\"step-start\",\"snapshot\":\"065030667cac7909592358c05a3993004d3eadfb\"}}\n{\"type\":\"tool_use\",\"timestamp\":1792682268287,\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"part\":{\"partID\":\"prt_1643090c5002VJluumOuF84hT9\",\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"messageID\":\"msg_164308c4a001wx2BLXZdKXb9Aq\",\"type\":\"tool\",\"id\":\"call-3b67da74-a441-4a97-8a05-c6d2bb91e7bb\",\"tool\":\"shell\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cd \\\"E:\\\\DEV\\\\acc-v041.crew\\\\20261021-0722-central-38-3\\\" && python -m pytest -q > /tmp/pytest_full.log 2>&1 &\\necho \\\"started $!\\\"\"},\"output\":\"started 3777\\n\",\"title\":\"shell\",\"metadata\":{\"metadata\":{\"status\":\"completed\",\"truncated\":false,\"exit\":0},\"content\":[{\"type\":\"text\",\"text\":\"started 3777\\n\"}],\"providerCall\":{\"executed\":false},\"providerResult\":{\"executed\":false},\"rawInput\":\"{\\\"command\\\": \\\"cd \\\\\\\"E:\\\\\\\\DEV\\\\\\\\acc-v041.crew\\\\\\\\20261021-0722-central-38-3\\\\\\\" && python -m pytest -q > /tmp/pytest_full.log 2>&1 &\\\\necho \\\\\\\"started $!\\\\\\\"\\\"}\"},\"time\":{\"start\":1792682266821,\"end\":1792682268287}}}}\n{\"type\":\"step_finish\",\"timestamp\":1792682268381,\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"part\":{\"id\":\"prt_1643096dd0018YCiM9JRBstDt1\",\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"messageID\":\"msg_164308c4a001wx2BLXZdKXb9Aq\",\"type\":\"step-finish\",\"reason\":\"tool-calls\",\"snapshot\":\"065030667cac7909592358c05a3993004d3eadfb\",\"cost\":0,\"tokens\":{\"input\":264,\"output\":76,\"reasoning\":68,\"cache\":{\"read\":119296,\"write\":0}}}}\n{\"type\":\"step_start\",\"timestamp\":1792682269471,\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"part\":{\"id\":\"prt_164309b1f001rjohVANukxn7Zs\",\"sessionID\":\"ses_e9bdc46baffe6FFs0ct3rb3epw\",\"messageID\":\"msg_1643096fc001kYtyKtDNuVMiaj\",\"type\":\"step-start\",\"snapshot\":\"065030667cac7909592358c05a3993004d3eadfb\"}}\n",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_backend.py",
+              "added": 80,
+              "deleted": 0
+            },
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_cli.py",
+              "added": 52,
+              "deleted": 8
+            },
+            {
+              "file": "tests/conftest.py",
+              "added": 10,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_backend_cli.py",
+              "added": 174,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-38-3",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-38-3",
+          "base": null,
+          "steps": 67,
+          "tokens_in": 5949300,
+          "tokens_out": 25022,
+          "tokens_total": 5974322,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "92b1df6bbe8134714ba6de3c51b9303ca52cf815",
+          "end_sha": "d4ceb87bdc3f97cad4fc7404ad960e8ba89cb910"
+        }
+      ],
       "corrections": [],
       "escalations": [],
       "grades": {},
@@ -6986,8 +7078,19 @@
           "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
           "reason": "best score 58.5 (opencode:opencode-go/minimax-m3.1-flash-free); tier free",
           "at": "2026-10-22T14:51:02.821720+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 54.2 (opencode:opencode-go/beam-free); tier free",
+          "at": "2026-10-22T14:57:59.705544+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/beam-free",
+          "reason": "best score 54.2 (opencode:opencode-go/beam-free); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/mimo-v2.6-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
+          "at": "2026-10-22T15:03:18.608397+00:00"
         }
-      ]
+      ],
+      "next_attempt": 4
     },
     {
       "n": 39,
@@ -8150,6 +8253,24 @@
       "n": 126,
       "text": "T037 final free Muse1.2 review confirms95772cd twice,15passed/all5refs/no Critical/Important/extras; only minor readability notes. Coordinator checked full3-file diff, preserved every existing test and accepted core preparation; initial own missing-request/source guards plus nested-response/JSON-failure corrections all accounted (4), no pending code fix. Accept final attempt then branchproof. All executor/review/test processes finished. Actual Orca probes/show were read-only; no live resources/models. T038 only remaining phase7 piece; no Phase8.",
       "at": "2026-10-22T14:50:12.099678+00:00",
+      "promoted": null
+    },
+    {
+      "n": 127,
+      "text": "Coordinator handoff from Codex to claude-ghost — previous coordinator stopped on quota; resuming Phase 7 with T036/T037 accepted, T038 ready — no cost if wrong, operational decision",
+      "at": "2026-10-22T15:01:58.186404+00:00",
+      "promoted": null
+    },
+    {
+      "n": 128,
+      "text": "T038 self-implemented after 3 failed free executor attempts (minimax-m3.1-flash-free timeout, beam-free quota/failures) — owner cost rule allows self-fix after 2 failures; will still send to free reviewer from another family — no cost if wrong",
+      "at": "2026-10-22T15:18:34.762823+00:00",
+      "promoted": null
+    },
+    {
+      "n": 129,
+      "text": "T038 self-implemented by coordinator after 3 failed free executor attempts (timeout/quota) — owner rule: fix yourself after two failures; proof passes 9/9 — no cost if wrong, operational decision",
+      "at": "2026-10-22T15:22:29.058555+00:00",
       "promoted": null
     }
   ]
