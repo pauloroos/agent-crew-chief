@@ -41,6 +41,7 @@ def _public(value, depth=0):
     if isinstance(value, dict):
         return {str(k): _public(v, depth + 1) for k, v in list(value.items())[:2048]
                 if isinstance(k, str) and k.lower() not in _PRIVATE_KEYS
+                and not k.lower().endswith("token")
                 and not any(word in k.lower() for word in ("password", "secret", "credential", "api_key"))}
     if isinstance(value, list):
         return [_public(v, depth + 1) for v in value[:2048]]

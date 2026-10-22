@@ -125,6 +125,18 @@ def test_snapshot_error_is_generic(tmp_path, monkeypatch):
         assert status == 503 and str(tmp_path).encode() not in body
 
 
+def test_credential_key_variants_and_public_slashes():
+    from crew_chief.central_web import public_snapshot
+    data = {"schema_version": 1, "coordinators": [], "totals": {
+        "tokens_total": 17, "total_tokens": 17, "auth_token": "opaque-value",
+        "accessToken": "opaque-value", "model": "provider/model", "title": "a/b 2026/10/22"}}
+    result = public_snapshot(data)["totals"]
+    assert "auth_token" not in result and "accessToken" not in result
+    assert result["tokens_total"] == result["total_tokens"] == 17
+    assert result["model"] == "provider/model"
+    assert result["title"] == "a/b 2026/10/22"
+
+
 def test_socket_released(tmp_path, monkeypatch):
     import socket
     with running(tmp_path, monkeypatch) as (server, _):
