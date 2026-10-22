@@ -225,14 +225,35 @@ def _registry_path(root: Path) -> Path:
     return path
 
 
+#: Attempts and pause for a read that meets a concurrent atomic replace.
+_READ_RETRIES = 40
+_READ_RETRY_S = 0.025
+
+
+def _read_prefix(path: Path, limit: int) -> bytes:
+    """Read up to ``limit`` bytes without a lock.
+
+    On Windows, opening a file while another process ``os.replace``s it fails
+    with ``PermissionError`` for a moment; retry briefly instead of failing.
+    """
+    for attempt in range(_READ_RETRIES):
+        try:
+            with path.open("rb") as handle:
+                return handle.read(limit)
+        except PermissionError:
+            if os.name != "nt" or attempt == _READ_RETRIES - 1:
+                raise
+            time.sleep(_READ_RETRY_S)
+    raise AssertionError("unreachable")
+
+
 def _read_bounded(path: Path, max_bytes: int) -> bytes:
     """Read at most ``max_bytes`` bytes; an oversize file is refused.
 
     The unread prefix is never decoded, so a registry that outgrew its cap is
     reported instead of silently truncated or loaded into memory whole.
     """
-    with path.open("rb") as handle:
-        data = handle.read(max_bytes + 1)
+    data = _read_prefix(path, max_bytes + 1)
     if len(data) > max_bytes:
         raise RegistryError(
             f"{path}: exceeds the {max_bytes} byte read cap; explicit recovery required"

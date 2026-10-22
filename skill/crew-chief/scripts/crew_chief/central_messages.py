@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .records import write_atomic
-from .central_registry import RegistryError, _registry_lock
+from .central_registry import RegistryError, _read_prefix, _registry_lock
 
 __all__ = [
     "BODY_MAX_BYTES",
@@ -84,8 +84,7 @@ def _canonical_uuid(value: Any) -> str | None:
 
 
 def _read_bounded(path: Path, max_bytes: int) -> bytes:
-    with path.open("rb") as handle:
-        data = handle.read(max_bytes + 1)
+    data = _read_prefix(path, max_bytes + 1)
     if len(data) > max_bytes:
         raise MessageError(
             f"{path}: exceeds the {max_bytes} byte read cap; explicit recovery required"

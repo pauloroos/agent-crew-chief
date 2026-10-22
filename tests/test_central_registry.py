@@ -642,3 +642,21 @@ def test_persisted_same_nonce_and_pid_do_not_prove_local_ownership(tmp_path):
         with owner_lease(root, identifier, "persisted", timeout_s=0.03):
             pytest.fail("a persisted PID/nonce bypassed explicit recovery")
     assert path.read_bytes() == before
+
+
+def test_a_read_during_a_windows_replace_is_retried(tmp_path, monkeypatch):
+    path = tmp_path / "registry.json"
+    path.write_bytes(b"{}")
+    real_open = Path.open
+    failures = [PermissionError(13, "Permission denied")] * 3
+
+    def flaky_open(self, *args, **kwargs):
+        if self == path and failures:
+            raise failures.pop()
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(central_registry.os, "name", "nt")
+    monkeypatch.setattr(central_registry, "_READ_RETRY_S", 0)
+    monkeypatch.setattr(Path, "open", flaky_open)
+    assert central_registry._read_prefix(path, 10) == b"{}"
+    assert not failures
