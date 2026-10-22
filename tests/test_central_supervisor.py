@@ -258,10 +258,11 @@ def test_start_supervisor_bootstraps_a_detached_hidden_interpreter(tmp_path, mon
     argv = calls[0]["argv"]
     kwargs = calls[0]["kwargs"]
     assert argv[0] == sys.executable
-    assert argv[1] == "-c"
-    assert "supervisor_main" in argv[2]
-    assert argv[3:5] == ["--central-dir", str(root)]
-    assert argv[5:7] == ["--coordinator", record["id"]]
+    assert argv[1] == "-I"
+    assert argv[2] == "-c"
+    assert "supervisor_main" in argv[3]
+    assert argv[4:6] == ["--central-dir", str(root)]
+    assert argv[6:8] == ["--coordinator", record["id"]]
     assert Path(kwargs["cwd"]) == Path(record["worktree"])
     assert kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0] == str(
         Path(central_supervisor.__file__).resolve().parent.parent
@@ -730,3 +731,31 @@ def test_the_detached_supervisor_runs_a_fake_cli_round_and_consumes_messages(
     assert state["state"] == "completed"
     assert state["pid"] != os.getpid()
     assert state["nonce"]
+
+
+def test_state_is_rechecked_after_exclusive_lease_acquisition(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    root, record, coord = prepared(tmp_path)
+    original = central_registry.owner_lease
+
+    @contextmanager
+    def raced(*args, **kwargs):
+        with original(*args, **kwargs) as lease:
+            central_registry.update_record(root, record['id'], {'state': 'completed'})
+            yield lease
+
+    monkeypatch.setattr(central_registry, 'owner_lease', raced)
+    runner = FakeRunner([lambda rec: round_result(rec, state='completed', session_id='unexpected')])
+    with pytest.raises(central_supervisor.SupervisorError, match='recovery|completed'):
+        supervise(root, record['id'], FakeClock(), runner)
+    assert runner.calls == []
+    assert central_registry.load_registry(root)['coordinators'][record['id']]['state'] == 'completed'
+
+
+def test_bootstrap_uses_isolated_python_even_with_hostile_pythonpath(tmp_path, monkeypatch):
+    root, record, coord = prepared(tmp_path)
+    monkeypatch.setenv('PYTHONPATH', str(tmp_path / 'untrusted'))
+    monkeypatch.setattr(central_supervisor.subprocess, 'Popen', lambda *a, **k: SimpleNamespace(pid=123))
+    result = start_supervisor(record, root)
+    assert result['ok']
+    assert result['argv'][1] == '-I'

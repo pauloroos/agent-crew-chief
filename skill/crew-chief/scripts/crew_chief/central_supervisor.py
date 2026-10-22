@@ -581,8 +581,9 @@ def start_supervisor(record: dict, root: Path) -> dict:
             raise SupervisorError(f"the coordinator worktree is missing: {worktree!r}")
         argv = [
             sys.executable,
+            "-I",
             "-c",
-            _BOOTSTRAP,
+            "import sys; sys.path.insert(0, " + repr(str(Path(__file__).resolve().parent.parent)) + ");\n" + _BOOTSTRAP,
             "--central-dir",
             str(root),
             "--coordinator",
@@ -681,6 +682,12 @@ def supervise(root: Path, coordinator_id: str, clock: Any, runner: Any) -> None:
             )
         except central_registry.RegistryError as exc:
             raise SupervisorError(str(exc)) from exc
+        # State inspected before acquisition can change while another owner exits.
+        record = _stored_record(root, coordinator_id)
+        state = record.get("state")
+        if state not in _STARTABLE:
+            raise SupervisorError(f"coordinator is {state!r}; explicit recovery required")
+        poll_s, timeout_s = _settings(record)
         status = _Status(root, coordinator_id, coord, clock, nonce)
         if runner is None:
             runner = _Runner(root, status)
