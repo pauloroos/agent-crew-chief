@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
-## [0.4.1] - 2026-10-23
+## [0.4.1] - 2026-10-22
 
 ### Added
 - **Web view:** `acc central --web` serves a loopback-only dashboard with packaged static assets (cards, charts, history, scoreboard, messages, questions) and controlled terminal entry; no external network, no CDN, no secrets or personal paths in served content (FR-016, SC-009).
@@ -23,6 +23,9 @@ All notable changes to this project are documented here. Versions follow
 - The web snapshot now redacts credentials written as quoted JSON keys, such as `{"password": "x"}`.
 - A browser attach request reports whether the session opened or why it failed, with the copyable command; the command keeps an explicit `--central-dir` (home shown as `~`, which `acc` now expands itself).
 - The browser view refreshes one request at a time and never shows an older snapshot after a newer one, keeps the selected coordinator by id instead of retargeting, draws proportional bars, labels estimated or partial token counts, announces only new questions, alerts and connection loss, gives each question its own Reply, confirms Stop and can stop a coordinator (`/api/stop`), and shows the scoreboard as a table (`scoreboard_rows` in the snapshot).
+
+### Notes
+- Not in 0.4.1: wait/hand-off actions on quota or stall alerts in the browser (the browser offers Stop), and a per-coordinator message/reply history.
 
 ## [0.4.0] - 2026-10-22
 
