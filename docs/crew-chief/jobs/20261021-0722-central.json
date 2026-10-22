@@ -6384,10 +6384,188 @@
       "title": "T036 Define optional backend operations over accepted core in skill/crew-chief/scripts/crew_chief/central_backend.py, tests/test_central_backend.py; depends on T030, T035",
       "type": "code",
       "risk": "medium",
-      "attempts": [],
-      "corrections": [],
+      "attempts": [
+        {
+          "n": 1,
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T14:04:57.086203+00:00",
+          "duration_s": 6.5,
+          "status": "quota",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "provider.quota: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go (HTTP 429)",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-36-1",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-36-1",
+          "base": null,
+          "steps": 1,
+          "tokens_in": 1088,
+          "tokens_out": 29,
+          "tokens_total": 1117,
+          "tokens_estimated": true,
+          "cost_usd": null,
+          "cost_known": false,
+          "start_sha": "0023c39e6523c10210f89787bb4ba83b2efdc196",
+          "end_sha": "0023c39e6523c10210f89787bb4ba83b2efdc196"
+        },
+        {
+          "n": 2,
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "role": "exec",
+          "cost": "free",
+          "started": "2026-10-22T14:05:37.842145+00:00",
+          "duration_s": 361.7,
+          "status": "timeout",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "I'll start by reading the brief.\n\nNow I understand the codebase. Let me write the focused tests first (red), as the brief requires.\n\nNow let me run the tests to observe the red state:\n\nRed confirmed. Now the implementation:\n\nThe failure is my test's expectation; the implementation raises for a malformed ID (like core does). Let me fix the test to cover both cases:",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_backend.py",
+              "added": 201,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_backend.py",
+              "added": 370,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": "crew/20261021-0722-central-36-2",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-36-2",
+          "base": null,
+          "steps": 29,
+          "tokens_in": 1995487,
+          "tokens_out": 22065,
+          "tokens_total": 2017552,
+          "tokens_estimated": false,
+          "cost_usd": 0.0,
+          "cost_known": true,
+          "start_sha": "0023c39e6523c10210f89787bb4ba83b2efdc196",
+          "end_sha": "beb0429ed8a14b8b9fcb158ab3347be466a04437"
+        },
+        {
+          "n": 3,
+          "executor": "coordinator:self",
+          "role": "exec",
+          "cost": "unknown",
+          "status": "ok",
+          "started": "2026-10-22T14:14:11.824602+00:00",
+          "duration_s": null,
+          "note": "After two free failures, salvaged MiniMax backend/tests. Coordinator proof15passed; reproduced import-order regression1failed; replaced global sys.modules assertion by fresh -I process import blocker. Final16passed21.30s, diffcheck clean. Full diff two new allowed files only; no deletions. No owned processes survive.",
+          "branch": "crew/20261021-0722-central-36-self",
+          "worktree": "E:\\DEV\\acc-v041.crew\\20261021-0722-central-36-self",
+          "start_sha": "0023c39e6523c10210f89787bb4ba83b2efdc196",
+          "end_sha": "a83a3edfc249d919a30f118c01a394f5aea96073",
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "proof": {
+            "command": "python -m pytest tests/test_central_backend.py -q",
+            "status": "passed"
+          }
+        },
+        {
+          "n": 4,
+          "executor": "opencode:opencode-go/muse-spark-1.3-contributor",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T14:14:33.841171+00:00",
+          "duration_s": 103.0,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "- Commits in range: `beb0429` (piece 36 attempt 2) + `a83a3ed` (test isolation fix). No AI co-author trailers in messages. No salvaged MiniMax/production code beyond these two files; stat is 590 insertions, 0 deletions elsewhere.\n\nkend, same launch/message/state/attach contract; default never needs Orca): **done** — `Backend` Protocol defines probe/create/start/send/attach/state (`central_backend.py:62-92`); `DefaultBackend` delegates each op to accepted core; `probe` needs no executable (`131-138`); default never imports `central_orca` (fresh-process test) and `shutil.which` spy proves no `orca` lookup.\n- FR-018 (preserve v0.3.4 SDD/job/executor behavior; existing pick/brief/dispatch/review/grade/accept/close): **done** — pure delegation, zero edits to existing modules; `create` returns core `prepare_launch` result verbatim incl. diagnostics; `start`/`send`/`attach`/`state` pass through/wrap core errors without changing core shapes.\n- SC-010 (fake-executable tests: supported/missing/incompatible, session/message identity, Orca-independent default): **done at this boundary** — fake `claude` stub only; covers create-ok + registry identity, launch-fail diagnostic, missing `request_file`, `send` id/body round-trip, `state` session/backend/cli/worktree identity, missing/malformed id, supervisor delegation + error preservation, attach terminal/timeout forwarding, default-never-resolves-orca, fresh-process no-import-orca. Full Orca-backend supported/missing/incompatible probe matrix belongs to the neighboring Orca task (no `central_orca` module in allowed files by design).\n- US6/AC2 (no Orca executable → all v0.4.0 default features work): **done** — proven by `test_the_default_mode_never_resolves_or_invokes_orca` plus the other 15 tests running with no `orca` on PATH.\n- US6/AC3 (explicit Orca mode: probe success → same contract; incompatibility fails without mid-launch switching): **done at this boundary** — negative half proven: `test_create_refuses_an_explicit_orca_choice_instead_of_switching_backend` asserts `ok is False` + `\"backend\" in error`, delegated from core `_BACKEND=\"default\"` gate (`central_launch.py:150-153`), no fallback/switch. Positive Orca-success half is out of boundary (no Orca backend exists yet in allowed files).\n- extra: **none** — no API, option, dependency, or behavior beyond the criteria. `TERMINAL_KEY`/`ATTACH_TIMEOUT_KEY`/`ATTACH_TIMEOUT_S` are required by the attach contract, not bloat.\n\n## Quality verdict\n- Critical: **none found**.\n- Important: **none found** — no bloat (stdlib only: `pathlib`, `typing`; no new dependency/wrapper/\"for later\" code).\n- Minor:\n  - `skill/crew-chief/scripts/crew_chief/central_backend.py:168-175` — `attach` forwards `attach_timeout_s` unvalidated; a non-numeric value passes into `central_attach.attach`. Core owns validation; acceptable but garbage-in travels one layer deep.\n  - `skill/crew-chief/scripts/crew_chief/central_backend.py:160-166,177-192` — `send` wraps only `MessageError` and `state` catches only `RegistryError`; `OSError`/corrupt-registry paths propagate unwrapped instead of as `BackendError`/`_state(error=...)`. Diagnostics still visible, contract shape slightly inconsistent on IO failure.\n  - `skill/crew-chief/scripts/crew_chief/central_backend.py:62-92` — `Backend` Protocol does not declare the `name` attribute `DefaultBackend` exposes (`127`); a future Orca backend's dispatch key is out-of-contract. Suggest adding `name: str` to the Protocol when the Orca task lands.\n  - `skill/crew-chief/scripts/crew_chief/central_backend.py:99` — `_coordinator_id` couples to private `central_messages._canonical_uuid` (three modules each define their own copy). Works identically today; fragile if canonicalization ever diverges.\n\nSkipped: line-by-line audit of the delegated core modules (trusted as accepted T030/T035 prerequisites). Risk: US6/AC3 positive path (real Orca probe→same-contract behavior) is unverified here by design — it must be proven by the Orca-backend task.",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 11,
+          "tokens_in": 347535,
+          "tokens_out": 4469,
+          "tokens_total": 352004,
+          "tokens_estimated": false,
+          "cost_usd": 0.005669296000000001,
+          "cost_known": true
+        },
+        {
+          "n": 5,
+          "executor": "opencode:opencode-go/muse-spark-1.3-contributor",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T14:17:27.811759+00:00",
+          "duration_s": 37.6,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Your executor review is queued — reading the brief now.\n\nBrief received — verifying HEAD and reviewing the diff now.\n\nHEAD confirmed: a83a3ed\nProof: python -m pytest tests/test_central_backend.py -q => 16 passed.\nFR-017 done: Backend proto+DefaultBackend delegates core, default probe ok, no orca which/import.\nFR-018 done: create/start/send/attach/state delegate prepare_launch/supervisor/messages/attach/registry, IDs/errors preserved, orca choice refused not switched.\nSC-010 missing: only default/no-Orca covered; supported/missing/incompatible Orca cases deferred (no Orca impl yet, by boundary).\nUS6/AC2 done: no-Orca default works, spy+fresh-process no-import tests.\nUS6/AC3 missing: no explicit Orca mode yet, only refusal path; expected next task.\nextra: none. Only 2 allowed files: central_backend.py+test_central_backend.py; no outside files, no deletions.\nMinor: central_backend.py:104 uses central_messages._canonical_uuid private; pin to public helper when available. Important: none. Critical: none.\nHEAD confirmed: a83a3ed",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 5,
+          "tokens_in": 106593,
+          "tokens_out": 567,
+          "tokens_total": 107160,
+          "tokens_estimated": false,
+          "cost_usd": 0.0029385800000000005,
+          "cost_known": true
+        }
+      ],
+      "corrections": [
+        {
+          "reason": "Coordinator reproduced global sys.modules test pollution: 1 failed when Orca already imported. Replace with fresh isolated import/probe test; preserve all previous assertions by relocating them.",
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "at": "2026-10-22T14:13:24.482498+00:00"
+        }
+      ],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "opencode:opencode/deepseek-v4.1-flash-free": {
+          "score": 0,
+          "explain": "adherence 0/5 → 0; 0 corrections; 0 extra; penalties none → 0",
+          "corrections": 0,
+          "done": 0,
+          "missing": 5,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode/deepseek-v4.1-flash-free",
+          "graded_at": "2026-10-22T14:16:00.731041+00:00"
+        },
+        "opencode:opencode-go/minimax-m3.1-flash-free": {
+          "score": 85,
+          "explain": "adherence 5/5 → 100; 1 correction −15; 0 extra; penalties none → 85",
+          "corrections": 1,
+          "done": 5,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "graded_at": "2026-10-22T14:16:00.968588+00:00"
+        },
+        "coordinator:self": {
+          "score": 100,
+          "explain": "adherence 5/5 → 100; 0 corrections; 0 extra; penalties none → 100",
+          "corrections": 0,
+          "done": 5,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:self",
+          "graded_at": "2026-10-22T14:18:30.072790+00:00"
+        }
+      },
       "ref": "T036",
       "task_text": "Define optional backend operations over accepted core in skill/crew-chief/scripts/crew_chief/central_backend.py, tests/test_central_backend.py; depends on T030, T035",
       "picks": [
@@ -6395,8 +6573,26 @@
           "pick": "opencode:opencode/deepseek-v4.1-flash-free",
           "reason": "best score 63.4 (opencode:opencode/deepseek-v4.1-flash-free); tier free; skipped for quota: opencode:opencode/mimo-v2.6-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
           "at": "2026-10-22T14:04:37.206602+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/minimax-m3.1-flash-free",
+          "reason": "best score 62.2 (opencode:opencode-go/minimax-m3.1-flash-free); tier free; skipped for quota: opencode:opencode/mimo-v2.6-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
+          "at": "2026-10-22T14:05:24.892643+00:00"
+        },
+        {
+          "pick": "opencode:opencode-go/muse-spark-1.2-contributor",
+          "reason": "unrated, no history (opencode:opencode-go/muse-spark-1.2-contributor); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/nemotron-3.5-super-vl-free",
+          "at": "2026-10-22T14:13:28.202804+00:00",
+          "role": "review"
+        },
+        {
+          "pick": "opencode:opencode-go/muse-spark-1.3-contributor",
+          "reason": "unrated, no history (opencode:opencode-go/muse-spark-1.3-contributor); tier free; skipped for quota: opencode:opencode/deepseek-v4.1-flash-free, opencode:opencode/nemotron-3.5-super-vl-free; reviewer outside the family of: coordinator:self",
+          "at": "2026-10-22T14:14:15.474024+00:00",
+          "role": "review"
         }
-      ]
+      ],
+      "next_attempt": 6
     },
     {
       "n": 37,
@@ -7541,6 +7737,24 @@
       "n": 119,
       "text": "Phase7 only: T030 and Phase6 already accepted; clean job record at resume, no pending docs to commit. Policy planning=compact/context=dependency/verification=full/delegation=ACC-free-exec+independent-review. Scope T036-T038 plus job/report; no Phase8/version/release. Preserve preferences and accepted tasks; branch proofs after each accept, full suite at phase end. Only opencode/*-free or opencode-go/*-free execution; reviewer free outside author family. No unmeasured usage invented.",
       "at": "2026-10-22T14:04:33.951460+00:00",
+      "promoted": null
+    },
+    {
+      "n": 120,
+      "text": "T036 two failed free attempts: DeepSeek quota/no diff; MiniMax361.7s timeout with only allowed backend/tests committed. Owned executor PIDs5968/25836 finished; no tests remain. Coordinator may now salvage and correct this piece, record actual proof and independent free review. Red is reported in executor note; coordinator will verify focused proof and regression at actual HEAD. No paid executor, no quota-wide exhaustion.",
+      "at": "2026-10-22T14:12:06.902104+00:00",
+      "promoted": null
+    },
+    {
+      "n": 121,
+      "text": "T036 first free Muse1.3 review ok/no Critical or Important and reported proof16passed, but answer exceeded released adapter4000char cap and lost HEAD confirmation. Reject this review as acceptance evidence; preserve history, request concise repeat at same exact HEAD. Minor suggestions do not require changing accepted-core semantics; no unwanted deletions/extra files in coordinator diff.",
+      "at": "2026-10-22T14:17:24.974785+00:00",
+      "promoted": null
+    },
+    {
+      "n": 122,
+      "text": "T036 concise independent free Muse1.3 review confirms a83a3ed twice and16passed, no Critical/Important/extras/deletions. SC010/US6AC3 positive Orca matrix explicitly belongs to T037/T038 per declared boundary, not a missing T036 deliverable; all T036 contract/default/identity/error/no-Orca obligations done. Minor private UUID helper/IO exception suggestions preserve existing core semantics and need no scope expansion. Accept then repeat branch proof; owned executor/review processes finished.",
+      "at": "2026-10-22T14:18:29.871616+00:00",
       "promoted": null
     }
   ]
