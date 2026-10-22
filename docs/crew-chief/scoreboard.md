@@ -4,7 +4,7 @@
 
 | executor | score | n | attempts/pass | mean steps | mean tokens | mean duration | last graded |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| coordinator:manual | 85 | 1 | 1.5 | — | — | 3s | 2026-10-22 |
+| coordinator:manual | 70 | 2 | 2 | — | — | 4s | 2026-10-22 |
 | opencode:opencode/deepseek-v4.1-flash-free | 63.4 | 9 | 1.5 | 28 | 1624980 | 294s | 2026-10-21 |
 | opencode:opencode-go/minimax-m3.1-flash-free | 62.2 | 9 | 2.8 | 17.2 | 678711 | 225s | 2026-10-22 |
 | opencode:opencode-go/longcat-2.5-preview-free | 60 | 5 | 2.7 | 9 | 251825 | 148s | 2026-10-21 |

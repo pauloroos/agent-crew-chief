@@ -4725,11 +4725,114 @@
           },
           "fallback": true,
           "n": 3
+        },
+        {
+          "n": 4,
+          "executor": "antigravity:gemini-3.8-flash-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:50:57.846761+00:00",
+          "duration_s": 75.3,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "- Test suite comprehensively exercises pause, quota states, supervisor restarts, stale PID reconciliation, attach contention/lease locking, and explicit stop commands without signalling foreign processes.\n- Given pause, quota, central restart or process death, state reconciliation keeps coordinator messages/rounds intact; only the affected coordinator directory and lease are evaluated and held.\n\nntral_supervisor.py`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/skill/crew-chief/scripts/crew_chief/central_supervisor.py) (+797 lines)\n  - [`tests/test_central_supervisor.py`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/tests/test_central_supervisor.py) (+761 lines)\n\n---\n\n### Spec Verdict\n\n- **FR-009**: `done`\n  - Supervisors run bounded rounds (`central_rounds.run_round`), persist round metadata and heartbeats in `supervisor.json`, consume pending inbox messages between rounds via `central_messages.pending` and acknowledgments, bound logs (10 MiB cap per stream and 20-round log retention window via `LOG_RETENTION_ROUNDS = 20`), and hold failed/uncertain records without silent restarts.\n- **FR-011**: `done`\n  - Implements durable control command processing (`pause`, `resume`, `stop`) via `control/<uuid>.json` consumed between rounds. Reconciles restarted supervisors without signalling any persisted PID (leases rely strictly on `central_registry.owner_lease` with monotonic nonces and heartbeat timestamps). Does not silently restart failed/uncertain coordinator states (`_STARTABLE = frozenset({\"created\", \"paused\", \"idle\", \"waiting\"})`).\n- **FR-020**: `done`\n  - Headless rounds run detached via Python `subprocess.Popen` (`-I` isolated mode, detached process flags on Windows `_CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP`, `start_new_session=True` on POSIX) without requiring pty, curses, tmux, or ConPTY.\n- **FR-024**: `done`\n  - Enforces `READ_MAX_BYTES = 1024 * 1024` on JSON reads, bounded control commands (`MAX_CONTROLS = 32`), bounded events (`MAX_EVENTS = 50`), coordinator ID regex validation (`^[0-9a-f-]{36}$`) guarding against path traversal, and per-coordinator directory isolation.\n- **SC-004**: `done`\n- **US2/AC5**: `done`\n\n#### Extra\n- Loop stall/no-progress detection: if consecutive rounds report the exact same state, job list, and inbox signatures, the supervisor pauses with an explanatory diagnostic to protect against runaway token consumption.\n- Usage backfilling across supervisor restarts (`_backfill`) while preserving filesystem timestamps (`os.utime`) so that metadata updates do not corrupt the chronological log pruning order.\n\n---\n\n### Quality Verdict\n\n- **Minor**: [`skill/crew-chief/scripts/crew_chief/central_supervisor.py#L789`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/skill/crew-chief/scripts/crew_chief/central_supervisor.py#L789)\n  - During test execution of `test_a_persisted_pid_is_never_signalled_and_a_paused_checkpoint_is_reconciled`, pytest emits `UserWarning: ... the round metadata belongs to round None, not '62c3af29-6730-42ab-bb28-f7afb0490131'`. This occurs because mock test round files created without an explicit `\"id\"` key trigger `central_usage.backfill_usage` warnings. Handled gracefully and cleanly caught, but tests or mock helpers could populate `meta[\"id\"]` to maintain zero test warnings.\n- **Minor**: [`skill/crew-chief/scripts/crew_chief/central_supervisor.py#L510-L514`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/skill/crew-chief/scripts/crew_chief/central_supervisor.py#L510-L514)\n  - Heartbeat background thread (`_Heartbeat`) catches generic `Exception` and silently ignores write failures while ticking. If the disk fills or permissions fail permanently during a long round, heartbeats cease without early round cancellation until the round completion check. Acceptable given that lease staleness handles deadlocks safely.\n\n599011d5703e9beb1fdd7752a34eb64d7f1e0361\nProof: `python -m pytest tests/test_central_supervisor.py -q` -> 21 passed, 1 warning in 3.69s",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 139818,
+          "tokens_out": 1795,
+          "tokens_total": 89285,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
+        },
+        {
+          "executor": "coordinator:manual",
+          "role": "exec",
+          "cost": "included",
+          "started": "2026-10-22T00:53:42.520052+00:00",
+          "duration_s": 4.87,
+          "status": "ok",
+          "note": "Explicit owner-authorized coordinator fallback after two recorded free failures. Preserved free implementation; coordinator validated/finalized scoped work. No live coordinator executor dispatched. Historical failures unchanged. Proof: hief\\scripts\\crew_chief\\central_supervisor.py:791: UserWarning: C:\\Users\\paulo\\AppData\\Local\\Temp\\pytest-of-paulo\\pytest-300\\test_a_persisted_pid_is_never_0\\central\\coordinators\\2f585df0-26e4-48bb-807b-e3bf3228deaa\\rounds\\e7e72cb9-a1a5-4f27-bb78-241af5331b1e.json: the round metadata belongs to round None, not 'e7e72cb9-a1a5-4f27-bb78-241af5331b1e'\n    central_usage.backfill_usage(root, record)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n22 passed, 1 warning in 3.25s\n",
+          "branch": "crew/20261021-0722-central-15-2",
+          "worktree": "E:\\DEV\\acc-v04.crew\\20261021-0722-central-15-2",
+          "base": null,
+          "start_sha": "9a606dc",
+          "end_sha": "67a4ead3c7497c19a43e788ceeb5a71ef5913595",
+          "diffstat": [
+            {
+              "file": "skill/crew-chief/scripts/crew_chief/central_supervisor.py",
+              "added": 799,
+              "deleted": 0
+            },
+            {
+              "file": "tests/test_central_supervisor.py",
+              "added": 772,
+              "deleted": 0
+            }
+          ],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "scope": [],
+          "tokens_in": null,
+          "tokens_out": null,
+          "tokens_total": null,
+          "tokens_estimated": false,
+          "cost_known": false,
+          "proof": {
+            "cmd": "python -m pytest tests/test_central_supervisor.py -q",
+            "exit": 0,
+            "passed": true
+          },
+          "fallback": true,
+          "n": 5
+        },
+        {
+          "n": 6,
+          "executor": "antigravity:gemini-3.8-flash-low",
+          "role": "review",
+          "cost": "free",
+          "started": "2026-10-22T00:53:51.895259+00:00",
+          "duration_s": 65.6,
+          "status": "ok",
+          "reported_model": null,
+          "model_mismatch": false,
+          "note": "Comprehensive unit and lifecycle tests in [`test_central_supervisor.py`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/tests/test_central_supervisor.py) cover pause, quota, central restart, stale PID rejection, lease contention/interruption, backfill reconciliation, and explicit stop without signaling unrelated processes or concurrent session writers.\nReconciliation across pause, quota, process failure, and supervisor restart preserves coordinator messages and work intact, leaving only the affected coordinator in held (`paused`, `quota`, `failed`) state.\nNone. The no-progress detection loop guard, deterministic control history filtering, and usage backfill on supervisor startup are explicitly required safeguards for round supervision, quota/usage tracking, and finite execution.\n\n67a4ead3c7497c19a43e788ceeb5a71ef5913595 22 passed, 1 warning in 8.61s\n\n## Acceptance criteria\n\n- **FR-009**: done\n  Finite headless rounds are supervised via `supervise()` / `_Runner` calling `central_rounds.run_bounded_round()`, resuming the persisted session (`session_id`), consuming inbox messages between rounds via `central_messages.pending()` and acknowledgment, enforcing log retention bounds via `_prune_logs()` (keeping 20 rounds of stdout/stderr payloads while preserving round metadata), and retaining failure checkpoints and states for manual recovery.\n\n- **FR-011**: done\n  Pause, resume, and stop controls are cooperatively handled via durable files in `<coordinator>/control/` without interrupting in-flight bounded rounds. State reconciliation respects `owner_lease`, re-validates coordinator state post-lease acquisition, refuses takeover of unstartable/running/failed/uncertain states, and never signals bare persisted PIDs or silently restarts failed work.\n\n- **FR-020**: done\n  Windows detached process invocation uses `creationflags = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP` with `STARTUPINFO(dwFlags=_STARTF_USESHOWWINDOW, wShowWindow=_SW_HIDE)` and no pty, curses, tmux, or ConPTY dependencies.\n\n- **FR-024**: done\n  Bounded reads are enforced for supervisor records, controls, and events (`READ_MAX_BYTES` = 1 MiB, `MAX_CONTROLS` = 32, `MAX_EVENTS` = 50). Path traversal is rejected via `records.safe_relpath()`, corrupt/unreadable files are quarantined/diagnosed per coordinator without halting the supervisor or dropping history, and log retention prunes old payloads while preserving metadata.\n\n- **SC-004**: done\n\n- **US2/AC5**: done\n\n### extra\n\n---\n\n## Quality verdict\n\n- **Minor**: [`skill/crew-chief/scripts/crew_chief/central_supervisor.py:791`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/skill/crew-chief/scripts/crew_chief/central_supervisor.py#L791)\n  In `_backfill()`, `central_usage.backfill_usage(root, record)` emits a `UserWarning` when encountering test fixture round files with synthetic or `None` round IDs (`UserWarning: ... the round metadata belongs to round None, not '<uuid>'`). While caught and handled without failing runtime execution, synthetic test fixtures in [`test_central_supervisor.py`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/tests/test_central_supervisor.py) should define matching `\"round_id\"` in metadata to keep test output warning-free.\n\n- **Minor**: [`skill/crew-chief/scripts/crew_chief/central_supervisor.py:349`](file:///E:/DEV/acc-v04.crew/20261021-0722-central-15-2/skill/crew-chief/scripts/crew_chief/central_supervisor.py#L349)\n  In `_Status.consume()`, the sorting key `try_int = int(stem.split(\"-\")[0])` gracefully falls back to string sorting if non-integer prefixes are used. If an invalid or unparseable control JSON is found, it is added to `self._seen_controls` and logged to notes, which correctly prevents infinite reprocessing loops.\n\n---\n\n67a4ead3c7497c19a43e788ceeb5a71ef5913595 22 passed, 1 warning in 8.61s",
+          "diffstat": [],
+          "destructive_suspect": [],
+          "outside_writes": [],
+          "branch": null,
+          "worktree": null,
+          "base": null,
+          "steps": 1,
+          "tokens_in": 150008,
+          "tokens_out": 1532,
+          "tokens_total": 106450,
+          "tokens_estimated": false,
+          "cost_usd": null,
+          "cost_known": false
         }
       ],
       "corrections": [],
       "escalations": [],
-      "grades": {},
+      "grades": {
+        "coordinator:manual": {
+          "score": 55,
+          "explain": "adherence 6/6 → 100; 3 corrections −45; 0 extra; penalties none → 55",
+          "corrections": 3,
+          "done": 6,
+          "missing": 0,
+          "extra": 0,
+          "penalties": [],
+          "executor": "coordinator:manual",
+          "graded_at": "2026-10-22T00:55:35.177912+00:00"
+        }
+      },
       "ref": "T015",
       "task_text": "Supervise coordinator rounds without idle model calls in skill/crew-chief/scripts/crew_chief/central_supervisor.py, tests/test_central_supervisor.py; depends on T011, T012, T014",
       "picks": [
@@ -4761,7 +4864,7 @@
           "role": "review"
         }
       ],
-      "next_attempt": 5
+      "next_attempt": 7
     },
     {
       "n": 16,
@@ -5400,7 +5503,12 @@
           "role": "review"
         }
       ],
-      "next_attempt": 9
+      "next_attempt": 9,
+      "accepted": {
+        "attempt": 7,
+        "branch": "crew/20261021-0722-central-41-2",
+        "at": "2026-10-22T00:51:37.776973+00:00"
+      }
     },
     {
       "n": 42,
@@ -6009,6 +6117,24 @@
       "n": 95,
       "text": "T041 final independent free Opus Low review at exact 96761a67974cecb24ccf9a02ce6101112dfd586c confirms 85 passed, no Critical/Important findings, 4 declared files only and no existing code/test deletion. Normalizing documented policy/aliases, None overrides, compatibility/BOM tests are within requested config semantics, not extras. Cosmetic minor findings do not change behavior; load_prefs validates each input file including managed setup first, and existing int/float convention retained. Compatibility proof 283 passed. Grade attributed manual fallback with one canonicalization correction; historical failed free attempts and prior/stale reviews retained. T015 red race 1 failed and isolated-bootstrap 1 failed before minimal fixes; final 21 passed, fake CLI subprocess exit checked; independent Gemini review in flight.",
       "at": "2026-10-22T00:51:04.725367+00:00",
+      "promoted": null
+    },
+    {
+      "n": 96,
+      "text": "T041 accept initially merged ec4daa2 but cleanup failed WinError32 before marking accepted: reviewer had spawned an unnecessary full-suite bash tree (PID21312, exact 41-2 worktree command, created during our review). Identity/command rechecked; taskkill only that owned test tree and children, then repeat ACC accept idempotently and immediate branch proof. No source code/test changes during cleanup. Future reviewers instructed to run declared proof only and await child completion, never launch full suite in background.",
+      "at": "2026-10-22T00:51:40.119483+00:00",
+      "promoted": null
+    },
+    {
+      "n": 97,
+      "text": "T015 Gemini review pins 599011d, proof21 passed, no Critical/Important findings; its claimed extras (no-progress guard/backfill) are explicitly required task boundary, not extras. Reviewer spawned extra full suite; exact owned bash tree41720 cleaned after identity check. Coordinator found an additional deterministic boundary defect: after first32 control files, seen history starved every later stop forever. Red 1 failed before fix filtering seen IDs before batch bound; original controls retained. Final new-HEAD proof/review required before accept. This is still T015, not later-phase work.",
+      "at": "2026-10-22T00:53:31.009454+00:00",
+      "promoted": null
+    },
+    {
+      "n": 98,
+      "text": "T015 final free Gemini review confirms exact 67a4ead3c7497c19a43e788ceeb5a71ef5913595 and proof22 passed, no Critical/Important, only two declared added files and no baseline deletions. Coordinator checked actual source: reviewer references to run_bounded_round/safe_relpath/try_int are inaccurate names; actual run_round/canonical UUID/sorted bounded control functions inspected directly. Synthetic metadata warning is intentional preserved diagnostic, not a runtime failure. Three additional coordinator red regressions (lease-state race, -I bootstrap, control-history starvation) fixed without dropping assertions. Another reviewer full-suite tree50512 violated explicit proof-only instruction, exact command identity checked and owned tree cleaned. Accept T015 only, immediately rerun branch proof; defer control-module integration to T019 as planned.",
+      "at": "2026-10-22T00:55:34.840128+00:00",
       "promoted": null
     }
   ]
