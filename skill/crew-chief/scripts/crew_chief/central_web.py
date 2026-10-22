@@ -156,7 +156,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/api/snapshot":
             try:
                 with self.server.snapshot_lock:
-                    raw = central_snapshot.snapshot(self.server.root, datetime.now(timezone.utc), self.server.previous)
+                    raw = central_snapshot.snapshot(self.server.root, datetime.now(timezone.utc).isoformat(), self.server.previous)
                     self.server.previous = raw
                     result = public_snapshot(raw)
                 self._reply(200, result)
