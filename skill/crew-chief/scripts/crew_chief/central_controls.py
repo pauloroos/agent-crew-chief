@@ -53,14 +53,28 @@ def _canonical_uuid(value: Any) -> str | None:
     return central_registry._canonical_uuid(value)
 
 
-def _control_dir(root: Path, coordinator_id: str) -> Path:
+def _control_dir(root: Path, coordinator_id: str, *, create: bool = False) -> Path:
     root = Path(root)
     canonical = _canonical_uuid(coordinator_id)
     if canonical is None:
         raise ControlError(
             f"coordinator id must be a canonical UUID string, got {coordinator_id!r}"
         )
-    return root / "coordinators" / canonical / "control"
+    try:
+        coord = central_messages._coordinator_dir(root, coordinator_id, create=create)
+    except central_messages.MessageError as exc:
+        raise ControlError(str(exc)) from exc
+    control = coord / "control"
+    root_resolved = root.resolve(strict=False)
+    if control.is_symlink():
+        raise ControlError(
+            f"{control}: control path escapes the central root via a symbolic link"
+        )
+    if not control.resolve(strict=False).is_relative_to(root_resolved):
+        raise ControlError(f"{control}: control path escapes the central root")
+    if create:
+        control.mkdir(parents=True, exist_ok=True)
+    return control
 
 
 def request_control(
@@ -92,7 +106,7 @@ def request_control(
         raise ControlError(
             f"control action must be one of {sorted(VALID_COMMANDS)}, got {action!r}"
         )
-    control_dir = _control_dir(root, coordinator_id)
+    control_dir = _control_dir(root, coordinator_id, create=True)
     canonical = _canonical_uuid(coordinator_id)
     assert canonical is not None  # guarded above
     message_id = str(uuid.uuid4())
@@ -170,11 +184,14 @@ def apply_controls(
     state = updated.get("state")
     if winner == "pause":
         if state not in {"paused", "stopped", "completed", "failed"}:
+            updated["previous_state"] = state
             updated["state"] = "paused"
             updated["updated_at"] = _now_iso()
     elif winner == "resume":
         if state == "paused":
-            previous = updated.get("previous_state") or "idle"
+            previous = updated.get("previous_state")
+            if not isinstance(previous, str) or not previous:
+                previous = "idle"
             updated["state"] = previous
             updated.pop("previous_state", None)
             updated["updated_at"] = _now_iso()
