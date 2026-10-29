@@ -4,280 +4,48 @@ All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/). Install a tagged version
 (`git clone --branch vX.Y.Z ...`), not `main`.
 
-## [Unreleased]
+Versions up to 0.4.4 were developed in the repository now archived as
+[`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
+which keeps their full history, releases and changelog.
+
+## [0.5.0] - 2026-10-29
+
+The first release of this repository: the maestro -> coordinator ->
+subagent hierarchy, seeded from 0.4.4 plus the base kit, without the parts
+that did not serve it.
 
 ### Added
-- **Base kit:** ponytail (concise prompts), rtk-oss (optional command prefix) and superpowers skills (test-driven-development, systematic-debugging, verification-before-completion) are delivered through the prompt, never hooks or plugins. The installer sets up the kit by default with `--no-ponytail`, `--no-rtk` and `--no-superpowers`. RTK preference is `auto`/`on`/`off`; superpowers preference and `--superpowers` flag on `job new`, `piece add`, `spec import` and `dispatch`. Tool keys `superpowers_flag` and `reseller`. Installer pins rtk-oss v1.1.0 (Apache-2.0), verified against the manifest and checksums.txt.
+- **Maestro mode** in the skill: the agent you talk to splits a goal into
+  independent fronts, launches one coordinator per front with `acc launch`,
+  watches them with `acc central --json`, answers or relays their questions,
+  holds or relaunches a coordinator that hit a quota, and reports one PR per
+  front. Tutorial: `docs/tutorials/05-maestro.md`.
+- **Quota hold:** a coordinator whose CLI stops on a quota or rate limit
+  moves to `quota` instead of `failed`; `acc resume` continues it from the
+  same records, or the maestro relaunches the front with another `--cli`.
+- **`acc central --json`** prints one machine-readable snapshot of every
+  coordinator, its questions and totals.
+- **Base kit:** ponytail (concise prompts), rtk-oss (optional command prefix)
+  and superpowers skills (test-driven-development, systematic-debugging,
+  verification-before-completion) are delivered through the prompt, never
+  hooks or plugins, to coordinators, executors and reviewers. The installer
+  sets up ponytail and superpowers by default (`--no-ponytail`,
+  `--no-superpowers` skip them); rtk-oss v1.1.0 (Apache-2.0) is downloaded
+  only with `--with-rtk`, pinned and verified against the manifest and
+  checksums.txt. RTK preference is `auto`/`on`/`off`; superpowers preference
+  and `--superpowers` flag on `job new`, `piece add`, `spec import` and
+  `dispatch`. Tool keys `superpowers_flag` and `reseller`.
 
-Internal refactoring split oversized modules (`cli.py`, `scoring.py`, and `central_live.py`) into cohesive, focused modules (`cli_parser.py`, `cli_jobs.py`, `cli_spec.py`, `cli_delivery.py`, `cli_dispatch.py`, `scoring_stats.py`, `scoring_effort.py`, and `central_live_normalize.py`) with zero behavior changes, preserved public interfaces, and all modules remaining well under 1,000 lines.
+### Removed
+- The browser view, live tail and history (`acc central --web`); `acc
+  central` is the terminal screen.
+- The Orca backend (`--backend orca`).
+- Automatic coordinator retry and rotation through `[team].coordinators`,
+  which the public launch path never used; replaced by the quota hold.
 
 ### Fixed
-
-- Known issue 8, git delivery wired: jobs created by the interview, by `job new` + `spec import` and by the MCP tools get a `job_branch`, so the incremental push after each accepted piece and the single PR happen on every public path. Proof: tests/test_wiring_job_branch.py (test_interview_path_job_branch_and_origin_push, test_bootstrap_path_job_branch_and_origin_push, test_mcp_path_job_branch_record, test_fake_gh_pr_step_runs_once).
-- Known issue 10, bootstrap jobs are gated: `spec import` records the spec phase, so implementation dispatch is refused until the spec tasks are approved. Proof: tests/test_spec_cli.py::test_bootstrap_spec_import_dispatch_gate_lifecycle.
-- Known issue 11, durable webhook retries: a notice that fails is stored in the job record (bounded attempts and expiry, the secret file path only, never the secret) and the next ACC process that touches the job, or the running central supervisor, delivers it once with a valid signature. Proof: tests/test_webhook_durable_retry.py.
-- Known issue 3, accept cleanup: once the merge succeeds the piece is accepted even if removing the worktree fails; the failure is reported and a later accept retries the cleanup without merging again. Proof: tests/test_cli_delivery.py::TestAcceptWorktreeRemovalFailure.
-- Known issue 12, flaky pick test: the cause of the nondeterminism in test_cli_pick_team_reviewers_independence was fixed (the test depended on the default `explore_rate` of 0.1, so the reviewer pick in `scoring._choose_in_pool` sometimes explored a random candidate; the test setup now pins `explore_rate = 0`. Proof: tests/test_cli.py::test_cli_pick_team_reviewers_independence_explore_regression).
-- Known issue 6, the historical pit-wall job record docs/crew-chief/jobs/20261022-1807-pit-wall.json is valid JSON again, every record kept. Proof: tests/test_wiring_history.py.
-
-## [0.4.4] - 2026-10-27
-
-### Added
-- **MCP server (`acc mcp`):** JSON-RPC 2.0 interface supporting stdio and configurable HTTP transports (`acc mcp --http`) with bearer token authentication loaded from a 0600 file and strict Host/Origin validation (allowing `127.0.0.1`, `localhost`, and configured Host `acc`); serves `tools/list` and `tools/call` for `start_job`, `answer`, `status`, `events` (cursor-based pagination), `questions`, `result`, `stop`, and `list_jobs`, backed by shared persisted interview state with CLI flows (FR-001–FR-014, SC-001, SC-002, SC-010).
-- **Webhook notifications:** signed JSON webhook notices via HMAC-SHA256 (`X-ACC-Signature: sha256=<hex>`) with exponential backoff retry schedule (30s, 2m, 10m, 30m, 1h; max 5 retries; in-process timers require the sending process to remain alive) and non-blocking delivery for terminal job states (`pr_opened`, `failed`, `stopped`, `expired`, `blocked`) (FR-015–FR-018, SC-003).
-- **Coordinator resilience and rotation:** automatic retry and failover upon 429 quota exhaustion, stall, or process crashes up to configurable `coordinator_tries` with backoff delay, rotating through configured team coordinators, passing handoff briefs with continuity tokens, generating rulings, and halting without rotation on non-quota errors (FR-019–FR-023, SC-004). *(Limitation: implemented in `coordinator_launcher`, but the public launch path (`central_backend` → `central_supervisor`) does not use it; a quota error ends the run as failed).*
-- **Per-project team rules:** project team definitions under `[team]` in `docs/crew-chief/preferences.toml` (ordered coordinator fallback chain, allowed executors, and reviewers) with project-over-global merge semantics, scoring candidate restriction, and `team_used` auditing in job records (FR-037, SC-011).
-- **Machine-wide skill installation:** `install_machine_wide.py` script deploying crew-chief skill across Claude Code, Codex, OpenCode, and Gemini CLI idempotently (FR-040, SC-014).
-- **Orca backend integration:** optional Orca workspace and terminal backend (`acc launch --backend orca`, `central_backend = "orca"`) with graceful fallback to local git worktrees (FR-039, SC-013).
-- **Interview auto-launch (T046):** interview completion queues and launches the job once all questions are answered.
-- **Terminal transition notices and events (T047):** records events and sends end notices on every terminal transition (`pr_open`, `failed`, `stopped`, `expired`) and `blocked` state.
-- **Team audit trail:** records `team_used` audit trail in job records to track active coordinator and executor selections.
-- **Subagents durable leases:** tracks subagent execution workspaces with durable leases during job runs.
-- **Launch start-job mode:** `launch` CLI command supports start-job mode for initiating coordinator runs with mode authorization.
-
-### Changed
-- **Git delivery hygiene:** `git fetch origin` before creating job branches, incremental pushes after accepted pieces without `--force` or tags, creation of exactly one PR via `gh pr create` with audit summary, cessation of local commits upon push or PR failure, and prohibition of automatic PR merge commands (`gh pr merge`) (FR-026–FR-031, SC-007). *(Limitation: git delivery is not wired for jobs created by the interview or by `job new` + `spec import` because they get no `job_branch`, so incremental push and single PR are skipped; `prepare_job_branch` has no production caller).*
-- **Spec-driven governance:** mandatory spec-driven development (`specs/NNN-<slug>/`) for unstructured requests with multi-model spec verification before code dispatches (FR-032–FR-034, SC-008). *(Limitation: the SDD gate only applies to jobs that record a spec phase; jobs created by the documented bootstrap (`job new` + `spec import`) do not record a spec phase and are not gated).*
-- `__version__` is `0.4.4`.
-
-### Known issues
-1. Live web board, visual gates/screenshots (T021-T025) and public build log (T026-T029) remain a separate track, outside this release round; they are not promised within v0.4.4.
-2. Live tail protocol noise (piece 118): the live drawer ships with its current filters for MCP tool lists, tool_result_meta, ACC_ROUND markers, literal backslash-n and nested tool_result blocks; other noise shapes may still show (rulings 365, 368-371, 374-393).
-3. Accept-cleanup limitation: `accept` merges the piece's branch before removing its worktree; if the removal fails, the piece is not marked accepted although the merge is done (found during the v0.4.3 close-out). (fixed in Unreleased)
-4. Native Hermes / Contratada Fácil integration proof: completed PR and fallback integration remains unproven in a production environment (records show laboratory validation only; no fabricated CI or real-project proof).
-5. Cross-platform CI status: CI on head `3e560fa` is green on all 6 OS/Python combos (run https://github.com/pauloroos/agent-crew-chief/actions/runs/40503066706; Windows Python 3.13 passed after one rerun of a flaky test, `test_cli_pick_team_reviewers_independence`).
-6. Historical pit-wall job record (`20261022-1807-pit-wall.json`) is invalid JSON, retained as historical data without repair. (fixed in Unreleased)
-7. Webhook secret file permissions on Windows (FR-016): on Windows (`nt`), `os.chmod` cannot restrict file mode bits to 0600 (`chmod` no-op on mode bits), so the 0600 mode-bit gate is not enforced; secret file protection relies on Windows filesystem ACLs, leaving residual ACL risk if the secret file is placed in an unprivileged or shared directory.
-8. Git delivery is not wired: jobs created by the interview or by `job new` + `spec import` get no `job_branch`, so the incremental push and the single PR are skipped (`prepare_job_branch` has no production caller). The one-PR-per-job flow works only when the coordinator creates the job branch itself. (fixed in Unreleased)
-9. Coordinator retry/fallback in public launch: coordinator retry/fallback (classification, backoff, rotation through `[team].coordinators`, wait cycling) is implemented in `coordinator_launcher`, but the public launch path (`central_backend` → `central_supervisor`) does not use it: a quota error ends the run as failed. (still open)
-10. SDD gate on bootstrap jobs: the SDD gate only applies to jobs that record a spec phase; jobs created by the documented bootstrap (`job new` + `spec import`) are not gated. (fixed in Unreleased)
-11. Webhook retries lifecycle: webhook retries run on in-process timers: they only happen while the process that sent the first notice is alive (a CLI command that exits drops pending retries). (fixed in Unreleased)
-12. Flaky pick test in CI: `test_cli_pick_team_reviewers_independence` is intermittently flaky on Windows Python 3.13 (resolved on rerun in CI run 40503066706). (fixed in Unreleased)
-
-## [0.4.3] - 2026-10-26
-
-### Added
-- **Phase 1 — Central coordinator:** multi-worktree coordinator flow with durable file inboxes/outboxes, correlated question blocking, finite headless rounds with persisted sessions, pause/resume/stop controls, explicit recovery without bare-PID signals, attach exclusive ownership with fallback, and coordinator branch isolation (FR-002/007/008/009/010/011/018, SC-001/002/003/004).
-- **Phase 2 — Web view:** `acc central --web` serves a loopback-only dashboard with packaged static assets (cards, charts, history, scoreboard, messages, questions) and controlled terminal entry; no external network, no CDN, no secrets or personal paths in served content (FR-016, SC-009).
-- **Phase 2b — Optional Orca backend:** `acc launch --backend orca` (or the `central_backend = "orca"` preference) lets Orca create the coordinator's worktree; supervisor, rounds, messages, controls, attach and recovery stay the core's. Orca is probed only at launch (executable, version and `agent-context --json` capabilities); a missing or incompatible Orca fails the launch with no fallback and no switch mid-launch (FR-017, SC-010).
-- **Phase 4 — Executor choice and native pieces:** executor picking climbs the cost ladder (`free`, `included`, `cheap`, `paid`) with budget gates, sensitive-path hiding, quota cooldown, work-type routing and correction-aware base selection; native piece types (`code`, `tests`, `refactor`, `docs`, `data`, `review`, `design`, `diagnosis`, `research`) drive executor eligibility and escalation.
-- **Core verification suite:** tests covering multi-repo launch, message durability, headless round lifecycle, supervisor controls, recovery reconciliation, attach handoff, documentation verification, CI matrix isolation, and release gating across Windows/Linux/macOS (T027–T030).
-- **Coordinator interruption alerts:** quota and stall detection with continuity propagation in terminal snapshots; handoff preference `on_coordinator_quota` with ask/wait/handoff options (US7, T042–T044).
-- **Release gate:** `tests/test_central_web_gate.py` installs the bundle with `install.py` into a temporary project and drives the installed `acc` through a default launch and an Orca launch with a fake `orca`, both completed by a fake `claude`, then fetches the snapshot over HTTP from the web view on an ephemeral loopback port and reaps every process (SC-008, SC-011).
-
-### Changed
-- Runtime requires Python 3.11+ stdlib and Git only; optional CLIs are probed at launch (FR-019).
-- Public artifacts contain no private data; tests use temporary homes and fake CLIs exclusively (FR-021).
-- Commits omit AI co-author trailers while preserving executor accounting in records (FR-023).
-- `acc message`, `attach`, `pause`, `resume`, `stop` and `recover` route an existing coordinator by its stored backend name without probing Orca, so removing or upgrading Orca never blocks an Orca coordinator; an unknown stored backend is refused.
-- The browser actions and the terminal screen keys (`m`, `p`, `Enter`) go through the same stored-backend routing as the CLI.
-- The pt-BR README and tutorial now cover the browser view, Orca and the v0.4.3 limits.
-- `__version__` is `0.4.3`.
-
-### Fixed
-- Accepted pieces no longer show as pending in the central snapshot.
-- `acc central --web` run from a project's installed skill (`.claude/skills` or `.agents/skills`) served no assets (404).
-- The web snapshot now redacts credentials written as quoted JSON keys, such as `{"password": "x"}`.
-- A browser attach request reports whether the session opened or why it failed, with the copyable command; the command keeps an explicit `--central-dir` (home shown as `~`, which `acc` now expands itself).
-- The browser view refreshes one request at a time and never shows an older snapshot after a newer one, keeps the selected coordinator by id instead of retargeting, draws proportional bars, labels estimated or partial token counts, announces only new questions, alerts and connection loss, gives each question its own Reply, confirms Stop and can stop a coordinator (`/api/stop`), and shows the scoreboard as a table (`scoreboard_rows` in the snapshot).
-- Web view attach: the page now says the session is open as soon as it starts in the terminal, then that it closed, with its exit code; a request waiting in the queue is no longer reported as an error.
-- Web view replies: Reply and the alert Stop buttons are disabled while another action is running, and Reply no longer asks for text it cannot send.
-- Web view refresh: a snapshot request that times out is now cancelled, so only one request is ever pending.
-- Web view attach command: the copyable `acc attach` line uses the central directory `acc` actually opens, with `~` expanded, relative paths resolved, and shell-safe quoting.
-- Release gate cleanup: the gate stops the web view and the smoke server with their child processes and waits for the port to be released, so it also passes from a Windows virtual environment.
-- Live view privacy: a captured line longer than 16 KiB is no longer stored as raw fragments, so a credential split across them can no longer show up when the reader's window drops the first fragment. After a credential label (password, token, secret, API key, Authorization, Bearer, or a `curl -u`/`--user` value with a colon) the live view and the web snapshot hide the rest of that line and the following lines of the same message, so a new quoting, escaping, line break or terminal colour code inside the value cannot leak it; a Basic, Digest, Negotiate or NTLM credential after any label, in any case, is hidden too. Redaction is a heuristic: it recognises labelled values and known token shapes, not every possible secret.
-- Native pieces: a correction started with `piece start --native` keeps the work of the attempt it corrects (`--base` and `--fresh` work as in `dispatch`), `pick --review` in `subagents` mode answers an executor that `dispatch --review` can run, work done natively is never reviewed by the same model after the job switches executor mode, in `own` and `subagents` modes a review reaches a paid executor only with `--strong`, and in `free_first` a review still excludes the executor's whole subscription family.
-- Git identity: a launch or dispatch with no configured identity is refused on macOS too, where Git would otherwise make one up from the user and host name.
-- `acc central --web` no longer waits on a reverse DNS lookup before printing its URL, which could take tens of seconds on macOS.
-- The v0.4.3 release gate installs the bundle and runs the installed copy; the release checklist records the CI matrix results.
-
-## [0.4.2] - 2026-10-22
-
-### Fixed
-- **Web view attach:** the page now says the session is open as soon as it starts in the terminal, then that it closed, with its exit code. In 0.4.1 the page reported "opened" only after the session had already ended, gave up after about two minutes with "The terminal view has not taken the attach request yet" while the session was still open, and called a session left with Ctrl-C a failed attach. A request waiting in the queue is no longer reported as an error.
-- **Web view attach:** a failure reported by the terminal right away is no longer replaced by "queued", so its reason and command reach the page.
-- **Web view replies:** Reply and the alert Stop buttons are disabled while another action is running, and Reply no longer asks for text it cannot send. If an answer cannot be sent, the page keeps the typed text on screen to copy instead of dropping it.
-- **Web view refresh:** a snapshot request that times out is now cancelled, so only one request is ever pending. In 0.4.1 the late request kept running next to the next refresh.
-- **Web view attach command:** the copyable `acc attach` line uses the central directory `acc` actually opens: `~` is expanded first (a literal `~/central` no longer becomes `~/project/~/central`), a relative `--central-dir` is resolved, and the path is quoted for the shell (POSIX, or PowerShell on Windows), including `$`, `&` and quotes. A directory under home is shown as `~/...`; one outside home is shown in full, because the command needs it and the page is served only to the local browser.
-- **Web view announcements:** several new alerts and questions in one refresh are announced together instead of each replacing the last.
-- **Web view privacy:** credentials written as escaped JSON (`{\"password\": ...}`), `Authorization` values (`Token ...`, `Basic ...`), private keys (`private_key`, `private-key`) and passphrases are redacted in questions and diagnostics.
-- **Release gate cleanup:** the gate stops the web view and the smoke server with their child processes and waits for the port to be released, so it also passes from a Windows virtual environment, where `python.exe` is a launcher. Supervisors are registered for cleanup before the gate waits for them and are waited for on failure. In 0.4.1 the gate could leave these processes running there.
-- The Stop confirmation dialog is now tested as a real dialog: it names the coordinator, focuses Cancel and returns focus to the button.
-- `__version__` is `0.4.2`.
-
-## [0.4.1] - 2026-10-22
-
-### Added
-- **Web view:** `acc central --web` serves a loopback-only dashboard with packaged static assets (cards, charts, history, scoreboard, messages, questions) and controlled terminal entry; no external network, no CDN, no secrets or personal paths in served content (FR-016, SC-009).
-- **Optional Orca backend:** `acc launch --backend orca` (or the `central_backend = "orca"` preference) lets Orca create the coordinator's worktree; supervisor, rounds, messages, controls, attach and recovery stay the core's. Orca is probed only at launch (executable, version and `agent-context --json` capabilities); a missing or incompatible Orca fails the launch with no fallback and no switch mid-launch. The backend is stored with the coordinator, and default mode never resolves Orca (FR-017, SC-010).
-- **Release gate:** `tests/test_central_web_gate.py` installs the bundle with `install.py` into a temporary project and drives the installed `acc` through a default launch (Orca hidden from `PATH`) and an Orca launch with a fake `orca`, both completed by a fake `claude`, then fetches the snapshot over HTTP from the web view on an ephemeral loopback port and reaps every process. It also runs the documented fake-browser smoke, checks the stdlib-only imports and reads the three-OS CI matrix from `ci.yml` (SC-008, SC-011).
-
-### Changed
-- `acc message`, `attach`, `pause`, `resume`, `stop` and `recover` route an existing coordinator by its stored backend name without probing Orca, so removing or upgrading Orca never blocks an Orca coordinator; an unknown stored backend is refused.
-- The browser actions and the terminal screen keys (`m`, `p`, `Enter`) go through the same stored-backend routing as the CLI.
-- The pt-BR README and tutorial now cover the browser view, Orca and the v0.4.1 limits.
-- `__version__` is `0.4.1`.
-
-### Fixed
-- Accepted pieces no longer show as pending in the central snapshot.
-- `acc central --web` run from a project's installed skill (`.claude/skills` or `.agents/skills`) served no assets (404).
-- The web snapshot now redacts credentials written as quoted JSON keys, such as `{"password": "x"}`.
-- A browser attach request reports whether the session opened or why it failed, with the copyable command; the command keeps an explicit `--central-dir` (home shown as `~`, which `acc` now expands itself).
-- The browser view refreshes one request at a time and never shows an older snapshot after a newer one, keeps the selected coordinator by id instead of retargeting, draws proportional bars, labels estimated or partial token counts, announces only new questions, alerts and connection loss, gives each question its own Reply, confirms Stop and can stop a coordinator (`/api/stop`), and shows the scoreboard as a table (`scoreboard_rows` in the snapshot).
-
-### Notes
-- Not in 0.4.1: wait/hand-off actions on quota or stall alerts in the browser (the browser offers Stop), and a per-coordinator message/reply history.
-
-## [0.4.0] - 2026-10-22
-
-### Added
-- **Central coordinator:** multi-worktree coordinator flow with durable file inboxes/outboxes, correlated question blocking, finite headless rounds with persisted sessions, pause/resume/stop controls, explicit recovery without bare-PID signals, attach exclusive ownership with fallback, and coordinator branch isolation (FR-002/007/008/009/010/011/018, SC-001/002/003/004).
-- **Core verification suite:** tests covering multi-repo launch, message durability, headless round lifecycle, supervisor controls, recovery reconciliation, attach handoff, documentation verification, CI matrix isolation, and release gating across Windows/Linux/macOS (T027–T030).
-- **Coordinator interruption alerts:** quota and stall detection with continuity propagation in terminal snapshots; handoff preference `on_coordinator_quota` with ask/wait/handoff options (US7, T042–T044).
-
-### Changed
-- Runtime requires Python 3.11+ stdlib and Git only; optional CLIs are probed at launch (FR-019).
-- Public artifacts contain no private data; tests use temporary homes and fake CLIs exclusively (FR-021).
-- Commits omit AI co-author trailers while preserving executor accounting in records (FR-023).
-- `__version__` is `0.4.0`.
-
-## [0.3.5] - 2026-10-21
-
-### Added
-- **Ponytail ships with crew-chief:** [Ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 (MIT, by DietrichGebert) is vendored in `vendor/ponytail/` as the two skills `ponytail` and `ponytail-review` — the "lazy senior dev" rules: the smallest change that fully solves the task. `install.py` copies both into `.claude/skills/` and `.agents/skills/`, each folder marked with `.installed-by-agent-crew-chief`; a Ponytail folder without that marker was installed by someone else and is left alone with a warning, and `--no-ponytail` skips the copy without removing an existing one.
-- **`ponytail_level` preference:** how much Ponytail reaches a brief — `lite` (build what was asked, name a smaller option in one line), `full` (the smallest complete change, the default), `ultra` (also question the request and push back on what it does not justify) or `off`. Executor briefs get a `## Style (ponytail <level>)` section and review briefs count bloat as an `Important` finding; `off` removes both. `ultra` can make a cheap model argue instead of building.
-
-### Changed
-- `__version__` is `0.3.5`.
-
-## [0.3.4] - 2026-10-20
-
-### Fixed
-- **Repeated exclusions accumulate:** `pick --exclude` adds its ids instead of replacing the ones before it, so `--exclude ID_1 --exclude ID_2` leaves out both. One option with several ids (`--exclude ID_1 ID_2`) works as before.
-- **One OpenCode model, one family:** the two OpenCode routes to the same model — `opencode:opencode/MODEL` and `opencode:opencode-go/MODEL` — draw on one quota, so they are one family now. A review of work by one of them leaves the other out by itself, and the effort variants of one model still compete as one model.
-- **Docker Desktop no longer trips the outside-write check:** `.docker` in the home folder joins the entries the check ignores, like the other agent-CLI folders. Other home writes are still reported.
-
-### Changed
-- **The cost-and-safety tutorial runs end to end:** the third tutorial (English and Brazilian Portuguese) shows every command it describes — the lab preferences path, the request files, the job and the piece, the picks, the dispatches and the PowerShell equivalents — and marks which outputs are recorded and which are illustrative.
-- **The tutorial says what the ladder really does:** `free` first, then `included`, then `cheap` while the budget allows, and `paid` last. Only hands-on work needs `--strong` to reach `paid`; thinking work climbs on its own. The setup block, the budget keys and the training flag are shown in place, with the rule that a scalar setting above the first table keeps its own scope.
-- **The READMEs and the skill say the same thing:** both READMEs and `SKILL.md` describe the same ladder, the same `setup` answers and the same budget rules, instead of claiming that only free executors are ever picked.
-- `__version__` is `0.3.4`.
-
-## [0.3.3] - 2026-10-20
-
-### Added
-- **PowerShell in the tutorials:** the first-job and spec-driven tutorials now show the same steps in Windows PowerShell — copying the example with `Copy-Item -Recurse`, setting the practice preferences path with `$env:AGENT_CREW_CHIEF_GLOBAL_PREFS`, calling the script without the `$CC` shortcut, and appending to the review brief with `Add-Content`.
-- **Quota troubleshooting:** a `quota` attempt keeps the provider's cause in the note — the error survives ordinary output printed before or after it, and the note keeps the full type, the message and the HTTP status. The raw response body never reaches the note, and the tutorials now say what to do next: read the recorded attempt, exclude that id, pick another free executor.
-
-### Changed
-- **Each task proves itself:** in the spec-driven tutorial, T001 and T002 check their own helper in `src`, so no task needs a file that belongs to another task; only the verification task runs pytest over the finished module. A proof that can only pass after another task writes a file belongs to the wrong task.
-- **An honest review:** `opencode:opencode/MODEL` and `opencode:opencode-go/MODEL` are one model behind two ids, so the exclusion names both; the reviewer is asked to start its answer with the HEAD it checked, and every file outside the allowed list is an extra, even when the proof needed it.
-- **The economy summary says what it knows:** without a recorded usage entry the coordinator's share is `not recorded`, not a measured `0%`, and the free share is now stated over `of recorded tokens` — the exact wording of the line. A recorded entry keeps its percentage and the `(estimated)` mark.
-- `__version__` is `0.3.3`.
-
-### Fixed
-- **Tutorial examples:** in the first-job and spec-driven tutorials, the practice path in every command points at the copied project instead of a lab folder outside it (the cost-and-safety tutorial keeps its own lab path); a `pick` always prints the executor and the reason, and the optional `effort` line comes only when the chosen tool has an applicable effort value — the same rule for an execution pick and for a review pick; and the tier counts are marked as an example from one machine, not a promise.
-- The spec-driven tutorial shows the successful run first — as illustrative expected output, not as a newly recorded lab result — and keeps the old proof failure as a historical note instead of the normal path.
-
-## [0.3.2] - 2026-10-20
-
-### Added
-- Three tutorials in `docs/tutorials/` (English and Brazilian Portuguese): your first job in 10 minutes, spec-driven work, and cost and safety. Every command and output in them comes from a real run.
-- `examples/hello-crew`: a tiny Python project to practise the tutorials on.
-
-### Fixed
-- Windows: `Recent` and `AppData` in the home folder, which the system and other programs update on their own, no longer make an attempt an outside write.
-
-## [0.3.1] - 2026-10-20
-
-### Added
-- **Cost tiers:** every executor now sits on a four-step ladder, cheapest first: `free`, `included`, `cheap`, `paid` (`forbidden` stays outside it). A `[[models]]` rule may set `cost = "included"` for a model a subscription already pays for. Built-in patterns (`scripts/crew_chief/tiers.py`) classify the common free models and the subscription CLIs, and a tool's `cost_default` covers the rest; the user's own rules win, then the `acc setup` block, then the built-ins. `discover` prints each executor's cost.
-- **`acc setup`:** detects the executor CLIs on `PATH`, their models and the kind of each login (account or API key — never the value), asks only what it cannot deduce (whether the Claude subscription is paid for, the daily budget for cheap models, whether free models that train on your traffic may be used), prints the count per tier and writes one managed block between `# >>> acc setup >>>` and `# <<< acc setup <<<` in the global preferences file, leaving everything the user wrote outside it byte for byte (CRLF and BOM kept). `--yes` accepts every default (subscriptions no, budget `0`, no training) and needs no terminal; without a terminal and without `--yes` it exits `2` and writes nothing. `--lang pt|en` sets the language (default: the system language). `discover` prints `run setup to configure cost tiers` while no block exists.
-- **Spend log and budget:** `spend.jsonl`, next to the global preferences file, gets one JSON line per `cheap`/`paid` attempt across every project, appended under `spend.lock`. New preferences `cheap_budget_usd_day` (daily ceiling across projects; `0` keeps the cheap tier closed) and `cheap_budget_usd_job` (per-job ceiling), plus an optional `cap_usd_day` on a `[[models]]` rule. `pick` uses the cheap tier only while the budget is open and `dispatch` re-checks it before running. An executor whose cost is unknown, with no cap, gets at most one probe attempt per day until a cap is set.
-- **Sensitive paths:** the project's `sensitive_paths` are hidden from an exec worktree (tracked matches are marked `git update-index --skip-worktree` and deleted, so they never show as a deletion) and checked again after the run; a path found afterwards is noted on the attempt.
-- `pick --coordinator <tool>` (default `$CREW_CHIEF_COORDINATOR`) and `--allow-own-cli`: the coordinator's own CLI, or its subscription family, is used last among the `included` executors unless `--allow-own-cli` is given.
-
-### Changed
-- `pick` climbs the cost ladder instead of choosing free executors only: a tier is left only when nobody in it is available, `cheap` only within the budget, and execution work reaches `paid` only with `--strong` (which tries `included` and `cheap` before `paid`).
-- Attempts start at the lowest effort that suits the piece, and a `quota` or `brief_refused` attempt no longer raises the effort ceiling.
-- `SKILL.md`, `README.md` and `README.pt-BR.md` document the ladder, `setup`, the budget, the spend log and the sensitive paths; `preferences.example.toml` gains the new keys.
-- `__version__` is `0.3.1`.
-
-### Fixed
-- Untracked Python cache (`__pycache__/`, `*.pyc`) left in the project by a proof run is no longer an outside write; tracked changes to such files still are.
-- Clearer errors for `brief render` on a piece with no spec task and for `dispatch --review` without `--target`/`--brief-file`.
-- A fix round on sensitive paths: wildcard `sensitive_paths` entries also refuse briefs naming a matching path, and a failed post-run check is noted on the attempt.
-
-## [0.3.0] - 2026-10-20
-
-### Added
-- **Spec-driven work (spec-kit layout):** a job can keep its request in a spec folder (`specs/NNN-slug/` with `spec.md`, `plan.md`, `tasks.md`), read in the spec-kit format (tested with spec-kit 1.2.x; the grammar is reimplemented, no template is copied, and `.specify/` is never created). `spec new --title` creates the next numbered folder from short templates and prints it. `spec import --job [--spec-dir]` turns every open task of `tasks.md` into a piece (`ref` = task id; `[X]` tasks are skipped), keeps the job's `spec_dir`, and prints `missing proof`, `orphan sidecar entries`, `orphan pieces`, `stale pieces`, `crew.toml entry T012 was written for another task; review it` and `parallel conflict` warnings. A job stays bound to its first spec folder: `--spec-dir` naming another one exits 2 with `job is bound to <dir>; use a new job`. The folder defaults to the job's, then to `.specify/feature.json`; a missing folder or `tasks.md` is a one-line error with exit 2 and nothing written. `spec status --job [--spec-dir]` shows progress per phase and which tasks are ready or blocked.
-- **`crew.toml` sidecar** next to `tasks.md`: per task `type`, `risk`, `accept` (references into `spec.md`: `US1`, `US1/AC2`, `FR-001`, `SC-001`), `files` the task may change, `proof` command, `expect` text, `depends` and `interfaces`, plus a top-level `global_constraints` list, and `task`: the `tasks.md` text the entry was written for (filled by `spec import`; optional, so earlier files still load). Read with `tomllib`; an unknown key is a one-line error naming the key and the task (exit 2). `spec import` edits the file in place instead of regenerating it: new `[tasks.<id>]` tables are appended, missing keys added under their table, and `spec_dir`/`job` written only when absent, so comments and order survive; when the layout cannot be edited safely (dotted keys, for instance) the file is rewritten and `crew.toml rewritten; comments are not kept` is printed. Tasks the sidecar does not describe get a type and risk guessed from their text.
-- **Stale pieces:** when the text of a task changes after it was imported (for example `tasks.md` regenerated and renumbered by spec-kit), its piece is marked stale and `dispatch`, `brief render` and the tick in `tasks.md` refuse it until the spec is imported again. The `crew.toml` entry is checked the same way: when its `task` no longer matches the text of the task with that id, `import` warns, the entry is neither reused (the new piece gets a guessed type and risk) nor rewritten, and `dispatch` and `brief render` refuse that task (exit 2, naming the entry) until you fix the entry and set its `task` to the current text. Entries written before `task` existed cannot be checked; `import` fills their `task` with the current text.
-- `brief render --job --piece [--review|--converge] [--out]`: renders the minimal brief from the task: the task, the acceptance criteria it points at (their text; unknown references are listed as `UNRESOLVED`), the global constraints, the interfaces, the allowed files and the proof. `--review` renders the reviewer's brief with two verdicts (spec: `done|missing|misunderstood` plus `extra`; quality: `Critical|Important|Minor`), the global constraints, and the attempt it reviews (`--attempt N`, default the last `ok` exec attempt): its worktree, the start commit and the end commit, with the instruction to confirm `git rev-parse --short HEAD` and review `git diff <start>..HEAD`; `--converge` renders the final comparison of the whole spec with the code, answered with `- [ ] T### ...` gaps or `Converged`.
-- **Proof:** after an `ok` exec attempt, `dispatch` runs the task's `proof` in the worktree (with the dispatch timeout); a failing, timed-out or unrunnable proof makes the attempt `proof_failed` with the output in the note, and counts as a failure. `--no-proof` skips it and records `skipped`. A hands-on spec piece (`code`, `tests`, `refactor`, `docs`, `data`) without a proof is refused unless `--no-proof` is given. Pieces without a spec task keep the v0.2.0 flow and need no proof.
-- `dispatch --review` prints the reviewer's answer (the last 3000 characters of the attempt note) after an `answer:` line, and `--json` adds it as `answer`. Exec attempts record `start_sha` and `end_sha`.
-- `dispatch` refuses a spec piece whose dependency is not accepted yet or whose earlier phase is incomplete (`--ignore-deps` overrides and records `ignored_deps`), and prints a `scope:` line listing files changed outside the task's `files`.
-- `accept` marks the task `[X]` in `tasks.md` and, when the file was tracked and had no other changes, commits it alone (`docs(tasks): mark T012 done`); otherwise it marks without committing and warns `tasks.md has other changes; marked T012 but did not commit`. The line endings (CRLF or LF) and BOM of the file are kept, only the one line changes, and the write is atomic. A stale piece or a task not found only warns.
-- `ruling add --job --text` records a one-line ruling in the job; `decision add --job (--from-ruling N | --title) [--context --alternatives --consequences]` writes it as an ADR in `docs/decisions/NNNN-slug.md`. The job `.md` lists rulings and ADRs.
-- **Economy:** `usage add --job --role coordinator|central --tokens-in --tokens-out [--estimated] [--note]` records the coordinator's own token spend; `economy --job` (and `close`, before the commit message) prints the share of pieces and tokens that went to free executors, the coordinator's share, attempts per piece (exec attempts over pieces with at least one exec attempt; `brief_refused` and `quota` attempts count on neither side) and mean score, and one `alert:` line per limit crossed. The job's duration is recorded in the job record (`Time` in its `.md`) and checked by `alert_job_minutes`. New preferences `alert_coordinator_share` (default `0.5`), `alert_attempts_per_piece` (`2.5`) and `alert_job_minutes` (`180`); `0` turns an alert off. The job `.md` gains an Economy section.
-- **Project CHANGELOG:** `close` adds the job to the project's `CHANGELOG.md` under `## [Unreleased]` (Keep a Changelog; `Added` for feat, `Fixed` for fix, `Changed` for refactor and perf; docs, tests and chores get no entry), once per job, never touching a released section (`## [1.2.0]`, or `## 1.2.0`/`## v1.2.0` as changesets writes them), creating the file or the section when missing, keeping CRLF and BOM and writing atomically. It prints `changelog: <path> (<category>)` first. `close --type feat|fix|refactor|perf|docs|chore` sets the commit type and the category (and is stored in the job); without it a conventional prefix in the job title (`fix: ...`) is used, and only then the first piece's work type. Preferences `changelog` (`keep-a-changelog` or `none`) and `changelog_path`; `close --no-changelog` skips it.
-- The installed snippet tells the agent that, when the superpowers skills are also installed, it uses them to discuss and design and uses crew-chief to execute the plan.
-
-### Changed
-- `SKILL.md` gains a **Spec-driven work** section: how to size the process (trivial, small, project), the full cycle (`spec new` or an existing folder, `spec import`, `brief render`, `dispatch` with proof, review, `correction`/`grade`, `accept`, converge, `ruling add`/`decision add`, `close`), recording the coordinator's own spend with `usage add`, and reading the economy alerts.
-- `dispatch` has a new `proof_failed` status for spec pieces, and `close` prints the economy block when the job has attempts or recorded usage.
-- README (English and Portuguese) documents the spec-driven flow and the economy alerts, and credits spec-kit (MIT) and superpowers (MIT) as inspiration.
-- `__version__` is `0.3.0`.
-
-## [0.2.0] - 2026-10-19
-
-### Added
-- **Model changes:** `docs/crew-chief/models-seen.json` records every executor discovery has seen (`cost`, `trains`, `first_seen`, `last_seen`, `present`, plus a top-level `last_check`). `discover` always updates it and prints, after the list, the free and paid models that are new, gone or changed cost (`new free: ...`, `gone: ...`, `now paid: ...`), or `models: no changes since <when>`. The first run only records a baseline, and a skipped tool never marks its models as gone. `--json` adds a `changes` object.
-- `job new` runs the same check every time and prints it on stderr; `pick` and `dispatch` run it on stderr only when the last check is older than `model_check_hours`. A failing check never fails the command.
-- `model_check_hours` preference (default `24`; `0` means every time).
-- **Attempt metrics:** every attempt records `steps` (agent turns), `tokens_in`, `tokens_out`, `tokens_total` and `tokens_estimated` next to `duration_s`. Numbers come from the tool's own output (OpenCode now runs with `--format json`; Claude Code and Antigravity `num_turns`/`usage`; Codex's token total); otherwise tokens are estimated as characters / 4 and flagged. `dispatch` prints them, the job `.md` shows them per attempt, and `scoreboard.md` gains `attempts/pass`, `mean steps` and `mean tokens` columns.
-- `quota_cooldown_min` preference (default `60`): an executor whose attempt ended in `quota` within that window, in any job of the project, sits out of `pick` together with its quota family; the reason ends with `skipped for quota: <ids>`. The family drops a trailing effort suffix (`-minimal|-low|-medium|-high|-xhigh|-max`) from the model; on Antigravity, which shares quota by vendor, it is `antigravity:<model up to the first '-'>` (`antigravity:claude`, `antigravity:gemini`, `antigravity:gpt`); on other tools it is `<tool>:<model>`.
-- `ignore_home_entries` preference: extra home entries the outside-write check ignores, on top of the built-in list of agent CLI folders.
-- **Execute vs think:** work types split into execution (`code`, `tests`, `refactor`, `docs`, `data`) and thinking (`review`, `design`, `diagnosis`, `research`). Execution work only goes to free executors, the tools in the new `exec_first` preference (default `["opencode"]`) ahead of the other free ones, and never escalates to a paid executor on its own: after free failures `pick` keeps offering untried free executors, and when none is left it exits 1 with `no executor available: no free executor left for <type>; split the piece ...`. Only `--strong` sends execution work to a paid executor. Thinking work goes to any free executor, OpenCode included, and escalates to `strong_order` as before (no free one left, or 2 free failures).
-- `work_types` key on `[[tools]]`: the work types a tool may be picked for (missing or empty = every type, the default for every kind; an unknown type is a configuration error). A tool left out of a piece's type is never picked, and the reason ends with `; not for <type>: <tools>`, one name per tool.
-- `pick --review`: picks a reviewer as thinking work (type `review`), leaving out the quota family of every executor with an `ok` exec attempt on the piece; the reason ends with `reviewer outside the family of: <ids>` and the pick is recorded with `role = "review"`.
-- `discover` ends with one `work types: <tool>: ...` line per tool (`all types`, `exec only (...)`, a list, plus `first on execution work` for `exec_first` tools); `--json` adds `work_types` and `exec_first`.
-- **Corrections build on the earlier work:** once a `correction` is recorded after a piece's last `ok` exec attempt, the next exec `dispatch` creates its worktree from that attempt's branch instead of `HEAD`, so the new executor finds the earlier work and the brief only describes the adjustment. The attempt records `base` (`{"attempt": n, "branch": "crew/..."}`, `null` for `HEAD`), `dispatch` prints `base: ...` (and `--json` adds `base`), and the job `.md` shows `from <branch>`. Its diffstat, `no_change` and `destructive_suspect` are measured against that starting point, so a one-line fix shows as one line. `dispatch --fresh` starts from `HEAD` anyway; `dispatch --base <attempt-number|branch>` starts from that attempt of the piece or that branch. `accept` still lands the last `ok` attempt, which now carries the accumulated work.
-- **Grades per executor:** a piece keeps one grade per executor under `grades` (keyed by executor id). `grade --executor X` writes or replaces X's grade only, so the executor that drew the correction and the one that finished both keep theirs. The scoreboard and the stats count every grade; `close` and the job `.md` credit the executor of the last `ok` attempt first and list every other graded executor with its score. Records with the old single `grade` are still read (and moved into `grades` on the next `grade`).
-- `no_change` attempt status: an exec that exits with code 0, without timeout or outside write, but leaves the worktree untouched (no changed or new file apart from the coordinator's brief and output files, and no commit of its own) is `no_change` instead of `ok`. It counts as a failure everywhere: `dispatch` exits 1, `pick` leaves that executor out of the piece, it counts toward the 2 free failures that escalate, and `accept` refuses it. Reviews are unaffected.
-
-### Fixed
-- The diffstat of an attempt also counts what the executor committed itself (it is measured against the commit the worktree started from), so such work is no longer invisible to `destructive_suspect`.
-- The executor prompt names the brief file and the worktree by absolute path (`Read the file <worktree>/.crew-chief-brief.md and carry out exactly what it asks. Work only inside <worktree>.`). A relative "in the current directory" was lost on tools whose file search hides dotfiles (OpenCode's glob), and the model gave up.
-- Parallel `dispatch` (and `pick`, `piece add`, `correction`, `grade`) no longer lose each other's writes: every change to a job goes through a lock file next to the record and re-reads the job before saving. Parallel attempts of one piece get distinct attempt numbers and worktrees. Windows sharing violations on the record, and on the removal of the lock file, are retried.
-- A new attempt skips numbers whose worktree or branch already exists (left by an attempt whose record was lost) instead of failing with `worktree path already exists`. An orphan folder at the worktree path (a removal that stopped half way on Windows) is pruned and removed before the worktree is created. A worktree that cannot be created, or is broken after the run, is recorded as a `failed` attempt with a note instead of a bare `error:` that recorded nothing.
-- `outside_write` no longer fires for the project's other worktrees in `<project>.crew/` (parallel attempts) or for the config folders agent CLIs write in the home directory (`.claude`, `.claude.json`, `.codex`, `.gemini`, `.antigravity`, `.config`, `.local`, `.cache`, ...). Unknown entries and writes to the main repo are still caught.
-- Parallel `dispatch` of one project no longer flags `outside_write` when another crew-chief process updates the job record, its lock file, `models-seen.json` or `scoreboard.md` in the main repo during the attempt. Creating a worktree no longer rewrites the repository's shared `info/exclude` once it lists the brief and output files (and writes it atomically when it must), which made a parallel `git status` die on Windows with `cannot use .git/info/exclude as an exclude file`; the containment snapshot also retries that `git status` for a moment.
-- `pick` no longer sends every unrated piece to the same executor: ties go to the executor least used in the job, then to a different tool.
-
-- `pick` spreads tied executors over quota families first (two Antigravity Claude models share one quota), and an executor that hit a quota in the last `quota_cooldown_min` (default 60) sits out with its whole quota family.
-- `pick` hands the fix for a correction to another executor: the one whose work drew the correction is left out on that piece.
-- An exec attempt that changes nothing is `no_change`, not `ok` (an executor that only answered "brief not found" used to pass).
-- OpenCode runs with `--standalone`: without it `opencode run` handed the prompt to the background service, which worked in its own directory, and an attempt wrote and committed in the main repository. Executors also get no stdin.
-- The executor prompt tells the executor it was dispatched by crew-chief and must not use the crew-chief skill or dispatch other agents (an executor that obeyed the snippet in `AGENTS.md` ran the CLI itself).
-- The attempt note keeps the readable answer of Antigravity (`response`) and Claude Code (`result`) instead of the raw JSON tail, and a run that printed nothing keeps its stderr.
-- The CLI never writes `__pycache__` inside the project.
-
-## [0.1.0] - 2026-10-17
-
-First public release.
-
-### Added
-- `crew-chief` Agent Skill (`SKILL.md`). Any coordinator that reads Agent Skills (Claude Code, Codex, OpenCode; Cursor and Antigravity expected) uses the same rules: evaluate, plan, pick, dispatch, review, grade, integrate.
-- Stdlib-only Python CLI (`crew-chief.py`) with these commands: `discover`, `job new`, `piece add`, `pick`, `dispatch`, `correction`, `grade`, `accept`, `discard`, `close` and `scoreboard`.
-- **Discovery:** finds models at runtime from `opencode models` and `agy models`, uses fixed lists for Codex and Claude, and supports custom CLIs declared in preferences (kinds `claude-code`, `opencode`, `codex`, `antigravity` and `generic`). Required env vars are declared by name; on Windows, missing ones are read from the user registry.
-- **Free-first picking:** a per-project, per-type scoreboard with 30-day half-life decay, plus second chances (1 in 10, on low-risk work only) for unrated or low-scored executors. Escalation to strong executors happens after 2 free failures, or with `--strong`.
-- **Script-computed grade:** adherence (done/missing/extra), correction count and penalties (`destructive`, `outside_write`, `false_done`, `model_mismatch`).
-- **Containment:** isolated git worktrees, a brief filter that refuses secrets and sensitive paths, outside-write detection with automatic rejection, a mass-deletion warning, timeouts that kill the process tree, quota detection, and a reported-model mismatch check.
-- **Job records:** one JSON file plus a rendered Markdown file per job under `docs/crew-chief/`, committed with the delivery and carrying a ready-to-paste commit message and issue comment. `scoreboard.md` is derived from the records.
-- **Installer (`install.py`):** idempotent, adds marked snippets to `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and Cursor rules, and never touches existing preferences or records.
-- **Preferences:** a global file (`~/.config/agent-crew-chief/preferences.toml`, or `AGENT_CREW_CHIEF_GLOBAL_PREFS`) plus a project file. Unmatched models count as paid. A `forbidden` rule at any level always wins.
-- README in English and Brazilian Portuguese. CI on Ubuntu and Windows with Python 3.11 and 3.13.
-
-[0.1.0]: https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.1.0
+- The base kit reaches the coordinator's real round prompt, not only a
+  command builder the launch path did not call.
+- `prepare_job_branch` never switches a checkout that sits on a feature
+  branch; that branch becomes the job branch.
+- Kit tests no longer depend on whether rtk is installed on the host.

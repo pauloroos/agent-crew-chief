@@ -43,16 +43,14 @@ import fnmatch
 import os
 import signal
 import subprocess
-import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from .briefcheck import check_brief
 from . import spend
 from .executor_slots import ExecutorSlots, LeaseError
-from .interview import InterviewPendingError, check_interview_gate
+from .interview import check_interview_gate
 from .kit import render_kit_brief, resolve_superpowers
 from .records import add_attempt, load_job, update_job
 from .sdd_gate import check_spec_gate

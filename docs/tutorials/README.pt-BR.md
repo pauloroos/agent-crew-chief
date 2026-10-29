@@ -6,3 +6,4 @@ Estes tutoriais usam o projeto pequeno [`examples/hello-crew/`](../../examples/h
 2. [Trabalho guiado por especificação](02-spec-driven.pt-BR.md) — transforme uma funcionalidade com vários requisitos em tarefas com critérios de aceite e prova.
 3. [Custo e segurança](03-cost-and-safety.pt-BR.md) — entenda os degraus, os limites, os caminhos sensíveis e a delegação segura.
 4. [Coordenadoras em worktrees próprias](04-central.pt-BR.md) — instale o comando `acc`, lance uma coordenadora, acompanhe pela tela central, mande mensagens, pause, pare e recupere.
+5. [O maestro](05-maestro.pt-BR.md) — deixe seu agente dividir um objetivo em frentes, rodar uma coordenadora por frente e te entregar um PR por frente.

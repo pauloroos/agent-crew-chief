@@ -7,7 +7,7 @@ depois de uma falha e integra o branch por sua conta. Ele parte dos tutoriais
 [`examples/hello-crew/`](../../examples/hello-crew/).
 
 Tudo funciona no Windows, macOS e Linux só com Python 3.11+, git e uma CLI
-coordenadora suportada (`claude` ou `codex`). Não precisa de Orca, tmux, pty,
+coordenadora suportada (`claude` ou `codex`). Não precisa de tmux, pty,
 curses nem ConPTY: a tela e o `attach` usam o terminal que você já tem.
 
 ## 1. Instale o comando `acc`
@@ -15,7 +15,7 @@ curses nem ConPTY: a tela e o `attach` usam o terminal que você já tem.
 Clone a release uma vez e instale só o atalho de usuário:
 
 ```bash
-git clone --branch v0.4.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py --command
 ```
 
@@ -167,120 +167,34 @@ git merge BRANCH
 
 O ACC nunca faz merge nem push por você.
 
-## 9. Inspecione no navegador (v0.4.1)
+## 9. Pausa por quota
 
-O navegador mostra os mesmos registros do terminal: cartões, perguntas,
-histórico de jobs, gráficos de tokens por modelo, placar, totais e
-diagnósticos.
-
-```bash
-acc central --web
-acc central --web --port 8080
-```
-
-A página é só de loopback, em `http://127.0.0.1:<porta>/` (padrão: uma
-porta efêmera), e é servida a partir dos assets estáticos empacotados
-`skill/crew-chief/web/index.html`, `skill/crew-chief/web/central.css` e
-`skill/crew-chief/web/central.js`. Não há CDN nem script ou folha de estilo
-externos; texto não confiável é exibido só via `textContent`, nunca como
-markup.
-
-As ações locais (mensagem, resposta a uma pergunta, pausar, retomar, parar,
-entrar pelo terminal) são autorizadas por servidor: a página primeiro busca
-um token CSRF e depois o envia, junto com um id de nova tentativa, em todo
-POST; o servidor exige Origin/Host estritos e não tem CORS. Os botões ficam
-desativados até o token chegar. A barra de ações age sobre a coordenadora
-que você selecionou; se ela sumir, a página pede que você escolha de novo.
-Cada pergunta tem o seu próprio botão Reply, e Stop pede confirmação dizendo
-qual coordenadora vai parar.
-
-A entrada pelo terminal é controlada: Attach enfileira um pedido para uma
-tela de terminal ativa, que faz a mesma passagem de controle do `Enter`. A
-página mostra o pedido na fila (ele pode esperar enquanto outra sessão está
-aberta), depois aberto enquanto você trabalha no terminal, depois encerrado
-com o código de saída da sessão, ou por que falhou. Sem ponte de terminal
-disponível, ou depois de uma falha, a página mostra uma instrução para
-copiar, com as aspas do seu shell (PowerShell no Windows). Quando você abriu
-a visão com `--central-dir`, a instrução leva a mesma pasta como caminho
-absoluto: dentro da sua home ela aparece como `~/...`; fora dela aparece
-inteira, porque sem ela o comando abriria outro registro, e a página só é
-servida para o seu próprio navegador no loopback:
+Quando a CLI da coordenadora para por quota ou limite de uso (um HTTP 429,
+"usage limit", "rate limit"), a coordenadora não é marcada como falha: ela vai
+para `quota` e fica parada. Worktree, registros do job e sessão continuam como
+estão.
 
 ```bash
-acc attach COORDINATOR_ID
+acc resume COORDINATOR_ID
 ```
 
-Ela não afirma que abriu a sessão; rode esse comando no seu próprio
-terminal.
+`resume` continua dos mesmos registros quando o limite volta. Para trocar de
+CLI, pare a coordenadora e lance o mesmo pedido de novo com outro `--cli`. O
+maestro (tutorial 05) faz isso por todas as coordenadoras que roda.
 
-As contagens de tokens avisam "includes estimates" ou "partial" quando parte
-do uso foi estimada ou não foi informada. Se a página perde a conexão, ela
-mantém os últimos dados, marcados como desatualizados, e tenta de novo.
+## 10. Limites
 
-Smoke reproduzível com navegador falso (só fixtures sintéticas, sem
-coordenadora real, sem registro real):
+- Só terminal: `acc central` é a tela, `acc central --json` imprime um
+  snapshot para scripts e para o maestro.
+- Quem integra é você: revise a branch da coordenadora e faça o merge como na
+  seção 8. O ACC nunca faz merge nem push e nunca remove a worktree de uma
+  coordenadora sozinho.
 
-```bash
-python tests/test_central_web_assets.py --smoke
-```
+## 11. Checagem de atualização
 
-1. Ele imprime uma URL de loopback com porta efêmera e serve só snapshots
-   sintéticos.
-2. Abra `http://127.0.0.1:<porta>/` e confirme que cartões, perguntas,
-   histórico, gráficos, placar e totais aparecem a partir de `/api/snapshot`.
-3. Confirme que o texto de demonstração com cara de HTML aparece literal,
-   nunca como markup.
-4. Confirme que nenhum script ou folha de estilo externo é carregado; depois
-   pare o servidor e confirme que o socket de escuta foi liberado.
-
-## 10. Backend Orca opcional (v0.4.1)
-
-O modo padrão nunca precisa do Orca. Passe `--backend orca` só quando quiser
-que o Orca crie a worktree:
-
-```bash
-acc launch --repo . --request-file request.md --mode raw-request --authorize-raw --backend orca
-```
-
-O Orca faz uma coisa só: cria a worktree da coordenadora. Todo o resto
-(supervisor, rodadas, mensagens, controles, attach e recuperação) é o mesmo
-núcleo do modo padrão.
-
-O `probe` roda só no lançamento: `acc launch --backend orca` verifica o
-executável `orca` no `PATH` (`--version`, `--help` e as capacidades legíveis
-por máquina de `agent-context --json`) antes de criar qualquer coisa, e de
-novo logo antes de pedir a worktree ao Orca. Executável ausente, versão sem
-suporte ou capacidade faltando fazem o lançamento falhar de forma explícita,
-sem cair para o backend padrão e sem trocar de backend no meio do lançamento.
-
-O backend fica guardado com a coordenadora e não muda. `acc message`,
-`acc attach`, `acc pause`, `acc resume`, `acc stop` e `acc recover`, e as
-mesmas ações no `acc central` e no navegador, seguem esse nome guardado e
-nunca chamam o Orca. Se o Orca for removido ou atualizado depois, você ainda
-consegue mandar mensagem, entrar, pausar, parar e recuperar uma coordenadora
-Orca:
-
-```bash
-acc stop COORDINATOR_ID
-```
-
-Uma coordenadora cujo backend guardado não é `default` nem `orca` é recusada
-com um erro `unknown backend`; ela nunca é tratada como outro backend.
-
-## 11. Limites da v0.4.1
-
-- Só loopback (`127.0.0.1`), porta efêmera por padrão; sem servidor remoto
-  nem acesso compartilhado entre usuários, e nunca há um shell embutido no
-  navegador.
-- Quem integra é você: revise o branch da coordenadora e faça o merge como
-  na seção 8. O ACC nunca faz merge nem push e nunca remove sozinho a
-  worktree de uma coordenadora.
-
-## 12. Checagem de atualização
-
-O ACC pode verificar se há uma release estável mais nova em segundo plano. Esta
-é a **única conexão de rede externa do ACC** — o navegador e todos os outros
-comandos são só de loopback. A checagem roda no máximo uma vez a cada 24 horas
+O ACC pode verificar se há uma release estável mais nova em segundo plano. Fora os
+webhooks que você configurar e o `install.py --with-rtk`, esta é a **única
+conexão de rede externa do ACC**. A checagem roda no máximo uma vez a cada 24 horas
 rolantes (incluindo falhas), nunca bloqueia seu comando e é totalmente silenciosa
 quando offline, em timeout ou quando o cache está desatualizado ou inválido.
 Nenhuma configuração é necessária.
@@ -291,9 +205,8 @@ projeto ou global para desativar completamente — nenhuma checagem é agendada,
 nenhum aviso em cache é exibido e as preferências nunca são reescritas. A
 precedência existente de projeto-sobre-global se aplica.
 
-Quando uma versão estável mais nova é encontrada, tanto a visão central do
-terminal quanto a do navegador exibem exatamente uma linha (quebra visualmente
-em celulares):
+Quando uma versão estável mais nova é encontrada, a visão central do
+terminal exibe exatamente uma linha:
 
 ```
 ACC v0.4.4 available. Update manually in your ACC source clone: git fetch --tags; git checkout v0.4.4; python -I install.py --command; python -I install.py <project>

@@ -97,20 +97,6 @@ def test_economy_docs_match_the_summary_line():
     assert "alert_job_minutes" in " ".join(_read(README).split())
 
 
-def test_changelog_keeps_the_0_3_5_section():
-    """Bumping the version must not rewrite the released section."""
-    text = _read(CHANGELOG)
-    section = text.split("## [0.3.5]", 1)[1].split("\n## [", 1)[0]
-    for needle in (
-        "ponytail_level",
-        "--no-ponytail",
-        "v5.3.2",
-        "MIT",
-        "0.3.5",
-    ):
-        assert needle in section, needle
-
-
 def test_readmes_credit_ponytail():
     for path in (README, README_PT):
         text = _read(path)
@@ -119,93 +105,21 @@ def test_readmes_credit_ponytail():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    """T043: version is 0.4.4 and CHANGELOG has both current and historical entries."""
-    assert __version__ == "0.4.4"
+    """The version is 0.5.0 and the CHANGELOG has its section and the legacy pointer."""
+    assert __version__ == "0.5.0"
     text = _read(CHANGELOG)
-    # Current release entry exists with Hermes pipeline content.
-    assert "## [0.4.4]" in text
-    current_section = text.split("## [0.4.4]", 1)[1].split("\n## [", 1)[0]
-    assert "mcp" in current_section.lower() or "hermes" in current_section.lower()
-    # Historical 0.4.3 section preserved intact.
-    assert "## [0.4.3]" in text
-    section_043 = text.split("## [0.4.3]", 1)[1].split("\n## [", 1)[0]
-    assert "central" in section_043.lower() or "Central" in section_043
-    # Historical 0.3.4 section preserved intact.
-    assert "## [0.3.4]" in text
-    section_034 = text.split("## [0.3.4]", 1)[1].split("\n## [", 1)[0]
-    for needle in (
-        "--exclude",
-        "opencode-go",
-        ".docker",
-        "cost-and-safety",
-        "ladder",
-        "--strong",
-        "budget",
-        "setup",
-        "SKILL.md",
-        "0.3.4",
-    ):
-        assert needle in section_034, needle
-
-
-def test_changelog_keeps_the_0_3_3_section():
-    """Bumping the version must not rewrite the released section."""
-    text = _read(CHANGELOG)
-    section = text.split("## [0.3.3]", 1)[1].split("\n## [", 1)[0]
-    for needle in (
-        "PowerShell",
-        "quota",
-        "not recorded",
-        "of recorded tokens",
-        "HEAD",
-        "extra",
-        "0.3.3",
-    ):
-        assert needle in section, needle
-    # The exact bytes of the released section, so a rewrite of it is caught
-    # even when it keeps every word the needles above look for.
-    digest = hashlib.sha256(section.replace("\r\n", "\n").encode("utf-8")).hexdigest()
-    assert digest == "76e1bfa0dba33de5c44831f06bbae2ee6314431ec28e4e6d5a7094583c5b61d1"
+    assert "## [0.5.0]" in text
+    current_section = text.split("## [0.5.0]", 1)[1].split("\n## [", 1)[0]
+    assert "maestro" in current_section.lower()
+    assert "agent-crew-chief-legacy" in text
 
 
 def test_install_pins_the_current_release():
-    """T043: install commands pin the current release tag (v0.4.4), not an older one."""
+    """Install commands pin the current release tag (v0.5.0), not an older one."""
     for path in (README, README_PT, TUTORIAL_01, TUTORIAL_01_PT):
         text = _read(path)
-        assert "v0.4.4" in text, f"{path.name} must pin v0.4.4"
+        assert "v0.5.0" in text, f"{path.name} must pin v0.5.0"
         assert "v0.3.5" not in text, path.name
-
-
-def test_changelog_keeps_the_0_3_2_section():
-    """Bumping the version must not rewrite the released section."""
-    text = _read(CHANGELOG)
-    section = text.split("## [0.3.2]", 1)[1].split("\n## [", 1)[0]
-    for needle in ("Recent", "AppData", "tutorials", "hello-crew"):
-        assert needle in section, needle
-
-
-def test_changelog_keeps_the_0_3_1_section():
-    """Bumping the version must not rewrite the released section."""
-    text = _read(CHANGELOG)
-    section = text.split("## [0.3.1]", 1)[1].split("\n## [", 1)[0]
-    for needle in ("included", "cheap", "setup", "spend.jsonl", "sensitive", "0.3.1"):
-        assert needle in section, needle
-
-
-def test_changelog_keeps_the_0_3_0_section():
-    """Bumping the version must not rewrite the released section."""
-    text = _read(CHANGELOG)
-    section = text.split("## [0.3.0]", 1)[1].split("\n## [", 1)[0]
-    for needle in (
-        "spec import",
-        "brief render",
-        "proof_failed",
-        "decision add",
-        "usage add",
-        "economy",
-        "crew.toml",
-    ):
-        assert needle in section, needle
 
 
 def test_skill_documents_tiers_and_setup():
@@ -305,7 +219,6 @@ def test_no_server_paths_in_briefs_or_job_records():
             if "/home/orca/" in text or "/home/orca" in text:
                 offenders.append(path.relative_to(ROOT).as_posix())
     assert offenders == []
-
 
 
 def test_no_windows_drive_paths_in_published_docs():

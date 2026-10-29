@@ -7,7 +7,7 @@ on tutorials 01–03 and uses the small
 [`examples/hello-crew/`](../../examples/hello-crew/) project.
 
 Everything here works on Windows, macOS and Linux with only Python 3.11+, git
-and one supported coordinator CLI (`claude` or `codex`). No Orca, tmux, pty,
+and one supported coordinator CLI (`claude` or `codex`). No tmux, pty,
 curses or ConPTY is needed: the screen and `attach` use the terminal you
 already have.
 
@@ -16,7 +16,7 @@ already have.
 Clone the release once and install only the user-scoped command wrapper:
 
 ```bash
-git clone --branch v0.4.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py --command
 ```
 
@@ -164,114 +164,33 @@ git merge BRANCH
 
 ACC never merges or pushes for you.
 
-## 9. Inspect in a browser (v0.4.1)
+## 9. Quota hold
 
-The browser shows the same records as the terminal: cards, questions, job
-history, model token charts, scoreboard, totals and diagnostics.
-
-```bash
-acc central --web
-acc central --web --port 8080
-```
-
-The page is loopback only at `http://127.0.0.1:<port>/` (default: an
-ephemeral port) and is served from the packaged static assets
-`skill/crew-chief/web/index.html`, `skill/crew-chief/web/central.css` and
-`skill/crew-chief/web/central.js`. There is no CDN and no external script
-or stylesheet; untrusted text renders through `textContent` only, never as
-markup.
-
-Local actions (message, reply to a question, pause, resume, stop, terminal
-entry) are authorized per server: the page first fetches a CSRF token, then
-sends it with a retry id on every POST, and the server enforces strict
-Origin/Host checks with no CORS. Buttons stay disabled until the token
-arrives. The toolbar acts on the coordinator you select; if that
-coordinator disappears, the page asks you to choose again. Each question
-has its own Reply, and Stop asks for confirmation naming the coordinator.
-
-Terminal entry is controlled: Attach queues an intent for an active
-terminal view, which performs the same handoff as `Enter`. The page shows
-the request as queued (it may wait while another session is open), then
-open while you work in the terminal, then closed with the session's exit
-code, or why it failed. With no available terminal bridge, or after a
-failure, the page shows a copyable instruction instead, quoted for your
-shell (PowerShell on Windows). When you started the view with
-`--central-dir`, the instruction carries the same directory as an
-absolute path: under your home it is shown as `~/...`; outside your home
-it is shown in full, because without it the command would open another
-registry, and the page is served only to your own loopback browser:
+When the coordinator CLI stops on a quota or rate limit (an HTTP 429, "usage
+limit", "rate limit"), the coordinator is not marked failed: it moves to
+`quota` and holds. Its worktree, job records and session stay as they are.
 
 ```bash
-acc attach COORDINATOR_ID
+acc resume COORDINATOR_ID
 ```
 
-It does not claim it opened the session; run that command in your own
-terminal.
+`resume` continues from the same records once the limit has reset. To switch
+CLIs instead, stop it and launch the same request again with another `--cli`.
+The maestro (tutorial 05) does this for every coordinator it runs.
 
-Token counts say "includes estimates" or "partial" when some usage was
-estimated or not reported. If the page loses the connection it keeps the
-last data, marked stale, and retries.
+## 10. Limits
 
-Reproducible fake-browser smoke (synthetic fixtures only, no live
-coordinator, no real registry):
-
-```bash
-python tests/test_central_web_assets.py --smoke
-```
-
-1. It prints an ephemeral loopback URL and serves synthetic snapshots only.
-2. Open `http://127.0.0.1:<port>/` and confirm cards, questions, history,
-   charts, scoreboard and totals render from `/api/snapshot`.
-3. Confirm HTML-like demo text appears literally, never as markup.
-4. Confirm no external scripts or stylesheets load, then stop the server and
-   confirm the listening socket is released.
-
-## 10. Optional Orca backend (v0.4.1)
-
-Default mode never needs Orca. Pass `--backend orca` only when you want
-Orca to create the worktree:
-
-```bash
-acc launch --repo . --request-file request.md --mode raw-request --authorize-raw --backend orca
-```
-
-Orca does one thing: it creates the coordinator's worktree. Everything after
-that (supervisor, rounds, messages, controls, attach and recovery) is the same
-core as in default mode.
-
-The `probe` runs only at launch: `acc launch --backend orca` checks the
-`orca` executable on `PATH` (`--version`, `--help` and the machine-readable
-`agent-context --json` capabilities) before anything is created, and again
-right before it asks Orca for the worktree. A missing executable, an
-unsupported version or a missing capability fails the launch explicitly,
-with no fallback to the default backend and no switch mid-launch.
-
-The backend is stored with the coordinator and is immutable. `acc message`,
-`acc attach`, `acc pause`, `acc resume`, `acc stop` and `acc recover`, and the
-same actions in `acc central` and in the browser, route by that stored name
-and never call Orca. If Orca is removed or upgraded later, you can still
-message, attach, pause, stop and recover an Orca coordinator:
-
-```bash
-acc stop COORDINATOR_ID
-```
-
-A coordinator whose stored backend is neither `default` nor `orca` is refused
-with an `unknown backend` error; it is never handled as another backend.
-
-## 11. v0.4.1 limits
-
-- Loopback only (`127.0.0.1`), ephemeral port by default; no remote server
-  or shared-user access, and no browser shell is ever embedded.
+- Terminal only: `acc central` is the screen, `acc central --json` prints one
+  snapshot for scripts and the maestro.
 - The owner integrates: review the coordinator branch and merge it yourself
   as in section 8. ACC never merges or pushes, and never removes a
   coordinator worktree automatically.
 
-## 12. Update check
+## 11. Update check
 
-ACC can check for a newer stable release in the background. This is ACC's
-**only external network access** — the browser and all other commands are
-loopback-only. The check runs at most once per rolling 24 hours (including
+ACC can check for a newer stable release in the background. Apart from
+webhooks you configure and `install.py --with-rtk`, this is ACC's **only
+external network access**. The check runs at most once per rolling 24 hours (including
 failures), never blocks your command, and is completely silent when offline,
 on timeout, or when the cache is stale or invalid. No setup is required.
 
@@ -281,8 +200,8 @@ on timeout, or when the cache is stale or invalid. No setup is required.
 notice is shown, and preferences are never rewritten. The existing
 project-over-global precedence applies.
 
-When a newer stable version is found, both the terminal and web central views
-display exactly one line (wrapping visually on phones):
+When a newer stable version is found, the central terminal view displays
+exactly one line:
 
 ```
 ACC v0.4.4 available. Update manually in your ACC source clone: git fetch --tags; git checkout v0.4.4; python -I install.py --command; python -I install.py <project>

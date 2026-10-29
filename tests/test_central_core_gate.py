@@ -24,7 +24,7 @@ TUTORIAL_01_EN = REPO_ROOT / "docs" / "tutorials" / "01-first-job.md"
 TUTORIAL_01_PT = REPO_ROOT / "docs" / "tutorials" / "01-first-job.pt-BR.md"
 VERSION_FILE = SCRIPTS_DIR / "crew_chief" / "__init__.py"
 
-CURRENT_VERSION = "0.4.4"
+CURRENT_VERSION = "0.5.0"
 
 
 def _read(path: Path) -> str:
@@ -40,28 +40,6 @@ def test_version_is_current():
     """FR-019: runtime version matches the gated release."""
     text = _read(VERSION_FILE)
     assert f'__version__ = "{CURRENT_VERSION}"' in text
-
-
-def test_changelog_has_current_release_entry():
-    """SC-011: CHANGELOG contains a 0.4.2 entry with web content."""
-    text = _read(CHANGELOG)
-    assert f"## [{CURRENT_VERSION}]" in text
-    section_start = text.index(f"## [{CURRENT_VERSION}]")
-    next_section = text.find("\n## [", section_start + 1)
-    current_section = text[section_start:next_section] if next_section != -1 else text[section_start:]
-    assert "web" in current_section.lower() or "Web" in current_section
-
-
-def test_changelog_preserves_historical_entries():
-    """Historical changelog assertions remain intact."""
-    text = _read(CHANGELOG)
-    assert "[0.3.4]" in text
-    assert "[0.3.3]" in text or "[0.3.2]" in text or "[0.3.1]" in text
-
-
-# ---------------------------------------------------------------------------
-# Release pins in documentation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("doc", [README_EN, README_PT, TUTORIAL_01_EN, TUTORIAL_01_PT])

@@ -42,11 +42,11 @@ def test_tutorials_document_base_kit():
 # --- Installer flags -------------------------------------------------------
 
 def test_readmes_document_installer_flags():
-    """Both READMEs document --no-ponytail, --no-rtk, --no-superpowers."""
+    """Both READMEs document --no-ponytail, --with-rtk, --no-superpowers."""
     for path in (README, README_PT):
         text = _read(path)
         assert "--no-ponytail" in text, f"{path.name} must document --no-ponytail"
-        assert "--no-rtk" in text, f"{path.name} must document --no-rtk"
+        assert "--with-rtk" in text, f"{path.name} must document --with-rtk"
         assert "--no-superpowers" in text, f"{path.name} must document --no-superpowers"
 
 
@@ -97,20 +97,13 @@ def test_readmes_document_licenses():
         assert "Apache-2.0" in text, f"{path.name} must mention Apache-2.0 license"
 
 
-# --- Changelog has Unreleased section --------------------------------------
-
-def test_changelog_has_unreleased_section():
-    """CHANGELOG.md has an Unreleased section for kit docs."""
-    text = _read(CHANGELOG)
-    assert "[Unreleased]" in text, "CHANGELOG must have [Unreleased] section"
-
+# --- Changelog documents the base kit in the 0.5.0 release -----------------
 
 def test_changelog_documents_base_kit():
-    """CHANGELOG documents base kit components in Unreleased section."""
+    """CHANGELOG documents base kit components in the 0.5.0 section."""
     text = _read(CHANGELOG)
-    # Find the Unreleased section
-    unreleased_start = text.find("## [Unreleased]")
-    assert unreleased_start != -1, "CHANGELOG must have [Unreleased] section"
+    unreleased_start = text.find("## [0.5.0]")
+    assert unreleased_start != -1, "CHANGELOG must have a [0.5.0] section"
 
     # Find the next version section or end of file
     next_version = text.find("## [0.", unreleased_start + 1)
@@ -127,7 +120,7 @@ def test_changelog_documents_base_kit():
 
     # Check for installer flags
     assert "--no-ponytail" in unreleased_section, "CHANGELOG must document --no-ponytail"
-    assert "--no-rtk" in unreleased_section, "CHANGELOG must document --no-rtk"
+    assert "--with-rtk" in unreleased_section, "CHANGELOG must document --with-rtk"
     assert "--no-superpowers" in unreleased_section, "CHANGELOG must document --no-superpowers"
 
     # Check for RTK details
@@ -150,7 +143,7 @@ def test_readmes_consistent_flags_and_preferences():
     pt_text = _read(README_PT)
 
     # Check installer flags are in both
-    for flag in ("--no-ponytail", "--no-rtk", "--no-superpowers"):
+    for flag in ("--no-ponytail", "--with-rtk", "--no-superpowers"):
         assert flag in en_text, f"README.md must document {flag}"
         assert flag in pt_text, f"README.pt-BR.md must document {flag}"
 

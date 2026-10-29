@@ -4,9 +4,9 @@
 
 # agent-crew-chief
 
-**Your coding agent stops working alone and starts running a crew.**
+**One maestro, many coordinators, a crew of free models.**
 
-It splits the job, hands each piece to the best *free* model you have, gets a second opinion from a different model, grades every delivery, and learns who to trust in each project.
+You give your agent a goal. As the maestro it splits the goal into fronts and launches one coordinator per front, each in its own worktree. Every coordinator splits its front into pieces, hands each piece to the best *free* model you have, gets a second opinion from a different model family, grades every delivery and ends in one pull request. The scoreboard learns who to trust in each project.
 
 [![CI](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml/badge.svg)](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/pauloroos/agent-crew-chief?color=f59e0b)](https://github.com/pauloroos/agent-crew-chief/releases/latest)
@@ -35,18 +35,26 @@ You probably have more AI firepower than you use. There are free models in OpenC
 | 🧱 **Safe by construction** | Isolated git worktrees, a secret filter on every brief, writes outside the worktree auto-rejected, mass-deletion alerts, hard timeouts. |
 | 📒 **Everything on record** | Each job leaves a record in your repo, with a commit message and an issue comment ready to paste. |
 
-No server, no daemon, no dependencies: one skill plus a stdlib Python CLI that any agent can drive.
+## Three levels
 
-New here? Follow the [tutorials](docs/tutorials/README.md): your first job in 10 minutes, spec-driven work, cost and safety, and [coordinators in their own worktrees](docs/tutorials/04-central.md) (`acc launch`/`acc central`), with a practice project in [`examples/hello-crew`](examples/hello-crew).
+| Level | Who | What it does |
+|---|---|---|
+| **Maestro** | the agent you talk to (Claude Code, Codex…) | Splits your goal into independent fronts, launches one coordinator per front with `acc launch`, watches them with `acc central --json`, answers their questions and reports the PRs. Never edits code. |
+| **Coordinator** | a Claude Code or Codex session in its own worktree and branch | Runs the job cycle below for its front and opens one PR. A quota limit holds it (`quota`) instead of failing it; `acc resume` continues. |
+| **Executors and reviewers** | any CLI you have: OpenCode, Antigravity, Codex, Claude… | Do the typing in isolated worktrees, free models first; a different model family reviews; every delivery is graded. |
 
-Central also serves a loopback browser view (`acc central --web` on
-`http://127.0.0.1`, ephemeral port, packaged assets, no CDN) with the same
-cards, history, charts, scoreboard and questions plus authorized local
-actions; terminal entry falls back to a copyable `acc attach` instruction.
-Orca is explicitly optional (`--backend orca`): it only creates the
-worktree, is probed at launch, and an Orca coordinator keeps answering
-`acc message`/`stop` if Orca is removed later; default mode never needs it. Details, smoke
-steps and limits are in [04-central](docs/tutorials/04-central.md).
+You can also skip the maestro and use one level only: a single coordinator in
+your own session (tutorials 01–03) or one `acc launch` (tutorial 04).
+
+No dependencies: one skill plus a stdlib Python CLI that any agent can drive.
+Coordinators run under a small detached supervisor per coordinator; there is
+no server.
+
+New here? Follow the [tutorials](docs/tutorials/README.md): your first job in
+10 minutes, spec-driven work, cost and safety,
+[coordinators in their own worktrees](docs/tutorials/04-central.md) and
+[the maestro](docs/tutorials/05-maestro.md), with a practice project in
+[`examples/hello-crew`](examples/hello-crew).
 
 ## How it works
 
@@ -71,7 +79,7 @@ flowchart TB
 6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten. After a correction the next `dispatch` starts from the last `ok` attempt's branch, so the brief only describes the adjustment and the diff shows only that (`--fresh` starts over from `HEAD`, `--base <n|branch>` picks the starting attempt). Every executor that worked on the piece keeps its own grade.
 7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment, which list every executor with its score.
 
-## Merge gate (planned v0.5.0)
+## Merge gate (planned)
 
 A test-oriented merge gate with four gates, ACC-owned red/green evidence and suite, independent whole-PR Standards/Spec review, graph frontier/test seams and a safe landing policy is specified for v0.5.0. See [docs/process/merge-gate.md](docs/process/merge-gate.md) (English) and [docs/process/merge-gate.pt-BR.md](docs/process/merge-gate.pt-BR.md).
 
@@ -303,17 +311,17 @@ superpowers:<skill>` followed by the vendored SKILL.md content.
 
 ## Install
 
-The installer copies the crew-chief skill and, by default, also installs ponytail,
-rtk-oss and superpowers. Use `--no-ponytail`, `--no-rtk` or `--no-superpowers`
-to skip individual components:
+The installer copies the crew-chief skill together with ponytail and
+superpowers (skip them with `--no-ponytail` or `--no-superpowers`). rtk-oss is
+downloaded only when you ask for it with `--with-rtk`:
 
 ```bash
-git clone --branch v0.4.4 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
-python agent-crew-chief/install.py /path/to/project --no-ponytail --no-rtk --no-superpowers
+python agent-crew-chief/install.py /path/to/project --with-rtk
 ```
 
-No git? Download `agent-crew-chief-v0.4.4.zip` from the
+No git? Download `agent-crew-chief-v0.5.0.zip` from the
 [latest release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 Pin a tag (`--branch vX.Y.Z`) so you never install code in the middle of a change;
@@ -380,9 +388,9 @@ The skill files and the snippet are refreshed. Your `preferences.toml`, your
 
 ### Update check
 
-ACC can check for a newer stable release in the background. This is ACC's
-**only external network access** — the browser and all other commands are
-loopback-only. The check runs at most once per rolling 24 hours (including
+ACC can check for a newer stable release in the background. Apart from
+webhooks you configure and `install.py --with-rtk`, this is ACC's **only
+external network access**. The check runs at most once per rolling 24 hours (including
 failures), never blocks your command, and is completely silent when offline,
 on timeout, or when the cache is stale or invalid. No setup is required.
 
@@ -392,8 +400,8 @@ on timeout, or when the cache is stale or invalid. No setup is required.
 notice is shown, and preferences are never rewritten. The existing
 project-over-global precedence applies.
 
-When a newer stable version is found, both the terminal and web central views
-display exactly one line (wrapping visually on phones):
+When a newer stable version is found, the central terminal view displays
+exactly one line:
 
 ```
 ACC v0.4.4 available. Update manually in your ACC source clone: git fetch --tags; git checkout v0.4.4; python -I install.py --command; python -I install.py <project>
@@ -514,7 +522,7 @@ X-ACC-Signature: sha256=<hmac-sha256-hex>
 A failed notice is stored in the job record (bounded attempts and expiry; only the secret file path is stored, never the secret) and the next ACC process that touches the job, or the running central supervisor, delivers it with a valid signature; a delivered notice is not sent again. The backoff schedule is 30s, 2m, 10m, 30m, 1h. See
 `docs/crew-chief/webhook-receiver-example.py` for a complete reference receiver implementation.
 
-### Agent quickstart (v0.4.4)
+### Agent quickstart
 
 Any installed agent (such as Claude Code, Codex, or OpenCode) can use ACC directly:
 
@@ -553,18 +561,18 @@ Project-level rules override the global preferences list:
 # ]
 ```
 
-The ordered `coordinators` list defines the primary coordinator and subsequent fallback chain
-in configuration; note that as of v0.5.0 coordinator retry/fallback is implemented in
-`coordinator_launcher` but the public launch path (`central_backend` → `central_supervisor`)
-does not use it, so a quota error ends the run as failed. The `executors` and `reviewers` lists constrain eligible models within
-the repository.
+The ordered `coordinators` list names the coordinator CLIs the project
+prefers; the first one is the default. There is no automatic rotation: a
+coordinator that hits a quota limit is held in `quota`, and `acc resume` (or
+the maestro relaunching the front with another `--cli`) continues it. The
+`executors` and `reviewers` lists constrain eligible models within the
+repository.
 
 Every dispatch enforces strict repository isolation and git flow delivery rules:
 * **One job = one branch + one PR:** Work always proceeds on an isolated feature branch and never commits directly to `main`. Jobs created by the interview, by `job new` + `spec import` and by the MCP tools all get a `job_branch`, so the incremental push after each accepted piece and the single PR happen on every public path.
 * **Incremental push:** The feature branch is pushed after each accepted work item (when `job_branch` is set).
 * **Fail-stop safety:** If a `git push` or pull request creation fails, the round stops immediately and reports the exact command and error.
 * **Owner merges:** ACC opens the pull request; the repository owner alone merges it.
-* **Live board on separate track:** Live board and issue tracker synchronization runs on an independent track.
 
 ## Preferences
 

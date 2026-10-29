@@ -19,7 +19,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 README = REPO_ROOT / "README.md"
 TUTORIAL = REPO_ROOT / "docs" / "tutorials" / "04-central.md"
-TUTORIALS = [TUTORIAL, TUTORIAL.with_name("04-central.pt-BR.md")]
+TUTORIALS = [
+    TUTORIAL,
+    TUTORIAL.with_name("04-central.pt-BR.md"),
+    TUTORIAL.with_name("05-maestro.md"),
+    TUTORIAL.with_name("05-maestro.pt-BR.md"),
+]
 SCRIPTS_DIR = REPO_ROOT / "skill" / "crew-chief" / "scripts"
 
 
@@ -158,22 +163,11 @@ def test_every_acc_command_parses_with_the_real_parser(doc):
     from crew_chief import cli
 
     lines = _acc_lines(_read(doc))
-    assert len(lines) >= 10, f"{doc.name}: expected the full command flow, got {lines}"
+    minimum = 10 if doc.name.startswith("04-") else 3
+    assert len(lines) >= minimum, f"{doc.name}: expected the full command flow, got {lines}"
     for line in lines:
         argv = shlex.split(line)[1:]
         try:
             cli.build_parser().parse_args(argv)
         except SystemExit as exc:  # --help/--version exit 0; a parse error exits 2
             assert exc.code == 0, f"{doc.name}: {line!r} does not parse"
-
-
-# ---------------------------------------------------------------------------
-# US6/AC2: works without Orca
-# ---------------------------------------------------------------------------
-
-def test_docs_state_no_orca_required():
-    """US6/AC2: docs clarify that v0.4.0 works without an Orca executable."""
-    text = _read(TUTORIAL).lower()
-    assert "orca" in text or "no orca" in text or "without orca" in text or "default" in text, (
-        "04-central.md should clarify that Orca is optional for v0.4.0 core features"
-    )

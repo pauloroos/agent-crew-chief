@@ -25,7 +25,7 @@ You should see a new Git repository and a first commit. If Git asks for your nam
 Clone a tagged ACC release somewhere outside the practice project, then install it into the copy:
 
 ```bash
-git clone --branch v0.4.4 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py .
 ```
 

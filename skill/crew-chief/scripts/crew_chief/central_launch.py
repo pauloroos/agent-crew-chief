@@ -10,8 +10,6 @@ inspection, and the source checkout is never touched.
 from __future__ import annotations
 
 import os
-import shutil
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import sys
 from pathlib import Path
@@ -387,7 +386,6 @@ def add_central_subcommands(subparsers: Any, common: Any = None) -> None:
         "--authorize-raw", action="store_true", help="confirm raw-request authorization"
     )
     launch_parser.add_argument("--cli", help="coordinator CLI (default: claude)")
-    launch_parser.add_argument("--backend", help="execution backend (default: default)")
     launch_parser.add_argument("--base", help="base revision for the coordinator branch")
     launch_parser.add_argument(
         "--restricted", action="store_true", help="run in restricted mode"

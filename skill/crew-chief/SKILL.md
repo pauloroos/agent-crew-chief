@@ -240,7 +240,7 @@ command below takes `--central-dir <path>` to override the storage root
 
 ```bash
 CC launch --repo <path> --request-file <file> --mode approved-spec|direct-spec|raw-request [options]
-CC central [--once] [--plain] [--poll SECONDS]
+CC central [--once] [--plain] [--poll SECONDS] [--json]
 CC message <coordinator-id> --text "..." [--reply-to <question-id>]
 CC attach <coordinator-id> [--timeout SECONDS]
 CC pause <coordinator-id>
@@ -253,7 +253,7 @@ CC recover <coordinator-id>
 branch and worktree, registers it and starts one supervisor. `approved-spec`
 requires `--approved` and `--spec-dir`; `direct-spec` requires `--spec-dir`;
 `raw-request` requires `--authorize-raw`. Optional flags: `--cli`,
-`--backend`, `--base`, `--restricted`, `--unrestricted`,
+`--base`, `--restricted`, `--unrestricted`,
 `--install-worktree-acc`, `--release-root` (the released bundle the worktree
 ACC must match; default: the one running).
 
@@ -281,6 +281,47 @@ return exit code 2.
 
 `CC _supervisor` is a private entry used by detached supervisor processes;
 it is not part of the public CLI and must never be invoked directly.
+
+## Maestro: several coordinators at once
+
+When the user hands you a goal too big for one job, or asks for the maestro,
+you do not coordinate pieces yourself: you run coordinators. Each coordinator
+works in its own worktree and branch, runs the job cycle below with its own
+executors and reviewers, keeps the scoreboard and ends in one PR. You plan the
+fronts, launch them, keep them unblocked and report the PRs. You never edit
+the project's code yourself.
+
+1. **Split into fronts.** A front is one independent outcome that fits one PR
+   and touches files no other front touches. Work that depends on another
+   front waits for that front's PR to merge; never run two fronts on the same
+   files.
+2. **One approval for the plan.** Show the user the fronts (goal, files or
+   areas, launch mode, coordinator CLI) and ask once. Write each front's
+   request to its own file, or point at its spec directory.
+3. **Launch one coordinator per front** from the project root:
+
+   ```bash
+   CC launch --repo . --request-file fronts/01-auth.md --mode raw-request --authorize-raw --cli claude
+   CC launch --repo . --request-file fronts/02-export.md --spec-dir specs/002-export --mode approved-spec --approved --cli codex
+   ```
+
+   Keep every printed coordinator ID next to its front.
+4. **Watch with `CC central --json`**, every few minutes, never in a tight
+   loop. Act on each coordinator's `state`:
+   - a pending question: answer it with
+     `CC message ID --reply-to QUESTION_ID --text "..."` when the goal already
+     decides it; otherwise ask the user and relay the answer;
+   - `quota`: the coordinator CLI hit a limit and is held. `CC resume ID`
+     once the limit has reset, or `CC stop ID` and relaunch the front with
+     another `--cli`;
+   - `paused` with "no progress": read its last round, send guidance with
+     `CC message`, then `CC resume ID`;
+   - `failed`: read `last_error`; `CC recover ID` only after the cause is
+     fixed, never as a blind retry;
+   - `completed`: note the branch and the PR.
+5. **Report** every front with its PR (or branch), its accepted pieces and
+   score, and what is left. The owner merges; you never merge, push to the
+   base branch or tag.
 
 ## Spec-driven work
 

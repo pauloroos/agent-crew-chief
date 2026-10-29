@@ -4,9 +4,9 @@
 
 # agent-crew-chief
 
-**Seu agente de código para de trabalhar sozinho e passa a chefiar uma equipe.**
+**Um maestro, várias coordenadoras, uma equipe de modelos grátis.**
 
-Ele divide o trabalho, entrega cada pedaço ao melhor modelo *grátis* que você tem, pede uma segunda opinião a outro modelo, dá nota a cada entrega e aprende em quem confiar em cada projeto.
+Você dá um objetivo ao seu agente. Como maestro, ele divide o objetivo em frentes e lança uma coordenadora por frente, cada uma na sua worktree. Cada coordenadora divide a frente em pedaços, entrega cada pedaço ao melhor modelo *grátis* que você tem, pede uma segunda opinião a outra família de modelos, dá nota a cada entrega e termina em um pull request. O placar aprende em quem confiar em cada projeto.
 
 [![CI](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml/badge.svg)](https://github.com/pauloroos/agent-crew-chief/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/pauloroos/agent-crew-chief?color=f59e0b)](https://github.com/pauloroos/agent-crew-chief/releases/latest)
@@ -35,19 +35,26 @@ O **agent-crew-chief** transforma o agente em que você já trabalha (Claude Cod
 | 🧱 **Seguro por construção** | Pasta git isolada, filtro de segredos em cada brief, escrita fora da pasta rejeitada na hora, alerta de deleção em massa, limite de tempo. |
 | 📒 **Tudo registrado** | Cada trabalho deixa um registro no seu repositório, com mensagem de commit e comentário de issue prontos para colar. |
 
-Sem servidor, sem processo de fundo, sem dependências: uma skill e um CLI Python puro que qualquer agente consegue usar.
+## Três níveis
 
-Começando agora? Siga os [tutoriais](docs/tutorials/README.pt-BR.md): seu primeiro job em 10 minutos, trabalho guiado por spec, custo e segurança, e [coordenadoras em worktrees próprias](docs/tutorials/04-central.pt-BR.md) (`acc launch`/`acc central`), com um projeto de treino em [`examples/hello-crew`](examples/hello-crew).
+| Nível | Quem | O que faz |
+|---|---|---|
+| **Maestro** | o agente com quem você conversa (Claude Code, Codex…) | Divide o objetivo em frentes independentes, lança uma coordenadora por frente com `acc launch`, acompanha com `acc central --json`, responde as perguntas delas e entrega os PRs. Nunca edita código. |
+| **Coordenadora** | uma sessão Claude Code ou Codex na sua própria worktree e branch | Roda o ciclo do job abaixo para a sua frente e abre um PR. Um limite de quota a deixa parada (`quota`) em vez de falhar; `acc resume` continua. |
+| **Executores e revisores** | qualquer CLI que você tenha: OpenCode, Antigravity, Codex, Claude… | Digitam em worktrees isoladas, modelos grátis primeiro; outra família de modelos revisa; toda entrega ganha nota. |
 
-A central também serve uma visão de navegador só de loopback (`acc central --web`
-em `http://127.0.0.1`, porta efêmera, assets empacotados, sem CDN) com os
-mesmos cartões, histórico, gráficos, placar e perguntas, além de ações
-locais autorizadas; a entrada pelo terminal cai para uma instrução
-`acc attach` para copiar. O Orca é explicitamente opcional (`--backend orca`):
-ele só cria a worktree, passa por probe no lançamento, e uma coordenadora
-Orca continua atendendo `acc message`/`stop` se o Orca for removido depois;
-o modo padrão nunca precisa dele. Detalhes, passos de smoke e limites estão
-em [04-central](docs/tutorials/04-central.pt-BR.md).
+Dá para usar um nível só, sem maestro: uma coordenadora na sua própria sessão
+(tutoriais 01–03) ou um `acc launch` (tutorial 04).
+
+Sem dependências: uma skill e um CLI Python puro que qualquer agente consegue
+usar. Cada coordenadora roda sob um pequeno supervisor destacado; não há
+servidor.
+
+Começando agora? Siga os [tutoriais](docs/tutorials/README.pt-BR.md): seu
+primeiro job em 10 minutos, trabalho guiado por spec, custo e segurança,
+[coordenadoras em worktrees próprias](docs/tutorials/04-central.pt-BR.md) e
+[o maestro](docs/tutorials/05-maestro.pt-BR.md), com um projeto de treino em
+[`examples/hello-crew`](examples/hello-crew).
 
 ## Como funciona
 
@@ -72,7 +79,7 @@ flowchart TB
 6. `correction` + `grade`: o script calcula a nota, e o placar é reescrito. Depois de uma correção, o próximo `dispatch` parte do branch da última tentativa `ok`, então o brief descreve só o ajuste e o diff mostra só ele (`--fresh` recomeça do `HEAD`, `--base <n|branch>` escolhe a tentativa de partida). Cada executor que trabalhou na peça fica com a própria nota.
 7. `accept` / `discard` + `close`: o trabalho entra ou é descartado, e você recebe a mensagem de commit e o comentário da issue, que listam cada executor com sua nota.
 
-## Portão de merge (planejado v0.5.0)
+## Portão de merge (planejado)
 
 Um portão de merge orientado a testes com quatro portas, evidência e suíte verde/vermelho sob controle do ACC, revisão independente de todo o PR nos eixos Standards/Spec, fronteiras de grafo/seams de teste e política de aterrissagem segura está especificado para a v0.5.0. Veja [docs/process/merge-gate.md](docs/process/merge-gate.md) (inglês) e [docs/process/merge-gate.pt-BR.md](docs/process/merge-gate.pt-BR.md).
 
@@ -312,17 +319,17 @@ vendido.
 
 ## Instalação
 
-O instalador copia a skill crew-chief e, por padrão, também instala ponytail,
-rtk-oss e superpowers. Use `--no-ponytail`, `--no-rtk` ou `--no-superpowers`
-para pular componentes individuais:
+O instalador copia a skill crew-chief junto com ponytail e superpowers (pule
+com `--no-ponytail` ou `--no-superpowers`). O rtk-oss só é baixado quando você
+pede, com `--with-rtk`:
 
 ```bash
-git clone --branch v0.4.4 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
-python agent-crew-chief/install.py /caminho/do/projeto --no-ponytail --no-rtk --no-superpowers
+python agent-crew-chief/install.py /caminho/do/projeto --with-rtk
 ```
 
-Sem git? Baixe o `agent-crew-chief-v0.4.4.zip` da
+Sem git? Baixe o `agent-crew-chief-v0.5.0.zip` da
 [última release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 descompacte e rode `python install.py /caminho/do/projeto` de dentro da pasta.
 Fixe uma tag (`--branch vX.Y.Z`) para nunca instalar código no meio de uma mudança;
@@ -388,9 +395,9 @@ Os arquivos da skill e o trecho são atualizados. Seu `preferences.toml`, seus
 
 ### Checagem de atualização
 
-O ACC pode verificar se há uma release estável mais nova em segundo plano. Esta
-é a **única conexão de rede externa do ACC** — o navegador e todos os outros
-comandos são só de loopback. A checagem roda no máximo uma vez a cada 24 horas
+O ACC pode verificar se há uma release estável mais nova em segundo plano. Fora os
+webhooks que você configurar e o `install.py --with-rtk`, esta é a **única
+conexão de rede externa do ACC**. A checagem roda no máximo uma vez a cada 24 horas
 rolantes (incluindo falhas), nunca bloqueia seu comando e é totalmente silenciosa
 quando offline, em timeout ou quando o cache está desatualizado ou inválido.
 Nenhuma configuração é necessária.
@@ -401,9 +408,8 @@ projeto ou global para desativar completamente — nenhuma checagem é agendada,
 nenhum aviso em cache é exibido e as preferências nunca são reescritas. A
 precedência existente de projeto-sobre-global se aplica.
 
-Quando uma versão estável mais nova é encontrada, tanto a visão central do
-terminal quanto a do navegador exibem exatamente uma linha (quebra visualmente
-em celulares):
+Quando uma versão estável mais nova é encontrada, a visão central do
+terminal exibe exatamente uma linha:
 
 ```
 ACC v0.4.4 available. Update manually in your ACC source clone: git fetch --tags; git checkout v0.4.4; python -I install.py --command; python -I install.py <project>
@@ -526,7 +532,7 @@ X-ACC-Signature: sha256=<hmac-sha256-hex>
 Uma entrega que falha é guardada no registro do job (tentativas e expiração limitadas; só o caminho do arquivo do segredo é guardado, nunca o segredo) e o próximo processo do ACC que tocar o job, ou o supervisor central em execução, a entrega com assinatura válida; uma entrega entregue não é enviada de novo. O esquema de backoff é 30s, 2m, 10m, 30m, 1h. Consulte
 `docs/crew-chief/webhook-receiver-example.py` para uma implementação completa de receptor de referência.
 
-### Início rápido para agentes (v0.4.4)
+### Início rápido para agentes
 
 Qualquer agente instalado (como Claude Code, Codex ou OpenCode) pode usar o ACC diretamente:
 
@@ -565,14 +571,13 @@ As configurações do projeto têm precedência sobre a lista global:
 # ]
 ```
 
-A lista ordenada `coordinators` define o coordenador primário e a cadeia de fallback na configuração; note que até a v0.5.0 o retry/fallback do coordenador está implementado em `coordinator_launcher`, mas o caminho de lançamento público (`central_backend` → `central_supervisor`) não o utiliza, portanto um erro de cota encerra a execução como falha sem rotação. As listas `executors` e `reviewers` delimitam os modelos elegíveis dentro do repositório.
+A lista ordenada `coordinators` diz quais CLIs de coordenação o projeto prefere; a primeira é a padrão. Não há rotação automática: uma coordenadora que bate quota fica parada em `quota`, e `acc resume` (ou o maestro relançando a frente com outro `--cli`) a continua. As listas `executors` e `reviewers` delimitam os modelos elegíveis dentro do repositório.
 
 Toda execução segue regras estritas de isolamento e fluxo de entrega no Git:
 * **Um job = uma branch + um PR:** O trabalho sempre avança em uma branch de feature isolada e nunca commita direto na `main`. Jobs criados pela entrevista, por `job new` + `spec import` e pelas ferramentas MCP recebem um `job_branch`, então o push incremental após cada peça aceita e o PR único acontecem em todos os caminhos públicos.
 * **Push incremental:** A branch de feature é enviada (push) após cada item aceito (quando `job_branch` está configurado).
 * **Parada em falhas (fail-stop):** Se o `git push` ou a criação do pull request falhar, a rodada para imediatamente e reporta o comando e o erro exatos.
 * **Apenas o dono faz o merge:** O ACC abre o pull request; somente o dono do repositório faz o merge.
-* **Quadro em tempo real em trilha separada:** A sincronização do quadro de acompanhamento e issue tracker roda em uma trilha independente.
 
 ## Preferências
 
