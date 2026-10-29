@@ -16,7 +16,7 @@ SCRIPTS_DIR = REPO_ROOT / "skill" / "crew-chief" / "scripts"
 ENTRY_SCRIPT = SCRIPTS_DIR / "crew-chief.py"
 
 
-def _spawn_mcp_process(extra_env: dict[str, str] | None = None) -> subprocess.Popen:
+def _spawn_mcp_process(extra_env: dict[str, str] | None = None, stderr=subprocess.PIPE) -> subprocess.Popen:
     env = {
         **os.environ,
         "PYTHONPATH": str(SCRIPTS_DIR)
@@ -30,7 +30,7 @@ def _spawn_mcp_process(extra_env: dict[str, str] | None = None) -> subprocess.Po
         [sys.executable, str(ENTRY_SCRIPT), "mcp"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=stderr,
         text=True,
         encoding="utf-8",
         env=env,
@@ -440,7 +440,9 @@ def test_handler_stdout_never_corrupts_stdio_stream(tmp_path: Path):
         "AGENT_CREW_CHIEF_CENTRAL_DIR": str(central_dir),
         "HOME": str(home_dir),
     }
-    proc = _spawn_mcp_process(extra_env=extra_env)
+    # A file, not a pipe: nobody drains stderr mid-test, and a full pipe deadlocks the child on Windows.
+    stderr_file = open(tmp_path / "stderr.log", "w+", encoding="utf-8")
+    proc = _spawn_mcp_process(extra_env=extra_env, stderr=stderr_file)
     try:
         assert proc.stdin is not None
         assert proc.stdout is not None
@@ -524,10 +526,12 @@ def test_handler_stdout_never_corrupts_stdio_stream(tmp_path: Path):
         assert remaining_stdout == "", f"Unexpected remaining stdout: {remaining_stdout!r}"
 
         # Stderr captured the redirected handler prints
-        stderr_content = proc.stderr.read() if proc.stderr else ""
+        stderr_file.seek(0)
+        stderr_content = stderr_file.read()
         assert "stop" in stderr_content or "control_id" in stderr_content
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        stderr_file.close()
 
