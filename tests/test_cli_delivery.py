@@ -118,14 +118,6 @@ class TestAcceptWorktreeRemovalFailure:
         # Spy on merges, pushes, and notices
         merge_calls = []
         push_calls = []
-        notice_calls = []
-
-        import crew_chief.webhook as webhook_mod
-        real_send_notice = webhook_mod.send_webhook_notice
-        def spy_notice(*a, **kw):
-            notice_calls.append((a, kw))
-            return real_send_notice(*a, **kw)
-        monkeypatch.setattr(webhook_mod, "send_webhook_notice", spy_notice)
 
         from crew_chief import git_delivery
         real_push = git_delivery.push_to_origin
@@ -176,7 +168,6 @@ class TestAcceptWorktreeRemovalFailure:
         # Reset spy counters before the retry calls
         merge_calls.clear()
         push_calls.clear()
-        notice_calls.clear()
 
         # Retry accept with failure: cleanup fails again, warns, and does not merge/push/notify
         with patch.object(wt_module, "_remove_worktree", failing_remove_worktree):
@@ -188,7 +179,6 @@ class TestAcceptWorktreeRemovalFailure:
         assert worktree_path.exists(), "Worktree should still exist after failed retry"
         assert len(merge_calls) == 0, f"Expected 0 git merges on failed retry, got {len(merge_calls)}"
         assert len(push_calls) == 0, f"Expected 0 git pushes on failed retry, got {len(push_calls)}"
-        assert len(notice_calls) == 0, f"Expected 0 notices on failed retry, got {len(notice_calls)}"
 
         # Later accept/cleanup removes the worktree only - no merge, push, or notices
         result2 = main(["accept", "--project", str(repo), "--job", job_id,
@@ -198,7 +188,6 @@ class TestAcceptWorktreeRemovalFailure:
         assert not worktree_path.exists(), "Second accept must remove the worktree"
         assert len(merge_calls) == 0, f"Expected 0 git merges on second call, got {len(merge_calls)}: {merge_calls}"
         assert len(push_calls) == 0, f"Expected 0 git pushes on second call, got {len(push_calls)}: {push_calls}"
-        assert len(notice_calls) == 0, f"Expected 0 notices on second call, got {len(notice_calls)}: {notice_calls}"
 
         # Piece should still be marked as accepted
         job = _stored_job(repo, job_id)

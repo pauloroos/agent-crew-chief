@@ -86,7 +86,7 @@
 
 # Economy alerts printed by `economy` and `close` (0 turns an alert off). They
 # answer "did the free work really save paid tokens, rework and time?":
-# - coordinator share: the coordinator's (and central's) own tokens, as a share
+# - coordinator share: the coordinator's own tokens, as a share
 #   of every token the job spent, above which `close` warns;
 # - attempts per piece: execution attempts divided by pieces tried;
 # - job minutes: from the job's creation to its last finished attempt.
@@ -117,33 +117,15 @@
 # lists add up.
 # ignore_home_entries = [".aider*", ".kiro"]
 
-# --- central coordination ---------------------------------------------------
+# --- coordinators ------------------------------------------------------------
 #
-# Central launches (the future public launch command, not crew-chief dispatch,
-# which remains the existing executor command) resolve their coordinator and
-# tuning from these scalars. An empty `coordinator_default` falls back to the
-# calling CLI (CREW_CHIEF_COORDINATOR); otherwise one of: claude, codex.
-# coordinator_default = ""
-# Whether the coordinator CLI gets the permission/sandbox bypass; it never
-# relaxes ACC executor tier, budget or free-first rules.
-# coordinator_unrestricted = true
-# Seconds between central registry polls.
-# central_poll_s = 1.0
-# Seconds a central round may take before timing out.
-# central_round_timeout_s = 900
-# Label for the launch in the central registry.
-# central_backend = "default"
-# Minutes without job progress *and* child output before the coordinator round
-# is considered stalled (a normal round timeout stays distinct). Must be a
-# finite number greater than zero. Waiting for a known quota reset never calls
-# a model.
-# stall_minutes = 40
-# What happens when the coordinator hits a quota or stalls: `ask` leaves a
-# durable question, `wait` waits without model calls until the known reset and
-# resumes the exact session, and `handoff:<cli>` continues the same job with
-# the named CLI (claude or codex). An explicitly named target is your choice of
-# that CLI; installing a CLI never authorizes a costlier one on its own.
-# on_coordinator_quota = "ask"
+# `acc launch` tries the coordinators of [team].coordinators in order, as
+# "tool:model" entries of any configured tool; on a quota or a failure the
+# next one takes over the same worktree and job. One round may run this long:
+# coordinator_timeout_s = 14400
+#
+# [team]
+# coordinators = ["opencode:omni/chefe", "claude:opus", "codex:gpt-6.1-sol"]
 #
 # --- executor choice (Phase 4) ---------------------------------------------
 #
@@ -161,14 +143,6 @@
 # did. BOM/CRLF handling follows existing preferences parsing.
 # executors_default = "ask"
 
-# --- updates ---------------------------------------------------------------
-#
-# ACC checks the latest GitHub release at most once a day, in the background,
-# without delaying any command. It never downloads or installs anything; this
-# is ACC's only external network access. Set to false to disable both the
-# check and any cached notice.
-# check_updates = true
-#
 # --- models ----------------------------------------------------------------
 #
 # `match` is an fnmatch glob tested against the executor id "<tool>:<model>".

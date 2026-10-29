@@ -235,8 +235,8 @@ def check_interview_expiration(
         job["events"] = events
     events.append({"type": "interview_expired", "at": current.isoformat()})
 
-    from . import webhook
-    webhook.transition_terminal_state(
+    from . import records
+    records.transition_terminal_state(
         job=job,
         project=project,
         job_id=job_id or job.get("id"),

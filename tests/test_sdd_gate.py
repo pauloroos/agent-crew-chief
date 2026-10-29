@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from crew_chief import coordinator_claude
-from crew_chief.central_launch import prepare_launch
 from crew_chief.sdd_gate import (
     ensure_spec_directory,
     enter_spec_phase,
@@ -28,11 +26,6 @@ Options:
   --permission-mode <mode>          Permission mode (choices: "default", "dontAsk", "plan")
   --dangerously-skip-permissions    Bypass all permission checks
 """
-
-
-@pytest.fixture(autouse=True)
-def isolated_probes(monkeypatch):
-    monkeypatch.setattr(coordinator_claude, "_PROBED", {})
 
 
 @pytest.fixture(autouse=True)
@@ -119,97 +112,6 @@ def _fake_claude(fake_bin) -> None:
         "",
     ])
     fake_bin("claude", script)
-
-
-def test_free_text_creates_specs_directory(repo, release, root, fake_bin, tmp_path):
-    """Jobs from free text (MCP, CLI, agent) enter spec phase; creates specs/NNN-<slug>/ with spec.md, plan.md, tasks.md if absent."""
-    _fake_claude(fake_bin)
-
-    # Pre-populate repo with an existing spec 001-existing to verify numbering increments to 002
-    existing_spec = repo / "specs" / "001-existing"
-    existing_spec.mkdir(parents=True)
-    (existing_spec / "spec.md").write_text("# Existing\n", encoding="utf-8")
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-m", "add existing spec 001")
-
-    req_file = tmp_path / "request.md"
-    req_file.write_text("# Add User Authentication\n\nSupport password and token auth.\n", encoding="utf-8")
-
-    opts = {
-        "mode": "raw-request",
-        "authorize_raw": True,
-        "release_root": release,
-    }
-
-    result = prepare_launch(repo, req_file, opts, root)
-    assert result["ok"] is True, result.get("error")
-
-    record = result["record"]
-    worktree = Path(record["worktree"])
-
-    # 1. Job enters spec phase
-    assert is_spec_phase(record) is True
-    assert record["authorization"].get("phase") == "spec"
-    spec_path_str = record["authorization"].get("spec_path")
-    assert spec_path_str is not None
-
-    spec_dir = Path(spec_path_str)
-    assert spec_dir.is_dir()
-    assert spec_dir.parent == worktree / "specs"
-
-    # 2. Sequential numbering NNN-<slug>: increments after 001 -> 002
-    assert spec_dir.name == "002-add-user-authentication"
-
-    # 3. spec.md, plan.md, tasks.md created if absent
-    spec_md = spec_dir / "spec.md"
-    plan_md = spec_dir / "plan.md"
-    tasks_md = spec_dir / "tasks.md"
-    assert spec_md.is_file()
-    assert plan_md.is_file()
-    assert tasks_md.is_file()
-
-    # Content checks
-    assert "Add User Authentication" in spec_md.read_text(encoding="utf-8")
-    assert plan_md.read_text(encoding="utf-8").strip()
-    assert tasks_md.read_text(encoding="utf-8").strip()
-
-    # 4. If absent: existing files are preserved and not overwritten
-    spec_md.write_text("# Custom Spec Content That Must Not Be Overwritten\n", encoding="utf-8")
-    spec_dir_recreated = ensure_spec_directory(worktree, title="Add User Authentication")
-    assert (spec_dir_recreated / "spec.md").read_text(encoding="utf-8") == "# Custom Spec Content That Must Not Be Overwritten\n"
-
-
-def test_explicit_spec_jobs_preserve_explicit_spec_dir(repo, release, root, fake_bin, tmp_path):
-    """Explicit-spec jobs preserve their provided spec directory without auto-generating free-text specs."""
-    _fake_claude(fake_bin)
-
-    explicit_spec = tmp_path / "explicit-spec"
-    explicit_spec.mkdir()
-    for name in ("spec.md", "plan.md", "tasks.md", "crew.toml"):
-        (explicit_spec / name).write_text(f"# {name}\n", encoding="utf-8")
-
-    req_file = tmp_path / "request.md"
-    req_file.write_text("# Direct Spec Launch\n", encoding="utf-8")
-
-    opts = {
-        "mode": "direct-spec",
-        "spec_dir": str(explicit_spec),
-        "release_root": release,
-    }
-
-    result = prepare_launch(repo, req_file, opts, root)
-    assert result["ok"] is True, result.get("error")
-
-    record = result["record"]
-    worktree = Path(record["worktree"])
-
-    # Explicit spec copied to specs/explicit-spec
-    expected_spec = worktree / "specs" / "explicit-spec"
-    assert expected_spec.is_dir()
-    assert (expected_spec / "spec.md").read_text(encoding="utf-8") == "# spec.md\n"
-    # No auto-numbered free-text spec directory created
-    auto_dirs = [d for d in (worktree / "specs").iterdir() if d.is_dir() and d.name != "explicit-spec"]
-    assert len(auto_dirs) == 0
 
 
 def test_enter_spec_phase_and_is_spec_phase(tmp_path):

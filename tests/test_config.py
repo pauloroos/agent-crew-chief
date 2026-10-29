@@ -504,22 +504,6 @@ def test_team_table_coordinators_executors_reviewers(tmp_path):
     assert prefs_fallback.team.origin("executors") == "global_team"
     assert prefs_fallback.team.origin("reviewers") == "global_team"
 
-    # When global only has coordinator_fallback and no [team], fallback is used
-    g_fallback_only = tmp_path / "g_fallback_only.toml"
-    g_fallback_only.write_text(
-        'coordinator_fallback = ["claude:claude-opus-5-5", "codex:gpt-6.1-sol"]\n',
-        encoding="utf-8",
-    )
-    prefs_fallback_only = load_prefs(empty_proj, global_path=g_fallback_only)
-    assert prefs_fallback_only.team["coordinators"] == [
-        "claude:claude-opus-5-5",
-        "codex:gpt-6.1-sol",
-    ]
-    assert prefs_fallback_only.team["executors"] == []
-    assert prefs_fallback_only.team["reviewers"] == []
-    assert prefs_fallback_only.team.origin("coordinators") == "global_fallback"
-    assert prefs_fallback_only.team.origin("executors") == ""
-    assert prefs_fallback_only.team.origin("reviewers") == ""
 
     # Legacy projects with no [team] anywhere produce empty lists
     prefs_legacy = load_prefs(empty_proj, global_path=tmp_path / "empty_global.toml")
@@ -562,14 +546,6 @@ def test_team_entry_must_be_cli_model_format(tmp_path):
         load_prefs(tmp_path, tmp_path / "n.toml")
 
 
-def test_team_coordinator_cli_must_be_supported(tmp_path):
-    (tmp_path / "docs/crew-chief").mkdir(parents=True)
-    f = tmp_path / "docs/crew-chief/preferences.toml"
-    f.write_text('[team]\ncoordinators = ["opencode:omni/gratis"]\n', encoding="utf-8")
-    with pytest.raises(PrefsError, match="not an allowed coordinator CLI"):
-        load_prefs(tmp_path, tmp_path / "n.toml")
-
-
 def test_team_executor_and_reviewer_tools_must_be_known(tmp_path):
     (tmp_path / "docs/crew-chief").mkdir(parents=True)
     f = tmp_path / "docs/crew-chief/preferences.toml"
@@ -579,18 +555,6 @@ def test_team_executor_and_reviewer_tools_must_be_known(tmp_path):
 
     f.write_text('[team]\nreviewers = ["fake_tool:model"]\n', encoding="utf-8")
     with pytest.raises(PrefsError, match="unknown tool 'fake_tool'"):
-        load_prefs(tmp_path, tmp_path / "n.toml")
-
-
-def test_coordinator_fallback_validation(tmp_path):
-    (tmp_path / "docs/crew-chief").mkdir(parents=True)
-    f = tmp_path / "docs/crew-chief/preferences.toml"
-    f.write_text('coordinator_fallback = "not-a-list"\n', encoding="utf-8")
-    with pytest.raises(PrefsError, match="coordinator_fallback must be a list"):
-        load_prefs(tmp_path, tmp_path / "n.toml")
-
-    f.write_text('coordinator_fallback = ["unknown_cli"]\n', encoding="utf-8")
-    with pytest.raises(PrefsError, match="not an allowed coordinator CLI"):
         load_prefs(tmp_path, tmp_path / "n.toml")
 
 
@@ -610,29 +574,6 @@ def test_team_claude_ghost_supported_without_server_login(tmp_path):
 
 
 # --- projects_dir (T031, FR-024) ---------------------------------------------
-
-
-def test_projects_dir_read_from_global_not_project(tmp_path):
-    """projects_dir is loaded only from global preferences; target project cannot self-authorize."""
-    g = tmp_path / "global.toml"
-    g.write_text('projects_dir = "/trusted/projects"\n', encoding="utf-8")
-
-    proj = tmp_path / "proj"
-    (proj / "docs/crew-chief").mkdir(parents=True)
-    (proj / "docs/crew-chief/preferences.toml").write_text(
-        'projects_dir = "/rogue/projects"\n', encoding="utf-8"
-    )
-
-    prefs = load_prefs(proj, global_path=g)
-    assert prefs.projects_dir == "/trusted/projects"
-
-
-def test_projects_dir_must_be_non_empty_string(tmp_path):
-    """projects_dir must be a non-empty string."""
-    g = tmp_path / "global.toml"
-    g.write_text("projects_dir = 123\n", encoding="utf-8")
-    with pytest.raises(PrefsError, match="projects_dir"):
-        load_prefs(tmp_path, global_path=g)
 
 
 def test_max_running_executors_defaults_to_3_and_can_be_set(tmp_path):

@@ -4,7 +4,7 @@
 Usage::
 
     python install.py <project> [--force-snippet] [--no-ponytail]
-        [--with-rtk] [--no-superpowers]
+        [--no-superpowers]
     python install.py --command [--bin-dir DIR]
 
 What it does:
@@ -29,10 +29,7 @@ What it does:
    same two roots, each marked with ``.installed-by-agent-crew-chief``; a
    Ponytail without that marker is left alone. ``--no-ponytail`` skips the
    step.
-6. With ``--with-rtk``, downloads rtk-oss (Apache-2.0 v1.1.0) if not already
-   on PATH and verifies SHA-256 checksums against the manifest and the
-   release checksums.txt. Without it nothing is downloaded.
-7. Installs vendored superpowers skills (test-driven-development,
+6. Installs vendored superpowers skills (test-driven-development,
    systematic-debugging, verification-before-completion). ``--no-superpowers``
    skips this step.
 
@@ -341,12 +338,6 @@ def main(argv: list[str] | None = None) -> int:
         help="do not install the vendored Ponytail skills",
     )
     parser.add_argument(
-        "--with-rtk",
-        action="store_true",
-        help="download and install rtk-oss (off by default)",
-    )
-    parser.add_argument("--no-rtk", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument(
         "--no-superpowers",
         action="store_true",
         help="do not install superpowers skills",
@@ -384,14 +375,13 @@ def main(argv: list[str] | None = None) -> int:
 
     report = install(project, args.force_snippet, not args.no_ponytail) if project else []
 
-    # Install kit components (rtk, superpowers, ponytail) if not opted out
+    # Install kit components (superpowers, ponytail) if not opted out
     if project is not None:
         if str(SCRIPTS_DIR) not in sys.path:
             sys.path.insert(0, str(SCRIPTS_DIR))
         from crew_chief.kit_install import install_kit
         kit_report = install_kit(
             project_dir=project,
-            do_install_rtk=args.with_rtk and not args.no_rtk,
             do_install_superpowers=not args.no_superpowers,
             do_install_ponytail=not args.no_ponytail,
         )

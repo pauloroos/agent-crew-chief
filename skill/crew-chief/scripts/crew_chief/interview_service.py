@@ -21,7 +21,7 @@ from .interview import (
     check_interview_expiration,
 )
 from .project_resolver import ProjectResolutionError, resolve_project_path
-from .webhook import transition_terminal_state
+from .records import transition_terminal_state
 
 VALID_EXECUTOR_MODES = ("own", "subagents", "free_first")
 VALID_END_MODES = ("pr", "pr_review")
@@ -269,6 +269,20 @@ def load_interview_prefs(
     return project_prefs, global_prefs, team_coords
 
 
+def _launch_coordinator(
+    project_dir: Path, req_file: Path, cli_arg: str | None, model_arg: str | None, executors: str | None
+) -> tuple[int, str | None, int | None, str | None]:
+    """Start the job's coordinator with the maestro launcher: ``(exit, id, pid, error)``."""
+    from . import maestro
+
+    entries = [f"{cli_arg}:{model_arg}"] if cli_arg and model_arg else None
+    try:
+        record = maestro.launch(project_dir, req_file, coordinators=entries, executors=executors)
+    except Exception as exc:
+        return 1, None, None, str(exc)
+    return 0, record["id"], record.get("pid"), None
+
+
 def _launch_completed_interview_job(
     project_dir: Path,
     job: dict[str, Any],
@@ -277,8 +291,6 @@ def _launch_completed_interview_job(
     projects_dir: str | Path | None = None,
 ) -> None:
     """Move job to queued, write request file in job records area, and launch detached."""
-    import argparse
-    from . import central_cli
 
     # 1. State moves to queued (never ready) with lifecycle event
     job["state"] = "queued"
@@ -332,38 +344,11 @@ def _launch_completed_interview_job(
         "end_mode": end_mode,
     }
 
-    launch_args = argparse.Namespace(
-        repo=str(project_dir),
-        request_file=str(req_file),
-        mode="raw-request",
-        approved=False,
-        authorize_raw=True,
-        spec_dir=None,
-        cli=cli_arg,
-        model=model_arg,
-        backend=None,
-        base=None,
-        restricted=False,
-        unrestricted=False,
-        install_worktree_acc=True,
-        release_root=None,
-        executors=executors,
-        end_mode=end_mode,
-        central_dir=None,
-        projects_dir=str(projects_dir) if projects_dir else None,
-        json=False,
-        quiet=True,
+    exit_code, coord_id, supervisor, launch_error = _launch_coordinator(
+        project_dir, req_file, cli_arg, model_arg, executors
     )
 
-    try:
-        exit_code = central_cli.handle_launch(launch_args)
-    except Exception as exc:
-        exit_code = 1
-        setattr(launch_args, "launch_error", str(exc))
-
     if exit_code == 0:
-        coord_id = getattr(launch_args, "coordinator_id", None)
-        supervisor = getattr(launch_args, "supervisor", None)
         now_run = datetime.now(timezone.utc).isoformat()
         job["state"] = "running"
         job["status"] = "running"
@@ -388,7 +373,7 @@ def _launch_completed_interview_job(
         })
         records.save_job(project_dir, job)
     else:
-        err_msg = getattr(launch_args, "launch_error", None) or f"launch exited with code {exit_code}"
+        err_msg = launch_error or f"launch exited with code {exit_code}"
         transition_terminal_state(
             job=job,
             project=project_dir,
@@ -653,8 +638,6 @@ def answer_interview_job(
     # Only the claim winner launches, outside the lock. The final running/failed
     # transition is applied with update_job so a concurrent answer saved after
     # the claim is preserved and the launched coordinator is recorded once.
-    import argparse
-    from . import central_cli
 
     jobs_area = records.jobs_dir(project_dir)
     jobs_area.mkdir(parents=True, exist_ok=True)
@@ -683,38 +666,11 @@ def answer_interview_job(
         "end_mode": launch_end_mode,
     }
 
-    launch_args = argparse.Namespace(
-        repo=str(project_dir),
-        request_file=str(req_file),
-        mode="raw-request",
-        approved=False,
-        authorize_raw=True,
-        spec_dir=None,
-        cli=cli_arg,
-        model=model_arg,
-        backend=None,
-        base=None,
-        restricted=False,
-        unrestricted=False,
-        install_worktree_acc=True,
-        release_root=None,
-        executors=launch_executors,
-        end_mode=launch_end_mode,
-        central_dir=None,
-        projects_dir=str(projects_dir) if projects_dir else None,
-        json=False,
-        quiet=True,
+    exit_code, coord_id, supervisor, launch_error = _launch_coordinator(
+        project_dir, req_file, cli_arg, model_arg, launch_executors
     )
 
-    try:
-        exit_code = central_cli.handle_launch(launch_args)
-    except Exception as exc:
-        exit_code = 1
-        setattr(launch_args, "launch_error", str(exc))
-
     if exit_code == 0:
-        coord_id = getattr(launch_args, "coordinator_id", None)
-        supervisor = getattr(launch_args, "supervisor", None)
         now_run = datetime.now(timezone.utc).isoformat()
         ev_running = {
             "type": "running",
@@ -751,7 +707,7 @@ def answer_interview_job(
             "pending": [],
         }
     else:
-        err_msg = getattr(launch_args, "launch_error", None) or f"launch exited with code {exit_code}"
+        err_msg = launch_error or f"launch exited with code {exit_code}"
         transition_terminal_state(
             job=None,
             project=project_dir,

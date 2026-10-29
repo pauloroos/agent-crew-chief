@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from crew_chief import interview_service, mcp_tools, records, worktree
+from crew_chief import interview_service, records, worktree
 from crew_chief.cli import main
 
 
@@ -232,28 +232,6 @@ def test_bootstrap_path_job_branch_and_origin_push(tmp_path: Path) -> None:
     proc_show = _run_git(bare, "show", f"{expected_branch}:bootstrap_feat.txt")
     assert proc_show.returncode == 0
     assert "bootstrap implementation" in proc_show.stdout
-
-
-def test_mcp_path_job_branch_record(tmp_path: Path) -> None:
-    """MCP start_job creates a job record with job_branch."""
-    bare = _init_bare_origin(tmp_path)
-    work = _init_work_repo(tmp_path, bare)
-
-    res = mcp_tools.start_job(
-        project=str(work),
-        request="Implement MCP tool feature",
-        coordinator="claude:sonnet",
-        executors="own",
-        end_mode="pr",
-        title="MCP Feature",
-    )
-    assert res.get("ok") is True
-    job_id = res["job_id"]
-
-    job = records.load_job(work, job_id)
-    expected_branch = f"acc/{job_id}"
-    assert job.get("job_branch") == expected_branch
-    assert job.get("base_branch") == "main"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="subprocess cannot run the extensionless fake gh on Windows")

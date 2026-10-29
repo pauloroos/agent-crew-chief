@@ -116,32 +116,6 @@ def test_kit_manifest_content_and_pins():
     assert MANIFEST_PATH.is_file(), "kit_manifest.json must exist"
     data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    # rtk manifest checks
-    rtk = data["rtk"]
-    assert rtk["version"] == "1.1.0"
-    assert rtk["license"] == "Apache-2.0"
-    assert (
-        rtk["checksums_url"]
-        == "https://github.com/rtk-ai/rtk/releases/download/v1.1.0/checksums.txt"
-    )
-
-    expected_artifacts = {
-        "rtk-oss-aarch64-unknown-linux-gnu.tar.gz": "57a4fac13d18da77f0577ea8b68def7934b934bf76d0a6e161f0bfd06b1e1078",
-        "rtk-oss-x86_64-unknown-linux-musl.tar.gz": "4dec94a64035e08189ae82fd5408fe4ae9ae27a665fc07e3e3ec3c4c2d8e8a3e",
-        "rtk-oss-aarch64-apple-darwin.tar.gz": "1623590dd8d65374f61589c599c764c08ba9ce993ebe6b601312a89a3c874558",
-        "rtk-oss-x86_64-apple-darwin.tar.gz": "559156238dd3e148c84c88c3a62a7594b874f68793208994e1b02e77a9d9abf9",
-        "rtk-oss-x86_64-pc-windows-msvc.zip": "9b076379be9d86011ca3f3a0264d0be4851da5535453a47f67fa46b4e893fbb2",
-    }
-
-    manifest_artifacts = rtk["artifacts"]
-    for filename, sha256 in expected_artifacts.items():
-        matched = [
-            art
-            for art in manifest_artifacts.values()
-            if art["filename"] == filename and art["sha256"] == sha256
-        ]
-        assert len(matched) == 1, f"Missing or mismatched artifact pin for {filename}"
-
     # Superpowers manifest checks
     sp = data["superpowers"]
     assert sp["repository"] == "https://github.com/obra/superpowers"

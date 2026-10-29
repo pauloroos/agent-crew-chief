@@ -121,18 +121,6 @@ def deny_external_connections(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def isolate_background_updates(request, monkeypatch):
-    """Baseline tests can override prefs without starting real update children.
-
-    Update proofs explicitly own their fake HTTP/process boundaries; all other
-    tests use a scheduling double, including tests with custom global prefs.
-    """
-    if not request.node.path.name.startswith('test_update_'):
-        from crew_chief import update_check
-        monkeypatch.setattr(update_check, 'schedule_check', lambda *a, **kw: None)
-
-
-@pytest.fixture(autouse=True)
 def hide_host_rtk(monkeypatch):
     """A host rtk must not change kit tests; tests that need rtk add a fake one."""
     names = ("rtk", "rtk.exe", "rtk.cmd")

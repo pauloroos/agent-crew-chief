@@ -39,21 +39,20 @@ You probably have more AI firepower than you use. There are free models in OpenC
 
 | Level | Who | What it does |
 |---|---|---|
-| **Maestro** | the agent you talk to (Claude Code, Codex…) | Splits your goal into independent fronts, launches one coordinator per front with `acc launch`, watches them with `acc central --json`, answers their questions and reports the PRs. Never edits code. |
-| **Coordinator** | a Claude Code or Codex session in its own worktree and branch | Runs the job cycle below for its front and opens one PR. A quota limit holds it (`quota`) instead of failing it; `acc resume` continues. |
+| **Maestro** | the agent you talk to (Claude Code, Codex…) | Splits your goal into independent fronts, launches one coordinator per front with `acc launch`, watches them with `acc status`, answers their questions and reports the PRs. Never edits code. |
+| **Coordinator** | any configured `tool:model` (Claude, Codex, OpenCode, Antigravity…) in its own worktree and branch | Runs the job cycle below for its front and opens one PR. On a quota or a failure the next coordinator of `[team].coordinators` takes over on its own. |
 | **Executors and reviewers** | any CLI you have: OpenCode, Antigravity, Codex, Claude… | Do the typing in isolated worktrees, free models first; a different model family reviews; every delivery is graded. |
 
 You can also skip the maestro and use one level only: a single coordinator in
 your own session (tutorials 01–03) or one `acc launch` (tutorial 04).
 
 No dependencies: one skill plus a stdlib Python CLI that any agent can drive.
-Coordinators run under a small detached supervisor per coordinator; there is
-no server.
+Each coordinator runs under a small detached runner that times its rounds,
+counts its tokens and switches coordinator on a quota; there is no server.
 
 New here? Follow the [tutorials](docs/tutorials/README.md): your first job in
-10 minutes, spec-driven work, cost and safety,
-[coordinators in their own worktrees](docs/tutorials/04-central.md) and
-[the maestro](docs/tutorials/05-maestro.md), with a practice project in
+10 minutes, spec-driven work, cost and safety and
+[the maestro](docs/tutorials/04-maestro.md), with a practice project in
 [`examples/hello-crew`](examples/hello-crew).
 
 ## How it works
@@ -78,10 +77,6 @@ flowchart TB
 5. `pick --review` + `dispatch --review`: a model outside the executor's quota family reviews the work.
 6. `correction` + `grade`: the script computes the score, and the scoreboard is rewritten. After a correction the next `dispatch` starts from the last `ok` attempt's branch, so the brief only describes the adjustment and the diff shows only that (`--fresh` starts over from `HEAD`, `--base <n|branch>` picks the starting attempt). Every executor that worked on the piece keeps its own grade.
 7. `accept` / `discard` + `close`: the work lands or is dropped, and you get the commit message and the issue comment, which list every executor with its score.
-
-## Merge gate (planned)
-
-A test-oriented merge gate with four gates, ACC-owned red/green evidence and suite, independent whole-PR Standards/Spec review, graph frontier/test seams and a safe landing policy is specified for v0.5.0. See [docs/process/merge-gate.md](docs/process/merge-gate.md) (English) and [docs/process/merge-gate.pt-BR.md](docs/process/merge-gate.pt-BR.md).
 
 ## Spec-driven work (optional)
 
@@ -163,7 +158,7 @@ crew-chief economy --job <id>
 
 Delegating only pays if the free work is not eaten by the coordinator's own
 spending, by rework, or by delay. `usage add` records the coordinator's tokens
-(`--role coordinator`, or `central` for a session above it) when its CLI
+(`--role coordinator`) when its CLI
 reports them. `economy` and `close` print the free share of pieces and tokens,
 the coordinator's share, attempts per piece and the mean score, and one
 `alert:` line for each limit crossed. The job's duration is recorded in the job
@@ -269,12 +264,9 @@ brief counts bloat as an `Important` finding; `off` removes both.
 
 ## RTK
 
-[rtk-oss](https://github.com/GhostCLI/rtk) v1.1.0 (Apache-2.0, by GhostCLI) is
-the base CLI that ACC can prefix commands with. The installer downloads only the
-pinned Apache-2.0 edition, never the BUSL-1.1 full edition, and verifies the
-archive SHA-256 against both the pinned manifest and the release `checksums.txt`.
-An existing `rtk` binary on PATH is left alone; download or verification failures
-are non-fatal warnings.
+[rtk](https://github.com/rtk-ai/rtk) is a CLI proxy that ACC can prefix
+commands with to cut their output. ACC does not install it; install it
+yourself if you want it.
 
 The preference `rtk` controls when it appears in a brief:
 
@@ -312,13 +304,12 @@ superpowers:<skill>` followed by the vendored SKILL.md content.
 ## Install
 
 The installer copies the crew-chief skill together with ponytail and
-superpowers (skip them with `--no-ponytail` or `--no-superpowers`). rtk-oss is
-downloaded only when you ask for it with `--with-rtk`:
+superpowers (skip them with `--no-ponytail` or `--no-superpowers`). Nothing is
+downloaded:
 
 ```bash
 git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
-python agent-crew-chief/install.py /path/to/project --with-rtk
 ```
 
 No git? Download `agent-crew-chief-v0.5.0.zip` from the
@@ -386,192 +377,49 @@ python -I install.py /path/to/project
 The skill files and the snippet are refreshed. Your `preferences.toml`, your
 `jobs/`, your `scoreboard.md` and your `models-seen.json` are never touched.
 
-### Update check
+## Interview
 
-ACC can check for a newer stable release in the background. Apart from
-webhooks you configure and `install.py --with-rtk`, this is ACC's **only
-external network access**. The check runs at most once per rolling 24 hours (including
-failures), never blocks your command, and is completely silent when offline,
-on timeout, or when the cache is stale or invalid. No setup is required.
-
-**Preference.** `check_updates` is a strict boolean (default `true`; a strict
-`false` opts out). Set `check_updates = false` in your project or global
-`preferences.toml` to opt out entirely — no check is scheduled, no cached
-notice is shown, and preferences are never rewritten. The existing
-project-over-global precedence applies.
-
-When a newer stable version is found, the central terminal view displays
-exactly one line:
-
-```
-ACC v0.4.4 available. Update manually in your ACC source clone: git fetch --tags; git checkout v0.4.4; python -I install.py --command; python -I install.py <project>
-```
-
-(v0.4.4 above is a HYPOTHETICAL EXAMPLE; replace both V tokens with the
-version shown in the notice.)
-
-**These are four separate manual commands. Check each succeeds and STOP on failure before proceeding.** `<project>` is an explicit user-supplied project directory path. Repeat the last command for other installed copies if desired. ACC never infers clone paths, never auto-executes these commands, and never downloads, installs, or refreshes installed skills automatically.
-
-The four separate commands, checked in sequence and stopping on any failure:
-
-1. `git fetch --tags`
-2. `git checkout v0.4.4` (sample tag)
-3. `python -I install.py --command`
-4. `python -I install.py <project>`
-
-Central views only read the local `update-check.json` cache beside the
-resolved global preferences, never HTTP: a one-shot command can return before
-the detached worker finishes, and the next refresh or invocation shows the
-result. Defaults: strict boolean default `true`; strict `false` disables all
-checks. Throttling is a rolling 24 hours including failures, with offline
-silence and no notice for an already-present version.
-
-## Hermes / MCP server
-
-ACC provides a JSON-RPC 2.0 Model Context Protocol (MCP) server so that external
-clients (such as Hermes) can start, inspect, and manage coordinator jobs.
-
-### stdio transport
-
-When Hermes runs on the same host, it spawns ACC directly over standard I/O:
+`interview` gathers the job's parameters one question at a time and launches
+its coordinator once every answer is in. Questions whose values are already
+in the preferences are skipped, and nothing runs before all answers are
+validated:
 
 ```bash
-python3 -I <install>/scripts/crew-chief.py mcp --projects-dir <dir>
+CC interview --request "Add login" --json
+CC interview --job <id> --answer end_mode=pr
+CC interview --job <id>
 ```
 
-`--projects-dir <dir>` restricts operations to a trusted allowed projects directory.
+## Coordinators and fallback
 
-### HTTP transport for containerized clients
-
-When Hermes or another client runs in another container, run ACC's authenticated HTTP
-server. Binding to a non-loopback address (`0.0.0.0`) requires passing `--token-file <file>`
-with file permissions set to `0600` (on Windows, mode bits are not enforced as `chmod` has no effect, and the server prints a warning; the default host is loopback `127.0.0.1`):
-
-```bash
-python3 -I <install>/scripts/crew-chief.py mcp --http --host 0.0.0.0 --port <port> --token-file <file> --projects-dir <dir>
-```
-
-**Host configuration:** ACC does not set up container networks or publish ports itself.
-The host operator must either attach the ACC container to the client's Docker network
-with a network alias (for example, alias `acc`, so the client contacts `http://acc:<port>`)
-or publish the port to the host.
-
-**Hermes MCP configuration:** Point the Hermes client to `http://acc:<port>` (the JSON-RPC
-endpoint path handled by `mcp_http.py`) with the header `Authorization: Bearer <contents of the token file>`.
-The server accepts `Host: acc:<port>` as well as loopback hosts. Minimal configuration example:
-
-```json
-{
-  "mcpServers": {
-    "crew-chief": {
-      "url": "http://acc:<port>",
-      "headers": {
-        "Authorization": "Bearer <contents-of-token-file>"
-      }
-    }
-  }
-}
-```
-
-### Tools and interview flow
-
-The MCP server exposes eight tools:
-* `start_job`: begin an interview-mode job.
-* `answer`: provide an answer to a pending interview question.
-* `questions`: list the interview questions and their answers.
-* `status`: inspect interview state and pending questions.
-* `events`: fetch job lifecycle events using cursor-based replay (`cursor`).
-* `result`: retrieve the outcome of a finished job.
-* `stop`: stop an active coordinator or job.
-* `list_jobs`: list jobs known to ACC.
-
-**Interview order:** The interview collects five required fields in strict order:
-1. `project`
-2. `request`
-3. `coordinator`
-4. `executors`
-5. `end_mode`
-
-Nothing runs until all questions are answered. Once the final question is answered,
-the job is queued and launched.
-
-### End notice webhooks
-
-ACC can notify external listeners when a job ends or encounters a blocker. In
-`preferences.toml` (project or global), configure:
-* `notify_url`: destination webhook URL (e.g. `https://hermes:<port>/...` or a container URL). Must be HTTPS unless HTTP is explicitly allowed.
-* `notify_secret_file`: path to a regular file with mode `0600` containing the shared secret.
-* `notify_allow_http`: boolean (`false` by default; set to `true` only for local test URLs or private container networks).
-
-On every terminal transition (`pr_open`, `failed`, `stopped`, `expired`) and on the
-`blocked` state (for instance, when a git push or PR creation fails), ACC POSTs a JSON payload:
-
-```json
-{
-  "job_id": "<job_id>",
-  "status": "<pr_open|failed|stopped|expired|blocked>",
-  "pr_url": "<url or null>",
-  "timestamp": "<iso8601-utc>"
-}
-```
-
-signed with the HTTP header:
-```
-X-ACC-Signature: sha256=<hmac-sha256-hex>
-```
-A failed notice is stored in the job record (bounded attempts and expiry; only the secret file path is stored, never the secret) and the next ACC process that touches the job, or the running central supervisor, delivers it with a valid signature; a delivered notice is not sent again. The backoff schedule is 30s, 2m, 10m, 30m, 1h. See
-`docs/crew-chief/webhook-receiver-example.py` for a complete reference receiver implementation.
-
-### Agent quickstart
-
-Any installed agent (such as Claude Code, Codex, or OpenCode) can use ACC directly:
-
-```bash
-python -I .agents/skills/crew-chief/scripts/crew-chief.py interview --project <project> --json
-```
-
-CLI clients are not necessarily coordinator backends. Currently supported coordinator
-backends are Claude (`claude`) and Codex (`codex`); OpenCode operates as an executor and
-client harness only.
-
-The interview flow gathers job parameters interactively or via JSON, automatically skipping
-any questions whose values are already configured in preferences. Zero execution occurs and
-no budget or tokens are spent before all answers are supplied and validated. For automated or
-containerized agent workflows, link to the existing [Hermes / MCP server](#hermes--mcp-server)
-and [Tools and interview flow](#tools-and-interview-flow) examples above.
-
-Team routing and candidate model allowlists can be declared in `docs/crew-chief/preferences.toml`.
-Project-level rules override the global preferences list:
+`[team].coordinators` lists the coordinators in the order they are tried, as
+`tool:model` entries of any configured tool; `executors` and `reviewers`
+constrain the eligible models the same way:
 
 ```toml
-# [team]
-# coordinators = [
-#   "claude:claude-3-7-sonnet",
-#   "codex:gpt-5-codex",
-# ]
-# executors = [
-#   "claude:claude-3-7-sonnet",
-#   "codex:gpt-5-codex",
-#   "gemini:gemini-2.5-pro",
-#   "opencode:antigravity",
-# ]
-# reviewers = [
-#   "codex:gpt-5-codex",
-#   "claude:claude-3-7-sonnet",
-# ]
+[team]
+coordinators = ["opencode:omni/chefe", "claude:opus", "codex:gpt-6.1-sol"]
+executors = ["opencode:opencode-go/deepseek-v4.1-flash", "antigravity:gemini-3-pro"]
+reviewers = ["codex:gpt-6.1-sol", "claude:sonnet"]
 ```
 
-The ordered `coordinators` list names the coordinator CLIs the project
-prefers; the first one is the default. There is no automatic rotation: a
-coordinator that hits a quota limit is held in `quota`, and `acc resume` (or
-the maestro relaunching the front with another `--cli`) continues it. The
-`executors` and `reviewers` lists constrain eligible models within the
-repository.
+`acc launch --request-file F` starts the first one in a new worktree and
+branch (`<project>.crew/coord-<front>-<id>`, `acc/<front>-<id>`). A round that
+hits a quota or fails hands the same worktree and job to the next entry; a
+round that ends without a PR or a question continues with the same
+coordinator, up to six rounds. `acc status` shows, per coordinator: state,
+current `tool:model`, rounds and switches, elapsed time, the coordinator's
+tokens and the job's economy (executor tokens by tier, attempts per piece,
+mean score). The coordinator's tokens also land in the job's `usage`, so the
+scoreboard and `economy` count them. `acc resume ID [--answer TEXT]` runs a
+coordinator again from the top of the list and `acc stop ID` stops it. The
+records and the round logs live in `<project>.crew/coordinators/<id>/`.
+`coordinator_timeout_s` (default 14400) bounds one round.
 
-Every dispatch enforces strict repository isolation and git flow delivery rules:
-* **One job = one branch + one PR:** Work always proceeds on an isolated feature branch and never commits directly to `main`. Jobs created by the interview, by `job new` + `spec import` and by the MCP tools all get a `job_branch`, so the incremental push after each accepted piece and the single PR happen on every public path.
-* **Incremental push:** The feature branch is pushed after each accepted work item (when `job_branch` is set).
-* **Fail-stop safety:** If a `git push` or pull request creation fails, the round stops immediately and reports the exact command and error.
+Every job follows the same git flow:
+* **One job = one branch + one PR:** work never commits directly to `main`.
+* **Incremental push:** the feature branch is pushed after each accepted piece.
+* **Fail-stop safety:** if a `git push` or the pull request creation fails, the round stops and reports the exact command and error.
 * **Owner merges:** ACC opens the pull request; the repository owner alone merges it.
 
 ## Preferences
@@ -840,8 +688,10 @@ duration average the `ok` attempts.
 
 ## Supported coordinators
 
-Tested: **Claude Code**, **Codex** and **OpenCode**. Expected to work, not yet
-tested end to end: **Cursor** and **Antigravity**. The installer writes the
+Any configured tool can be a launched coordinator: **Claude Code**, **Codex**,
+**OpenCode**, **Antigravity** or a `generic` tool. As the session you talk to,
+tested: Claude Code, Codex and OpenCode; expected to work: Cursor and
+Antigravity. The installer writes the
 snippet to `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and the Cursor rule so any
 agent that reads one of those picks it up.
 

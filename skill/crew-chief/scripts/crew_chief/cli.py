@@ -14,9 +14,12 @@ turns one spec piece into the minimal brief an executor or reviewer receives.
 ``ruling add`` records a one-line ruling in the job; ``decision add`` promotes a
 ruling (or a title) to an ADR file in ``docs/decisions``.
 
-``usage add`` records the coordinator's (or central's) own token spend in the job;
+``usage add`` records the coordinator's own token spend in the job;
 ``economy`` prints the job's economy summary and alerts, and ``close`` prints the
 same block before the commit message.
+
+``launch`` starts one coordinator per front for the maestro (see
+:mod:`maestro`); ``status``, ``resume`` and ``stop`` follow and steer them.
 
 ``setup`` detects the executors and the logins this machine has, asks only what
 it could not deduce and writes one managed block (``cheap_budget_usd_day``,
@@ -54,7 +57,7 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import __version__, central_cli, economy, records, setup, spend
+from . import __version__, economy, maestro, records, setup, spend
 from .brief import render_converge_brief, render_exec_brief, render_review_brief
 from .changelog import CATEGORY_BY_COMMIT, entry_line, insert_entry
 from .config import (
@@ -64,7 +67,6 @@ from .config import (
     load_prefs,
     tool_work_types,
 )
-from . import update_check
 from .decisions import DECISIONS_DIR, next_number, write_adr
 from .discover import Discovery, discover_full
 from .dispatch import dispatch as run_attempt
@@ -253,6 +255,17 @@ def _cmd_interview(args: argparse.Namespace) -> int:
 
     if getattr(args, "job", None):
         job_id = args.job
+        if getattr(args, "answer", None):
+            key, sep, value = args.answer.partition("=")
+            if not sep or not key.strip():
+                raise ValueError("--answer must be KEY=VALUE")
+            res = interview_service.answer_interview_job(
+                project=project, job_id=job_id, key=key.strip(), value=value.strip(),
+                projects_dir=projects_dir,
+            )
+            pending_str = ", ".join(res["pending"]) if res["pending"] else "none"
+            _emit(args, f"job: {job_id}\nstate: {res['state']}\npending: {pending_str}", res)
+            return 0
         if getattr(args, "cursor", None) is not None:
             res = interview_service.get_interview_events(
                 project=project, job_id=job_id, cursor=args.cursor, projects_dir=projects_dir
@@ -320,38 +333,39 @@ def _handle_start_job_cli(args: argparse.Namespace) -> int:
 
 
 def _cmd_launch(args: argparse.Namespace) -> int:
-    mode = getattr(args, "mode", None)
-    if mode is not None:
-        if not getattr(args, "repo", None):
-            print("error: --repo is required for coordinator launch mode", file=sys.stderr)
-            return 2
-        if not getattr(args, "request_file", None):
-            print("error: --request-file is required for coordinator launch mode", file=sys.stderr)
-            return 2
-        return central_cli.handle_launch(args)
+    record = maestro.launch(
+        _project(args),
+        Path(args.request_file),
+        spec_dir=args.spec_dir,
+        coordinators=args.coordinator,
+        executors=args.executors,
+        base=args.base,
+    )
+    text = (
+        f"coordinator: {record['id']}\nfront: {record['front']}\n"
+        f"branch: {record['branch']}\nworktree: {record['worktree']}\n"
+        f"coordinators: {', '.join(record['coordinators'])}"
+    )
+    _emit(args, text, record)
+    return 0
 
-    if getattr(args, "job", None):
-        from . import interview_service, records
 
-        projects_dir = getattr(args, "projects_dir", None)
-        project = getattr(args, "project", None) or getattr(args, "repo", None)
-        project_dir, _ = interview_service.resolve_project_info(project, projects_dir=projects_dir)
-        job = records.load_job(project_dir, args.job)
-        if interview_service.check_interview_expiration(job):
-            records.save_job(project_dir, job)
-            raise ValueError("cannot launch: interview has expired")
-        pending = job.get("interview", {}).get("pending", [])
-        if pending:
-            raise ValueError(
-                f"cannot launch: interview questions remain unanswered: {', '.join(pending)}"
-            )
-        raw_state = job.get("state")
-        state = "queued" if raw_state == "ready" else raw_state
-        text = f"job: {job['id']}\nstate: {state}\npending: none"
-        _emit(args, text, {"ok": True, "job_id": job["id"], "state": state, "pending": []})
-        return 0
+def _cmd_status(args: argparse.Namespace) -> int:
+    summaries = maestro.status(_project(args))
+    _emit(args, "\n".join(maestro.status_lines(summaries)), {"coordinators": summaries})
+    return 0
 
-    return _handle_start_job_cli(args)
+
+def _cmd_resume(args: argparse.Namespace) -> int:
+    record = maestro.resume(_project(args), args.coordinator_id, answer=args.answer)
+    _emit(args, f"coordinator: {record['id']}\nstate: {record['state']}", record)
+    return 0
+
+
+def _cmd_stop(args: argparse.Namespace) -> int:
+    record = maestro.stop(_project(args), args.coordinator_id)
+    _emit(args, f"coordinator: {record['id']}\nstate: {record['state']}", record)
+    return 0
 
 
 def _cmd_discover(args: argparse.Namespace) -> int:
@@ -658,49 +672,6 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_mcp(args: argparse.Namespace) -> int:
-    """Run JSON-RPC 2.0 MCP server over stdio or authenticated loopback HTTP."""
-    from . import mcp_server, interview_service
-
-    projects_dir = getattr(args, "projects_dir", None)
-    project_str = None
-    if getattr(args, "project", None):
-        project_dir, _ = interview_service.resolve_project_info(args.project, projects_dir=projects_dir)
-        project_str = str(project_dir)
-
-    server = mcp_server.MCPServer(project=project_str, projects_dir=projects_dir)
-    if getattr(args, "http", False):
-        from . import mcp_http
-
-        host = getattr(args, "host", "127.0.0.1")
-        token = getattr(args, "token", None)
-        token_file = getattr(args, "token_file", None)
-        port = getattr(args, "port", 0)
-        return mcp_http.serve_http(
-            server, host=host, port=port, token=token, token_file=token_file, projects_dir=projects_dir
-        )
-    return mcp_server.serve_stdio(server, projects_dir=projects_dir)
-
-
-def _cmd_check_updates(args: argparse.Namespace) -> int:
-    """Private worker entry: revalidate preference, then run the bounded check."""
-    project = _project(args)
-    try:
-        prefs = load_prefs(project)
-    except Exception:
-        return 0
-    if prefs.check_updates is not True:
-        return 0
-    try:
-        config_dir = default_global_path().parent
-        update_check.run_worker(
-            config_dir, datetime.now(timezone.utc), endpoint=update_check.FIXED_ENDPOINT
-        )
-    except Exception:
-        return 0
-    return 0
-
-
 # --- spec commands -----------------------------------------------------------
 
 from .cli_spec import (
@@ -725,37 +696,24 @@ from .cli_spec import (
 
 # --- parser ----------------------------------------------------------------
 
-from .cli_parser import _check_updates_parser, build_parser
+from .cli_parser import build_parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI for ``argv`` (default: ``sys.argv[1:]``) and return a code."""
     _reconfigure_streams()
     tokens = list(sys.argv[1:] if argv is None else argv)
-    if tokens[:1] == ["_check-updates"]:
-        # Internal entry: parsing it here keeps every trace out of public help.
-        return _cmd_check_updates(_check_updates_parser().parse_args(tokens[1:]))
+    if tokens[:1] == ["_coordinator-run"] and len(tokens) == 2:
+        # Internal entry of the detached runner; kept out of the public help.
+        maestro.run(Path(tokens[1]))
+        return 0
     try:
         args = build_parser().parse_args(tokens)
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 2
-    command = getattr(args, "command", None)
-    if isinstance(command, str) and not command.startswith("_"):
-        try:
-            project = _project(args)
-            prefs = load_prefs(project)
-            update_check.schedule_check(
-                default_global_path().parent,
-                prefs.check_updates,
-                spawn=lambda config_dir: update_check._spawn_update_worker(
-                    config_dir, project=project
-                ),
-            )
-        except Exception:
-            pass
     try:
         return args.handler(args)
-    except (PrefsError, RecordError, SidecarError, NotAGitRepo, ValueError) as exc:
+    except (PrefsError, RecordError, SidecarError, NotAGitRepo, ValueError, maestro.MaestroError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except RuntimeError as exc:

@@ -977,39 +977,30 @@ def test_blocked_on_push_or_pr_failure(tmp_path: Path, monkeypatch: pytest.Monke
     Verification:
     - A failed push_to_origin in _cmd_accept causes the job to enter 'blocked' state.
     - The exact command and stderr are logged in the job record.
-    - End notice is triggered via webhook.send_webhook_notice.
     - No further commits happen after blocking (subsequent accept, dispatch, close, piece commands fail and make no commits).
-    - A failed create_pr in _cmd_close (both pr and pr_review end_modes) causes the job to enter 'blocked' state, log exact command/stderr, and trigger end notice.
+    - A failed create_pr in _cmd_close (both pr and pr_review end_modes) causes the job to enter 'blocked' state, log exact command/stderr.
     """
     import json
     from unittest.mock import MagicMock
     from crew_chief import records
     from crew_chief.cli import main
     from crew_chief.git_delivery import prepare_job_branch
-    import crew_chief.webhook
 
     bare = _init_bare_remote(tmp_path)
     work = _init_worktree_repo(tmp_path, bare)
 
-    # Configure preferences with webhook notification and team configuration
+    # Configure preferences with the team configuration
     prefs_dir = work / "docs" / "crew-chief"
     prefs_dir.mkdir(parents=True, exist_ok=True)
     secret_file = tmp_path / "notify_secret"
     secret_file.write_bytes(b"test-secret-1234")
     secret_file.chmod(0o600)
     (prefs_dir / "preferences.toml").write_text(f"""
-notify_url = "https://example.com/webhook"
-notify_secret_file = "{secret_file.as_posix()}"
-notify_allow_http = true
-
 [team]
 coordinators = ["claude:sonnet"]
 executors = ["claude:opus"]
 reviewers = ["codex:o1"]
 """)
-
-    spy_webhook = MagicMock(wraps=crew_chief.webhook.send_webhook_notice)
-    monkeypatch.setattr(crew_chief.webhook, "send_webhook_notice", spy_webhook)
 
     # Create job with job_branch
     job = records.new_job(work, "Blocked Test", "implement feature", True, "requested")
@@ -1075,13 +1066,6 @@ reviewers = ["codex:o1"]
     assert result.get("failed_command") == attempted_push_cmd, f"Expected {attempted_push_cmd}, got {result.get('failed_command')}"
     assert result.get("blocked_error") == push_stderr, f"Expected {push_stderr}, got {result.get('blocked_error')}"
 
-    # Verify end notice triggered
-    assert spy_webhook.call_count >= 1
-    last_call = spy_webhook.call_args
-    assert last_call.kwargs["job_record"]["job_id"] == job_id
-    assert last_call.kwargs["job_record"]["status"] == "blocked"
-    assert last_call.kwargs["notify_url"] == "https://example.com/webhook"
-    assert Path(last_call.kwargs["notify_secret_file"]) == Path(secret_file)
 
     # Verify commit cessation: local commits cease, subsequent commands on blocked job fail without committing
     head_sha_before = _run_git(work, "rev-parse", "HEAD").stdout.strip()
@@ -1176,7 +1160,6 @@ reviewers = ["codex:o1"]
         return real_run(cmd, *args, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", spy_run_fail_pr)
-    webhook_calls_before = spy_webhook.call_count
 
     # Close the job — should fail and transition to blocked
     exit_code2 = main(["close", "--project", str(work), "--job", job_id2, "--json"])
@@ -1190,11 +1173,6 @@ reviewers = ["codex:o1"]
     assert result2.get("failed_command") == attempted_pr_cmd, f"Expected {attempted_pr_cmd}, got {result2.get('failed_command')}"
     assert result2.get("blocked_error") == pr_stderr, f"Expected {pr_stderr}, got {result2.get('blocked_error')}"
 
-    # Verify end notice triggered for job2
-    assert spy_webhook.call_count > webhook_calls_before
-    last_call2 = spy_webhook.call_args
-    assert last_call2.kwargs["job_record"]["job_id"] == job_id2
-    assert last_call2.kwargs["job_record"]["status"] == "blocked"
 
     # Now test PR creation failure in 'pr_review' end_mode
     job3 = records.new_job(work, "Blocked PR Review Test", "implement feature 3", True, "requested")
@@ -1222,7 +1200,6 @@ reviewers = ["codex:o1"]
     _run_git(work, "commit", "-m", "Add feature 3")
     _run_git(work, "push", "origin", job_branch3)
 
-    webhook_calls_before3 = spy_webhook.call_count
     exit_code3 = main(["close", "--project", str(work), "--job", job_id3, "--end-mode", "pr_review", "--json"])
     assert exit_code3 != 0, "close with pr_review should fail when PR creation fails"
 
@@ -1233,11 +1210,6 @@ reviewers = ["codex:o1"]
     assert result3.get("failed_command") == attempted_pr_cmd, f"Expected {attempted_pr_cmd}, got {result3.get('failed_command')}"
     assert result3.get("blocked_error") == pr_stderr, f"Expected {pr_stderr}, got {result3.get('blocked_error')}"
 
-    # Verify end notice triggered for job3
-    assert spy_webhook.call_count > webhook_calls_before3
-    last_call3 = spy_webhook.call_args
-    assert last_call3.kwargs["job_record"]["job_id"] == job_id3
-    assert last_call3.kwargs["job_record"]["status"] == "blocked"
 
 
 def test_pr_branch_contains_specs_and_code(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

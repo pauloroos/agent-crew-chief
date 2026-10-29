@@ -723,7 +723,7 @@ def test_write_atomic_keeps_the_mode_of_an_existing_file(tmp_path):
 def test_team_used_records_assignment_origin(git_repo, fake_bin, monkeypatch):
     """Test team_used audit trail recording across interview start and pick."""
     import shutil
-    from crew_chief import cli, interview_service, mcp_tools, records
+    from crew_chief import cli, interview_service, records
 
     repo = git_repo
     fake_bin("stub", "print('stub-output')\n")
@@ -831,14 +831,6 @@ reviewers = ["stub:n"]
     status_res = interview_service.get_interview_status(project=repo, job_id=job_id)
     assert status_res["ok"] is True
     assert status_res["team_used"] == job["team_used"]
-
-    mcp_status_res = mcp_tools.status(project=str(repo), job_id=job_id)
-    assert mcp_status_res["ok"] is True
-    assert mcp_status_res["team_used"] == job["team_used"]
-
-    mcp_result_res = mcp_tools.result(project=str(repo), job_id=job_id)
-    assert mcp_result_res["ok"] is True
-    assert mcp_result_res["team_used"] == job["team_used"]
 
     # 6. Test discovery origin when no [team] allowlist
     repo_no_team = repo.parent / "repo_no_team"
