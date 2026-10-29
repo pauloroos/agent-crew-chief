@@ -32,12 +32,12 @@ def handle_git_failure(
         tuple[str, str]: (failed_command_str, stderr_text)
     """
     from datetime import datetime, timezone
-    from . import webhook
+    from . import records
 
     cmd_str = " ".join(exc.cmd) if isinstance(exc.cmd, list) else str(exc.cmd)
     stderr_text = exc.stderr or ""
 
-    webhook.transition_terminal_state(
+    records.transition_terminal_state(
         project=repo_path,
         job_id=job_id,
         new_state="blocked",

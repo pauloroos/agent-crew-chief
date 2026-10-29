@@ -75,30 +75,6 @@ def installed_bundle(tmp_path_factory):
     project = base / "project"
     project.mkdir()
 
-    # Prepare fake rtk archive
-    manifest = _load_manifest()
-    # Use linux x86_64 for consistency in tests
-    platform_key = "x86_64-unknown-linux-musl"
-    artifact = manifest["rtk"]["artifacts"][platform_key]
-    filename = artifact["filename"]
-    bin_dir = base / "bin"
-    bin_dir.mkdir()
-
-    fake_archive = base / filename
-    actual_sha = _create_fake_archive(fake_archive, filename, artifact["archive_format"])
-
-    # Update manifest with actual hash for this test
-    manifest["rtk"]["artifacts"][platform_key]["sha256"] = actual_sha
-
-    checksums_text = f"{actual_sha} {filename}\n"
-
-    def fake_fetch(url):
-        return {filename: actual_sha}
-
-    def fake_download(url, dest):
-        shutil.copy2(fake_archive, dest)
-
-    # Install via kit_install module directly (bypassing network)
     env = {**os.environ, "HOME": str(home)}
     scripts_dir = str(SCRIPTS_DIR)
     if scripts_dir not in sys.path:
@@ -106,32 +82,15 @@ def installed_bundle(tmp_path_factory):
 
     from crew_chief.kit_install import install_kit
 
-    # Patch platform detection to use linux x86_64
-    import crew_chief.kit_install as ki
-    original_get_platform = ki._get_platform_key
-    original_on_path = ki._is_rtk_on_path
-    ki._get_platform_key = lambda: platform_key
-    # Module scope runs before the per-test PATH isolation: hide a host rtk here.
-    ki._is_rtk_on_path = lambda: False
-
-    try:
-        kit_report = install_kit(
-            project_dir=project,
-            do_install_rtk=True,
-            do_install_superpowers=True,
-            do_install_ponytail=True,
-            bin_dir=bin_dir,
-            manifest=manifest,
-            fetch_checksums_fn=fake_fetch,
-            download_fn=fake_download,
-        )
-    finally:
-        ki._get_platform_key = original_get_platform
-        ki._is_rtk_on_path = original_on_path
+    kit_report = install_kit(
+        project_dir=project,
+        do_install_superpowers=True,
+        do_install_ponytail=True,
+    )
 
     # Also run install.py to install the skill itself
     done = subprocess.run(
-        [sys.executable, "-I", "-X", "utf8", str(INSTALL_PY), str(project), "--no-rtk"],
+        [sys.executable, "-I", "-X", "utf8", str(INSTALL_PY), str(project)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -140,6 +99,8 @@ def installed_bundle(tmp_path_factory):
     )
     assert done.returncode == 0, done.stderr
 
+    bin_dir = project.parent / "bin"
+    bin_dir.mkdir(exist_ok=True)
     return project, env, bin_dir
 
 
@@ -258,14 +219,6 @@ def test_no_source_tree_fallback_masks_broken_bundle(installed_bundle):
     assert sp_dir.exists()
     assert str(sp_dir).startswith(str(project))
     assert not str(sp_dir).startswith(str(ROOT / "vendor"))
-
-
-def test_rtk_binary_installed_when_absent_from_path(installed_bundle):
-    """RTK binary should be installed when not on PATH."""
-    project, env, bin_dir = installed_bundle
-    # The fake rtk should be in bin_dir
-    rtk_bin = bin_dir / "rtk"
-    assert rtk_bin.exists(), f"RTK binary not found at {rtk_bin}"
 
 
 def test_subprocess_utf8_flag_with_cp1252_stdout():

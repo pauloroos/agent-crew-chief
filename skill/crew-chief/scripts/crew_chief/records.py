@@ -420,7 +420,7 @@ def _read_job(path: Path) -> dict:
     return data
 
 
-def load_job(project: Path, job_id: str, *, _drain: bool = True) -> dict:
+def load_job(project: Path, job_id: str) -> dict:
     """Load ``docs/crew-chief/jobs/<job_id>.json``.
 
     Raises :class:`RecordError` naming the file when it is missing, unreadable
@@ -434,12 +434,6 @@ def load_job(project: Path, job_id: str, *, _drain: bool = True) -> dict:
         job["executors"] = "free_first"
     if "team_used" not in job:
         job["team_used"] = []
-    if _drain and (job.get("pending_notices") or job.get("pending_notice")):
-        try:
-            from . import webhook
-            job = webhook.drain_pending_notices(project, job_id, job=job)
-        except Exception:
-            pass
     return job
 
 
@@ -1179,3 +1173,63 @@ def iter_jobs(project: Path) -> Iterator[tuple[dict | None, Path, str | None]]:
             yield None, path, str(exc)
             continue
         yield data, path, None
+
+
+def transition_terminal_state(
+    *,
+    job: dict | None = None,
+    project: Path | str | None = None,
+    job_id: str | None = None,
+    new_state: str,
+    extra_fields: dict | None = None,
+) -> dict:
+    """Move a job to a terminal or blocked state and log the event once.
+
+    Sets ``state`` and ``status``, copies ``pr_url`` and merges ``result``
+    from ``extra_fields``, and appends one event. A job already in
+    ``new_state`` with that event is left as it is. With ``job`` the dict is
+    changed and saved; otherwise the record is updated under its lock.
+    """
+    timestamp = datetime.now(timezone.utc).isoformat()
+    extra = dict(extra_fields or {})
+    if job_id is None and job is not None:
+        job_id = job.get("id") or job.get("job_id")
+
+    def apply(stored: dict) -> dict:
+        if stored.get("state") == new_state and stored.get("status") == new_state and any(
+            isinstance(e, dict) and e.get("type") == new_state for e in stored.get("events", [])
+        ):
+            return stored
+        stored["state"] = new_state
+        stored["status"] = new_state
+        if "pr_url" in extra:
+            stored["pr_url"] = extra["pr_url"]
+        if "result" in extra:
+            current = stored.get("result")
+            if isinstance(current, dict) and isinstance(extra["result"], dict):
+                stored["result"] = {**current, **extra["result"]}
+            else:
+                stored["result"] = extra["result"]
+        payload = {"type": new_state, "timestamp": timestamp, **extra}
+        try:
+            from .interview_service import _reconstruct_event_log
+
+            seq = _reconstruct_event_log(stored).append(payload)
+        except Exception:
+            seq = len(stored.get("events", [])) + 1
+        stored.setdefault("events", []).append(
+            {"sequence": seq, "type": new_state, "payload": payload, **payload}
+        )
+        return stored
+
+    if job is not None:
+        apply(job)
+        if project is not None and job_id:
+            try:
+                save_job(Path(project), job)
+            except Exception:
+                pass
+        return job
+    if project is not None and job_id:
+        return update_job(Path(project), job_id, apply)
+    raise ValueError("Either job or (project and job_id) must be provided")

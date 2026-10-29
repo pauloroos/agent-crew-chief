@@ -8,6 +8,41 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [Unreleased]
+
+A lighter ACC: the maestro, its coordinators and their numbers, without the
+machinery around them.
+
+### Added
+- **Any tool as coordinator, with automatic fallback.** `[team].coordinators`
+  takes `tool:model` entries of any configured tool (claude, codex, opencode,
+  antigravity, generic). `acc launch --request-file F` starts the first in its
+  own worktree and branch; on a quota or a failure the next one takes over
+  the same worktree and job, with no command from you.
+- **`acc status`** per coordinator: state, current `tool:model`, rounds and
+  switches, elapsed time, the coordinator's tokens and its job's economy
+  (executor tokens by tier, attempts per piece, mean score). The
+  coordinator's tokens are booked in the job's `usage`, so `economy` and the
+  scoreboard count them.
+- `acc resume ID [--answer TEXT]` runs a held, asking or failed coordinator
+  again; `acc stop ID` stops it. A launched coordinator asks by writing
+  `question.md`. `coordinator_timeout_s` (default 14400) bounds one round.
+- `acc interview --job ID --answer KEY=VALUE` answers the interview from the
+  CLI.
+
+### Removed
+- The central layer (supervisor, registry, terminal screen, inbox and
+  messages, attach, pause, recover, keys, preflight): `acc central`,
+  `acc message`, `acc attach`, `acc pause`, `acc recover`.
+- The MCP server and the end-of-job webhooks (`acc mcp`, `notify_*`).
+- The update check (`check_updates`).
+- The rtk download in the installer (`--with-rtk`); briefs still use an rtk
+  already on PATH.
+- The old central preferences (`coordinator_default`, `coordinator_fallback`,
+  `stall_minutes`, `on_coordinator_quota`, `central_*`), which are now
+  ignored.
+- The merge-gate proposal docs.
+
 ## [0.5.0] - 2026-10-29
 
 The first release of this repository: the maestro -> coordinator ->

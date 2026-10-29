@@ -543,8 +543,7 @@ def _cmd_close(args: argparse.Namespace) -> int:
                     )
                     return 1
 
-                from . import webhook
-                job = webhook.transition_terminal_state(
+                job = cli.records.transition_terminal_state(
                     project=project,
                     job_id=job["id"],
                     new_state="pr_open",

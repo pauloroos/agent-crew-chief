@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from crew_chief import central_cli, records
+from crew_chief import maestro, records
 from crew_chief import interview_service as svc
 from crew_chief.interview import InterviewExpiredError
 
@@ -39,7 +39,7 @@ def test_concurrent_final_answers_launch_exactly_once(tmp_path: Path, monkeypatc
     calls: list[str] = []
     lock = threading.Lock()
 
-    def fake_launch(args):
+    def fake_launch(*_args, **_kwargs):
         with lock:
             calls.append("launch")
             n = len(calls)
@@ -47,9 +47,7 @@ def test_concurrent_final_answers_launch_exactly_once(tmp_path: Path, monkeypatc
         # save lets both threads decide to launch. New code holds job_lock
         # across answer->decide->claim, so the second thread waits.
         time.sleep(0.05)
-        args.coordinator_id = f"coord-{n}"
-        args.supervisor = {"pid": 999999}
-        return 0
+        return {"id": f"coord-{n}", "pid": 999999}
 
     real_save = records.save_job
 
@@ -68,7 +66,7 @@ def test_concurrent_final_answers_launch_exactly_once(tmp_path: Path, monkeypatc
         except Exception as exc:  # pragma: no cover
             errors.append(repr(exc))
 
-    with patch.object(central_cli, "handle_launch", fake_launch), patch.object(records, "save_job", slow_save):
+    with patch.object(maestro, "launch", fake_launch), patch.object(records, "save_job", slow_save):
         threads = [threading.Thread(target=answer_one) for _ in range(2)]
         for t in threads:
             t.start()
@@ -101,13 +99,11 @@ def test_expired_job_rejects_answers_and_never_launches(tmp_path: Path, monkeypa
 
     launched: list[str] = []
 
-    def fake_launch(args):
+    def fake_launch(*_args, **_kwargs):
         launched.append("launch")
-        args.coordinator_id = "coord-x"
-        args.supervisor = {"pid": 999999}
-        return 0
+        return {"id": "coord-x", "pid": 999999}
 
-    with patch.object(central_cli, "handle_launch", fake_launch):
+    with patch.object(maestro, "launch", fake_launch):
         with pytest.raises(InterviewExpiredError):
             svc.answer_interview_job(project=repo, job_id=jid, key="end_mode", value="pr")
 
@@ -135,12 +131,10 @@ def test_status_query_does_not_rewrite_or_erase_launch(tmp_path: Path, monkeypat
     )
     jid = started["job_id"]
 
-    def fake_launch(args):
-        args.coordinator_id = "coord-1"
-        args.supervisor = {"pid": 999999}
-        return 0
+    def fake_launch(*_args, **_kwargs):
+        return {"id": "coord-1", "pid": 999999}
 
-    with patch.object(central_cli, "handle_launch", fake_launch):
+    with patch.object(maestro, "launch", fake_launch):
         svc.answer_interview_job(project=repo, job_id=jid, key="end_mode", value="pr")
     stored = records.load_job(repo, jid)
     assert stored.get("state") == "running"
@@ -180,14 +174,12 @@ def test_status_racing_final_answers_launches_once(tmp_path: Path, monkeypatch: 
     calls: list[str] = []
     lock = threading.Lock()
 
-    def fake_launch(args):
+    def fake_launch(*_args, **_kwargs):
         with lock:
             calls.append("launch")
             n = len(calls)
         time.sleep(0.05)
-        args.coordinator_id = f"coord-{n}"
-        args.supervisor = {"pid": 999999}
-        return 0
+        return {"id": f"coord-{n}", "pid": 999999}
 
     real_save = records.save_job
 
@@ -219,7 +211,7 @@ def test_status_racing_final_answers_launches_once(tmp_path: Path, monkeypatch: 
         except Exception as exc:  # pragma: no cover
             errors.append(repr(exc))
 
-    with patch.object(central_cli, "handle_launch", fake_launch), patch.object(records, "save_job", slow_save):
+    with patch.object(maestro, "launch", fake_launch), patch.object(records, "save_job", slow_save):
         answer_threads = [threading.Thread(target=answer_one) for _ in range(2)]
         status_thread = threading.Thread(target=status_loop)
         for t in [*answer_threads, status_thread]:

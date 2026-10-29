@@ -119,28 +119,10 @@ def installed_project(tmp_path):
     readme.write_text("# Test Project\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=project, check=True, capture_output=True)
-    # Prepare fake rtk archive
-    manifest_path = SCRIPTS_DIR / "crew_chief" / "kit_manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    platform_key = "x86_64-unknown-linux-musl"
-    artifact = manifest["rtk"]["artifacts"][platform_key]
-    filename = artifact["filename"]
-    bin_dir = base / "bin"
-    bin_dir.mkdir()
-    fake_archive = base / filename
-    actual_sha = _create_fake_archive(fake_archive, filename, artifact["archive_format"])
-    manifest["rtk"]["artifacts"][platform_key]["sha256"] = actual_sha
-
-    def fake_fetch(url):
-        return {filename: actual_sha}
-
-    def fake_download(url, dest):
-        shutil.copy2(fake_archive, dest)
-
     # Install via install.py (bypassing network via kit_install patching)
     env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
     done = subprocess.run(
-        [sys.executable, "-I", "-X", "utf8", str(INSTALL_PY), str(project), "--no-rtk"],
+        [sys.executable, "-I", "-X", "utf8", str(INSTALL_PY), str(project)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -151,6 +133,8 @@ def installed_project(tmp_path):
     # Write project preferences with a known executor
     prefs_file = project / "docs" / "crew-chief" / "preferences.toml"
     prefs_file.write_text(PREFS_WITH_EXECUTOR, encoding="utf-8")
+    bin_dir = project.parent / "bin"
+    bin_dir.mkdir(exist_ok=True)
     return project, env, bin_dir
 
 

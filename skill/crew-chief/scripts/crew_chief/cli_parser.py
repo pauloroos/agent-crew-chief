@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from . import cli
 
-__all__ = ["build_parser", "_check_updates_parser"]
+__all__ = ["build_parser"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     interview_parser.add_argument("--coordinator", default=None, help="coordinator")
     interview_parser.add_argument("--executors", default=None, help="executor mode")
     interview_parser.add_argument("--end-mode", default=None, help="end mode")
+    interview_parser.add_argument(
+        "--answer", metavar="KEY=VALUE", default=None, help="answer one pending question of --job"
+    )
     interview_parser.set_defaults(handler=cli._cmd_interview)
 
     job_parser = subcommands.add_parser("job", help="job records")
@@ -488,7 +491,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     usage_commands = usage_parser.add_subparsers(dest="usage_command", required=True)
     usage_add = usage_commands.add_parser(
-        "add", parents=[common], help="record the coordinator's or central's tokens"
+        "add", parents=[common], help="record the coordinator's tokens"
     )
     usage_add.add_argument("--job", required=True, help="job id")
     usage_add.add_argument(
@@ -533,65 +536,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     setup_parser.set_defaults(handler=cli._cmd_setup)
 
-    mcp_parser = subcommands.add_parser(
-        "mcp", parents=[common], help="run JSON-RPC 2.0 MCP server (stdio or HTTP)"
+    # --- maestro: one coordinator per front -----------------------------------
+    launch_parser = subcommands.add_parser(
+        "launch", parents=[common], help="start a coordinator for one front in its own worktree"
     )
-    mcp_parser.add_argument(
-        "--http",
-        action="store_true",
-        help="serve over authenticated loopback HTTP instead of stdio",
+    launch_parser.add_argument("--request-file", metavar="F", required=True, help="the front's request")
+    launch_parser.add_argument("--spec-dir", default=None, help="approved spec directory to import")
+    launch_parser.add_argument(
+        "--coordinator", metavar="TOOL:MODEL", action="append", default=None,
+        help="coordinator to use, repeat for the fallback order (default: [team].coordinators)",
     )
-    mcp_parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        metavar="HOST",
-        help="host to bind HTTP server to (default: 127.0.0.1)",
-    )
-    mcp_parser.add_argument(
-        "--port",
-        type=int,
-        default=0,
-        metavar="PORT",
-        help="TCP port for --http (default: 0, OS picks a free port)",
-    )
-    mcp_parser.add_argument(
-        "--token",
-        default=None,
-        metavar="TOKEN",
-        help="bearer token required for --http requests (default: random)",
-    )
-    mcp_parser.add_argument(
-        "--token-file",
-        default=None,
-        metavar="PATH",
-        help="path to 0600-permission file containing bearer token",
-    )
-    mcp_parser.set_defaults(handler=cli._cmd_mcp)
+    launch_parser.add_argument("--executors", default=None, help="executor mode of the job")
+    launch_parser.add_argument("--base", default="HEAD", help="start the branch from this ref")
+    launch_parser.set_defaults(handler=cli._cmd_launch)
 
-    # --- central coordinator commands (T019) --------------------------------
-    cli.central_cli.add_central_subcommands(subcommands, common)
+    status_parser = subcommands.add_parser(
+        "status", parents=[common], help="coordinators of this project: state, rounds, time, tokens, score"
+    )
+    status_parser.set_defaults(handler=cli._cmd_status)
 
-    # --- adapt launch command for start_job / interview mode (T037, FR-036) ---
-    launch_parser = subcommands.choices.get("launch")
-    if launch_parser is not None:
-        for action in launch_parser._actions:
-            if action.dest in ("repo", "request_file", "mode"):
-                action.required = False
-            if action.dest in ("executors", "end_mode"):
-                action.choices = None
-        launch_parser.add_argument("--request", default=None, help="request description")
-        launch_parser.add_argument("--title", default=None, help="job title")
-        launch_parser.add_argument("--coordinator", default=None, help="coordinator")
-        if not any(action.dest == "end_mode" for action in launch_parser._actions):
-            launch_parser.add_argument("--end-mode", default=None, help="end mode")
-        launch_parser.add_argument("--job", default=None, help="job ID to query or launch")
-        launch_parser.set_defaults(handler=cli._cmd_launch)
+    resume_parser = subcommands.add_parser(
+        "resume", parents=[common], help="run a held, asking or failed coordinator again"
+    )
+    resume_parser.add_argument("coordinator_id")
+    resume_parser.add_argument("--answer", default=None, help="answer to its question.md")
+    resume_parser.set_defaults(handler=cli._cmd_resume)
 
-    return parser
+    stop_parser = subcommands.add_parser(
+        "stop", parents=[common], help="stop a coordinator; its worktree and branch stay"
+    )
+    stop_parser.add_argument("coordinator_id")
+    stop_parser.set_defaults(handler=cli._cmd_stop)
 
-
-def _check_updates_parser() -> argparse.ArgumentParser:
-    """Parser for the internal worker entry; kept out of the public parser."""
-    parser = argparse.ArgumentParser(prog="crew-chief _check-updates", add_help=False)
-    parser.add_argument("--project", metavar="PATH", default=None)
     return parser

@@ -39,16 +39,13 @@ Every subcommand takes `--project <path>` (default: the current directory) and
 success, `1` nothing to do (no executor, an attempt that is not `ok`, nothing to
 accept), `2` a configuration error (one line on stderr).
 
-### MCP server and interview
+### Interview
 
-`CC mcp` starts a JSON-RPC 2.0 server over stdin/stdout (no args) or over
-authenticated loopback HTTP (`--http`). It exposes `start_job`, `answer`,
-`status`, `events`, `questions`, `result`, `stop` and `list_jobs`; each tool
-delegates to the existing CLI commands so no business logic is duplicated.
-
-`CC interview` creates or inspects an interview-mode job. Once all questions
-(`project`, `request`, `coordinator`, `executors`, `end_mode`) are answered,
-the job is queued and launched.
+`CC interview --request "..."` creates an interview-mode job and lists the
+pending questions (`project`, `request`, `coordinator`, `executors`,
+`end_mode`); `CC interview --job ID --answer KEY=VALUE` answers one, and
+`CC interview --job ID` shows the state. Once every question is answered the
+job's coordinator is launched like `CC launch` (see the maestro below).
 
 Start with `CC discover --project .`: it lists the executors available on this
 machine as `<tool>:<model>  cost=<free|paid>  trains=<yes|no>`, plus a line for
@@ -231,97 +228,62 @@ Seven steps, in order. For a project-size request that has a spec, follow
 `CC scoreboard --project .` regenerates and prints the scoreboard when the user
 asks how the executors are doing.
 
-## Central coordinator commands
-
-The central CLI manages coordinators running in isolated worktrees. Every
-command below takes `--central-dir <path>` to override the storage root
-(default: `AGENT_CREW_CHIEF_CENTRAL_DIR`, else
-`~/.config/agent-crew-chief/central/`, the same from any directory).
-
-```bash
-CC launch --repo <path> --request-file <file> --mode approved-spec|direct-spec|raw-request [options]
-CC central [--once] [--plain] [--poll SECONDS] [--json]
-CC message <coordinator-id> --text "..." [--reply-to <question-id>]
-CC attach <coordinator-id> [--timeout SECONDS]
-CC pause <coordinator-id>
-CC resume <coordinator-id>
-CC stop <coordinator-id>
-CC recover <coordinator-id>
-```
-
-`launch` validates the chosen mode/authorization, creates a coordinator
-branch and worktree, registers it and starts one supervisor. `approved-spec`
-requires `--approved` and `--spec-dir`; `direct-spec` requires `--spec-dir`;
-`raw-request` requires `--authorize-raw`. Optional flags: `--cli`,
-`--base`, `--restricted`, `--unrestricted`,
-`--install-worktree-acc`, `--release-root` (the released bundle the worktree
-ACC must match; default: the one running).
-
-`central` opens the refreshing screen: arrows select, Enter attaches, `m`
-replies, `p` pauses/resumes, `d` shows details, `q` quits. A redirected
-terminal or `--once` prints one plain snapshot.
-
-`message` sends a text message into the coordinator's inbox; `--reply-to`
-answers a stored question.
-
-`attach` yields exclusive ownership to the current terminal for interactive
-resume of the coordinator's session in its worktree. Returns a fallback with
-an explicit reason when the CLI does not support resume or the terminal is
-redirected; never starts a substitute session.
-
-`pause`, `resume` and `stop` write durable control files consumed by the
-live supervisor between bounded rounds. `pause` finishes the current round
-before holding; `resume` restores eligibility; `stop` is cooperative: the
-supervisor stops after the current round and no process is signalled.
-Repeated controls are idempotent.
-
-`recover` resets a `failed` or `stopped` coordinator to `created` so a new
-supervisor can reconcile it. Applies only to those states; other states
-return exit code 2.
-
-`CC _supervisor` is a private entry used by detached supervisor processes;
-it is not part of the public CLI and must never be invoked directly.
-
-## Maestro: several coordinators at once
+## Maestro: one coordinator per front
 
 When the user hands you a goal too big for one job, or asks for the maestro,
 you do not coordinate pieces yourself: you run coordinators. Each coordinator
 works in its own worktree and branch, runs the job cycle below with its own
-executors and reviewers, keeps the scoreboard and ends in one PR. You plan the
-fronts, launch them, keep them unblocked and report the PRs. You never edit
-the project's code yourself.
+executors and reviewers, grades every piece and ends in one PR. You plan the
+fronts, launch them, keep them unblocked and report. You never edit the
+project's code yourself.
 
 1. **Split into fronts.** A front is one independent outcome that fits one PR
    and touches files no other front touches. Work that depends on another
    front waits for that front's PR to merge; never run two fronts on the same
    files.
 2. **One approval for the plan.** Show the user the fronts (goal, files or
-   areas, launch mode, coordinator CLI) and ask once. Write each front's
-   request to its own file, or point at its spec directory.
+   areas, coordinators) and ask once. Write each front's request to its own
+   file; its name becomes the front's name.
 3. **Launch one coordinator per front** from the project root:
 
    ```bash
-   CC launch --repo . --request-file fronts/01-auth.md --mode raw-request --authorize-raw --cli claude
-   CC launch --repo . --request-file fronts/02-export.md --spec-dir specs/002-export --mode approved-spec --approved --cli codex
+   CC launch --request-file fronts/01-auth.md
+   CC launch --request-file fronts/02-export.md --spec-dir specs/002-export
+   CC launch --request-file fronts/03-docs.md --coordinator opencode:omni/chefe --coordinator claude:opus
    ```
 
-   Keep every printed coordinator ID next to its front.
-4. **Watch with `CC central --json`**, every few minutes, never in a tight
-   loop. Act on each coordinator's `state`:
-   - a pending question: answer it with
-     `CC message ID --reply-to QUESTION_ID --text "..."` when the goal already
-     decides it; otherwise ask the user and relay the answer;
-   - `quota`: the coordinator CLI hit a limit and is held. `CC resume ID`
-     once the limit has reset, or `CC stop ID` and relaunch the front with
-     another `--cli`;
-   - `paused` with "no progress": read its last round, send guidance with
-     `CC message`, then `CC resume ID`;
-   - `failed`: read `last_error`; `CC recover ID` only after the cause is
-     fixed, never as a blind retry;
-   - `completed`: note the branch and the PR.
-5. **Report** every front with its PR (or branch), its accepted pieces and
-   score, and what is left. The owner merges; you never merge, push to the
-   base branch or tag.
+   The coordinators come from `[team].coordinators` in the preferences, in
+   order, as `tool:model` entries of any configured tool (claude, codex,
+   opencode, antigravity, a `generic` tool...); repeated `--coordinator`
+   flags replace the list for one front. When a coordinator hits a quota or
+   fails, the next one of the list takes over the same worktree and job on
+   its own. Keep every printed coordinator ID next to its front.
+4. **Watch with `CC status`** (`--json` to parse), every few minutes, never in
+   a tight loop. Each coordinator shows its state, current `tool:model`,
+   rounds and switches, elapsed time, its own tokens and its job's economy
+   (executor tokens by tier, attempts per piece, mean score). Act on `state`:
+   - `question`: the coordinator wrote a question; answer it with
+     `CC resume ID --answer "..."` when the goal already decides it,
+     otherwise ask the user and relay the answer;
+   - `quota`: every coordinator of the list hit a limit. `CC resume ID` once
+     a limit has reset (it starts again from the top of the list);
+   - `failed`: read `last_error` and the round logs in
+     `<project>.crew/coordinators/<ID>/`; `CC resume ID` only after the cause
+     is fixed, never as a blind retry;
+   - `completed`: note the PR.
+   `CC stop ID` kills a coordinator; its worktree and branch stay.
+5. **Report** every front with its PR (or branch), its rounds, time, tokens,
+   accepted pieces and score, and what is left. The owner merges; you never
+   merge, push to the base branch or tag.
+
+### When you are the launched coordinator
+
+You run headless: nobody can answer a prompt. Follow the job cycle in the
+worktree you were started in, record the job with `job new`, close it (which
+pushes the branch and opens the PR) and stop. If you need the owner's
+decision, write the question to the `question.md` path your prompt names and
+stop; you are resumed with the answer. Every round you run is timed and its
+tokens are added to the job's `usage` for you, so do not `usage add` them.
 
 ## Spec-driven work
 
@@ -481,8 +443,8 @@ The cycle:
 
 The point of delegating is to spend fewer paid tokens, so the job keeps score of
 yours too. **When your CLI reports your own token usage, record it with `usage
-add`** (`--role coordinator` for you, `--role central` for a session above you
-that worked on this job; add `--estimated` when the counts are guesses):
+add`** (`--role coordinator`; add `--estimated` when the counts are guesses).
+A coordinator started by `CC launch` skips this: its rounds are booked for it.
 
 ```bash
 CC usage add --project . --job <id> --role coordinator --tokens-in 52000 --tokens-out 9000 --note "planning and review"

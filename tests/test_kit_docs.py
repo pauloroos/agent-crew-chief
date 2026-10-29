@@ -42,11 +42,10 @@ def test_tutorials_document_base_kit():
 # --- Installer flags -------------------------------------------------------
 
 def test_readmes_document_installer_flags():
-    """Both READMEs document --no-ponytail, --with-rtk, --no-superpowers."""
+    """Both READMEs document --no-ponytail and --no-superpowers."""
     for path in (README, README_PT):
         text = _read(path)
         assert "--no-ponytail" in text, f"{path.name} must document --no-ponytail"
-        assert "--with-rtk" in text, f"{path.name} must document --with-rtk"
         assert "--no-superpowers" in text, f"{path.name} must document --no-superpowers"
 
 
@@ -63,13 +62,12 @@ def test_readmes_document_ponytail_levels():
 # --- RTK behavior ----------------------------------------------------------
 
 def test_readmes_document_rtk_defaults_and_checks():
-    """Both READMEs explain rtk auto default, SHA-256 verification, Apache-2.0."""
+    """Both READMEs explain the rtk auto default."""
     for path in (README, README_PT):
         text = _read(path)
         assert "auto" in text, f"{path.name} must mention rtk auto default"
         assert "SHA" in text or "sha" in text or "checksum" in text.lower(), \
             f"{path.name} must mention checksum verification"
-        assert "Apache-2.0" in text, f"{path.name} must mention Apache-2.0 license"
 
 
 # --- Superpowers behavior --------------------------------------------------
@@ -90,11 +88,10 @@ def test_readmes_document_superpowers_defaults_and_skills():
 # --- Licenses --------------------------------------------------------------
 
 def test_readmes_document_licenses():
-    """Both READMEs mention MIT for superpowers/ponytail and Apache-2.0 for rtk."""
+    """Both READMEs mention MIT for superpowers/ponytail."""
     for path in (README, README_PT):
         text = _read(path)
         assert "MIT" in text, f"{path.name} must mention MIT license"
-        assert "Apache-2.0" in text, f"{path.name} must mention Apache-2.0 license"
 
 
 # --- Changelog documents the base kit in the 0.5.0 release -----------------
@@ -143,7 +140,7 @@ def test_readmes_consistent_flags_and_preferences():
     pt_text = _read(README_PT)
 
     # Check installer flags are in both
-    for flag in ("--no-ponytail", "--with-rtk", "--no-superpowers"):
+    for flag in ("--no-ponytail", "--no-superpowers"):
         assert flag in en_text, f"README.md must document {flag}"
         assert flag in pt_text, f"README.pt-BR.md must document {flag}"
 
@@ -168,5 +165,3 @@ def test_readmes_consistent_flags_and_preferences():
 
     # Check licenses are in both
     assert "MIT" in en_text and "MIT" in pt_text, "Both READMEs must mention MIT license"
-    assert "Apache-2.0" in en_text and "Apache-2.0" in pt_text, \
-        "Both READMEs must mention Apache-2.0 license"

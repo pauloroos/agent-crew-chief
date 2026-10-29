@@ -25,8 +25,6 @@ def _run(*extra: str, env_override: dict[str, str] | None = None) -> subprocess.
     if env_override:
         env.update(env_override)
     args = list(extra)
-    if not any(arg.startswith("--no-rtk") for arg in args):
-        args.append("--no-rtk")
     return subprocess.run(
         [sys.executable, "-I", str(INSTALL_MW), *args],
         capture_output=True,

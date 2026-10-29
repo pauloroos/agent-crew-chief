@@ -1,8 +1,7 @@
-"""Live git identity: refuse launch and dispatch without an author (T037).
+"""Git identity: refuse dispatch without an author (T037).
 
 Temporary repositories with an isolated HOME/XDG/GIT_CONFIG_* environment and
-no identity: preflight fails with the actionable message before any CLI runs,
-and dispatch records ``failed`` without starting the fake executor (no sentinel
+no identity: dispatch records ``failed`` without starting the fake executor (no sentinel
 file, no spend). Identity from ``GIT_AUTHOR_*``/``GIT_COMMITTER_*`` env or repo
 config passes. A directory that is not a Git repository and a missing ``git``
 fail closed. ACC never writes git config. No live models, no real home.
@@ -16,8 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from crew_chief import coordinator_claude, records, spend
-from crew_chief.central_preflight import preflight
+from crew_chief import records, spend
 from crew_chief.config import Prefs
 from crew_chief.dispatch import dispatch
 from crew_chief.dispatch import git_identity_error
@@ -46,11 +44,6 @@ Options:
   --permission-mode <mode>          Permission mode (choices: "default", "dontAsk", "plan")
   --dangerously-skip-permissions    Bypass all permission checks
 """
-
-
-@pytest.fixture(autouse=True)
-def isolated_probes(monkeypatch):
-    monkeypatch.setattr(coordinator_claude, "_PROBED", {})
 
 
 @pytest.fixture
@@ -207,108 +200,6 @@ def _spend_mentions(job_id: str) -> bool:
     return job_id in path.read_text(encoding="utf-8")
 
 
-# --- preflight ---------------------------------------------------------------
-
-
-def test_preflight_refuses_without_identity_before_probing(
-    tmp_path, fake_bin, no_git_identity,
-):
-    log = tmp_path / "claude.log"
-    _fake_claude(fake_bin, log)
-    worktree = _noid_repo(tmp_path / "repo")
-    _write_acc_version(worktree)
-
-    result = preflight(
-        _record(worktree), "do the thing", None, False, _release(tmp_path))
-
-    assert result["ok"] is False
-    assert result["error"].startswith("infrastructure: git identity missing")
-    assert "Git needs an author identity" in result["error"]
-    assert "user.name" in result["error"]
-    assert not log.exists()  # no coordinator CLI ran
-
-
-def test_preflight_needs_the_committer_ident_too(
-    tmp_path, fake_bin, no_git_identity, monkeypatch,
-):
-    _fake_claude(fake_bin, tmp_path / "claude.log")
-    worktree = _noid_repo(tmp_path / "repo")
-    _write_acc_version(worktree)
-    monkeypatch.setenv("GIT_AUTHOR_NAME", "Env Author")
-    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "author@example.invalid")
-
-    result = preflight(
-        _record(worktree), "do the thing", None, False, _release(tmp_path))
-
-    assert result["ok"] is False
-    assert result["error"].startswith("infrastructure: git identity missing")
-
-
-def test_preflight_passes_with_env_identity(
-    tmp_path, fake_bin, no_identity_env,
-):
-    log = tmp_path / "claude.log"
-    _fake_claude(fake_bin, log)
-    worktree = _noid_repo(tmp_path / "repo")
-    _write_acc_version(worktree)
-    no_identity_env()
-
-    result = preflight(
-        _record(worktree), "do the thing", None, False, _release(tmp_path))
-
-    assert result["ok"] is True, result["error"]
-    assert log.exists()  # the coordinator CLI was probed
-
-
-def test_preflight_passes_with_repo_config_identity(
-    tmp_path, fake_bin, no_git_identity,
-):
-    _fake_claude(fake_bin, tmp_path / "claude.log")
-    worktree = _noid_repo(tmp_path / "repo")
-    _write_acc_version(worktree)
-    assert _git(worktree, "config", "user.name", "Repo User").returncode == 0
-    assert _git(worktree, "config", "user.email", "repo@example.invalid").returncode == 0
-
-    result = preflight(
-        _record(worktree), "do the thing", None, False, _release(tmp_path))
-
-    assert result["ok"] is True, result["error"]
-
-
-def test_preflight_refuses_a_directory_that_is_not_a_git_repository(
-    tmp_path, fake_bin, no_git_identity,
-):
-    log = tmp_path / "claude.log"
-    _fake_claude(fake_bin, log)
-    worktree = tmp_path / "repo"
-    worktree.mkdir()
-    _write_acc_version(worktree)
-
-    result = preflight(
-        _record(worktree), "do the thing", None, False, _release(tmp_path))
-
-    assert result["ok"] is False
-    assert result["error"].startswith("infrastructure: git identity missing")
-    assert not log.exists()
-
-
-def test_preflight_refuses_when_git_cannot_run(
-    tmp_path, fake_bin, no_git_identity, monkeypatch,
-):
-    log = tmp_path / "claude.log"
-    _fake_claude(fake_bin, log)
-    worktree = _noid_repo(tmp_path / "repo")
-    _write_acc_version(worktree)
-    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
-
-    result = preflight(
-        _record(worktree), "do the thing", None, False, _release(tmp_path))
-
-    assert result["ok"] is False
-    assert result["error"].startswith("infrastructure: git identity missing")
-    assert not log.exists()
-
-
 # --- dispatch ----------------------------------------------------------------
 
 
@@ -416,11 +307,8 @@ def test_git_config_files_are_never_written(
     _fake_stub(fake_bin, sentinel)
     job = _seed_job(worktree)
 
-    result = preflight(
-        _record(worktree), "do the thing", None, False, _release(tmp_path))
     attempt = dispatch(worktree, job["id"], 1, _executor(), "Write out.py\n", _prefs())
 
-    assert result["ok"] is False
     assert attempt["status"] == "failed"
     assert local_config.read_bytes() == before_local
     assert _git(worktree, "config", "--local", "user.name").returncode != 0

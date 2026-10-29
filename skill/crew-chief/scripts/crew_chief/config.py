@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import central_config
 from . import tiers
 from .records import WORK_TYPES
 
@@ -62,21 +61,8 @@ DEFAULT_ALERT_COORDINATOR_SHARE = 0.5
 DEFAULT_ALERT_ATTEMPTS_PER_PIECE = 2.5
 DEFAULT_ALERT_JOB_MINUTES = 180
 
-#: Central coordination scalars (001-central). An empty
-#: ``coordinator_default`` falls back to the calling CLI (``CREW_CHIEF_COORDINATOR``)
-#: when a launch resolves its coordinator; the timings must be finite and
-#: positive; ``central_backend`` labels the launch in the central registry.
-DEFAULT_COORDINATOR_DEFAULT = ""
-DEFAULT_COORDINATOR_UNRESTRICTED = True
-DEFAULT_CENTRAL_POLL_S = 1.0
-DEFAULT_CENTRAL_ROUND_TIMEOUT_S = 900
-DEFAULT_CENTRAL_BACKEND = "default"
-#: Minutes without job progress *and* child output before a central round is
-#: considered stalled (``0`` is invalid, unlike the economy alerts), and the
-#: policy applied on a coordinator quota or stall: ``ask``, ``wait`` or
-#: ``handoff:<cli>``.
-DEFAULT_STALL_MINUTES = 40
-DEFAULT_ON_COORDINATOR_QUOTA = "ask"
+#: Seconds one coordinator round may run before it is stopped.
+DEFAULT_COORDINATOR_TIMEOUT_S = 4 * 3600
 
 #: Markers of the block ``acc setup`` manages in the global preferences file.
 SETUP_BEGIN = "# >>> acc setup >>>"
@@ -213,23 +199,8 @@ class Prefs:
     setup_models: list[dict] = field(default_factory=list)
     #: Whether :data:`tiers.BUILTIN_RULES` take part in :func:`classify`.
     builtin_tiers: bool = True
-    #: Central coordination scalars (001-central). An empty
-    #: ``coordinator_default`` falls back to the calling CLI; timings must be
-    #: finite and positive; ``central_backend`` labels the launch.
-    coordinator_default: str = DEFAULT_COORDINATOR_DEFAULT
-    coordinator_unrestricted: bool = DEFAULT_COORDINATOR_UNRESTRICTED
-    central_poll_s: float = DEFAULT_CENTRAL_POLL_S
-    central_round_timeout_s: float = DEFAULT_CENTRAL_ROUND_TIMEOUT_S
-    central_backend: str = DEFAULT_CENTRAL_BACKEND
-    #: Minutes without job progress and child output before a round is stalled,
-    #: and the policy on a coordinator quota or stall (``ask``, ``wait`` or
-    #: ``handoff:<cli>``). Both are validated by ``central_config``.
-    stall_minutes: float = DEFAULT_STALL_MINUTES
-    on_coordinator_quota: str = DEFAULT_ON_COORDINATOR_QUOTA
-    #: Whether ACC may check GitHub for a newer release. This is ACC's only
-    #: external network access; a false value disables both the check and any
-    #: cached notice. Strict boolean.
-    check_updates: bool = True
+    #: Seconds one coordinator round may run (``acc launch``).
+    coordinator_timeout_s: int = DEFAULT_COORDINATOR_TIMEOUT_S
     #: Executor choice default when no CLI flag or job record supplies one
     #: (Phase 4 / FR-039). One of ``own``, ``subagents``, ``free_first`` or
     #: ``ask``; ``ask`` means an interactive coordinator prompts once at job
@@ -244,10 +215,6 @@ class Prefs:
     team_executors: list[str] = field(default_factory=list)
     team_reviewers: list[str] = field(default_factory=list)
     team_origins: dict[str, str] = field(default_factory=dict)
-    notify_url: str | None = None
-    notify_secret_file: str | None = None
-    notify_allow_http: bool = False
-    projects_dir: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.team, Team):
@@ -404,16 +371,6 @@ def _validate_model(path: Path, rule: dict[str, Any]) -> None:
             )
 
 
-SUPPORTED_COORDINATOR_CLIS = (
-    "claude",
-    "codex",
-    "claude-ghost",
-    "claude-code",
-    "claude_code",
-    "claudecode",
-)
-
-
 def _validate_cli_model_entry(path: Path, section: str, entry: Any) -> tuple[str, str]:
     if not isinstance(entry, str):
         raise PrefsError(
@@ -450,24 +407,12 @@ def _get_known_tools(path: Path, data: dict[str, Any]) -> set[str]:
     return names
 
 
-def _get_coordinator_clis(path: Path, data: dict[str, Any]) -> set[str]:
-    clis = set(SUPPORTED_COORDINATOR_CLIS)
-    for tool in data.get("tools", []):
-        if isinstance(tool, dict):
-            kind = tool.get("kind")
-            name = tool.get("name")
-            if kind in ("claude-code", "codex") and name:
-                clis.add(str(name))
-    return clis
-
-
 def _validate_team(path: Path, data: dict[str, Any]) -> None:
     if "team" in data:
         team = data["team"]
         if not isinstance(team, dict):
             raise PrefsError(f"{path}: [team] must be a table, got {team!r}")
         known_tools = _get_known_tools(path, data)
-        coordinator_clis = _get_coordinator_clis(path, data)
 
         for key in ("coordinators", "executors", "reviewers"):
             if key in team:
@@ -478,35 +423,11 @@ def _validate_team(path: Path, data: dict[str, Any]) -> None:
                     )
                 for entry in items:
                     cli, model = _validate_cli_model_entry(path, f"[team].{key}", entry)
-                    if key == "coordinators":
-                        if cli not in coordinator_clis:
-                            raise PrefsError(
-                                f"{path}: [team].coordinators: {cli!r} is not an allowed "
-                                f"coordinator CLI (expected one of {', '.join(sorted(coordinator_clis))})"
-                            )
-                    else:
-                        if cli not in known_tools:
-                            raise PrefsError(
-                                f"{path}: [team].{key}: unknown tool {cli!r} in entry {entry!r}"
-                            )
+                    if cli not in known_tools:
+                        raise PrefsError(
+                            f"{path}: [team].{key}: unknown tool {cli!r} in entry {entry!r}"
+                        )
 
-    if "coordinator_fallback" in data:
-        c_fallback = data["coordinator_fallback"]
-        if not isinstance(c_fallback, list):
-            raise PrefsError(
-                f"{path}: coordinator_fallback must be a list, got {c_fallback!r}"
-            )
-        coordinator_clis = _get_coordinator_clis(path, data)
-        for entry in c_fallback:
-            if not isinstance(entry, str) or not entry.strip():
-                raise PrefsError(
-                    f"{path}: coordinator_fallback entry must be a non-empty string, got {entry!r}"
-                )
-            cli = entry.partition(":")[0].strip()
-            if cli not in coordinator_clis:
-                raise PrefsError(
-                    f"{path}: coordinator_fallback: {cli!r} is not an allowed coordinator CLI"
-                )
 
 
 def _validate_file(
@@ -570,12 +491,6 @@ def _validate_file(
             f"{path}: builtin_tiers must be true or false, got {builtin_tiers!r}"
         )
 
-    check_updates = data.get("check_updates")
-    if check_updates is not None and not isinstance(check_updates, bool):
-        raise PrefsError(
-            f"{path}: check_updates must be true or false, got {check_updates!r}"
-        )
-
     executors_default = data.get("executors_default")
     if executors_default is not None and executors_default not in EXECUTORS_DEFAULT_VALUES:
         raise PrefsError(
@@ -593,6 +508,16 @@ def _validate_file(
             raise PrefsError(
                 f"{path}: max_running_executors must be 1 or more, got {max_running_executors!r}"
             )
+
+    coordinator_timeout = data.get("coordinator_timeout_s")
+    if coordinator_timeout is not None and (
+        isinstance(coordinator_timeout, bool)
+        or not isinstance(coordinator_timeout, int)
+        or coordinator_timeout < 1
+    ):
+        raise PrefsError(
+            f"{path}: coordinator_timeout_s must be a positive integer, got {coordinator_timeout!r}"
+        )
 
     executor_lease_dir = data.get("executor_lease_dir")
     if executor_lease_dir is not None and (
@@ -654,30 +579,12 @@ def _validate_file(
             f"got {issue_tracker!r}"
         )
 
-    projects_dir = data.get("projects_dir")
-    if projects_dir is not None and (
-        not isinstance(projects_dir, str) or not projects_dir.strip()
-    ):
-        raise PrefsError(
-            f"{path}: projects_dir must be a non-empty path string, got {projects_dir!r}"
-        )
-
     for tool in data.get("tools", []):
         _validate_tool(path, tool)
     for rule in data.get("models", []):
         _validate_model(path, rule)
 
     _validate_team(path, data)
-
-    # Central coordination scalars are validated through the accepted
-    # central_config.resolve_settings interface (injected supported fallback
-    # caller, validation only), and the continuity scalars through
-    # resolve_continuity_settings.
-    try:
-        central_config.resolve_settings(data, {}, {}, "claude")
-        central_config.resolve_continuity_settings(data, {}, {})
-    except central_config.CentralConfigError as exc:
-        raise PrefsError(f"{path}: {exc}") from exc
 
 
 def _merge_by_key(
@@ -804,11 +711,6 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
             return setup_data[key]
         return default
 
-    continuity = central_config.resolve_continuity_settings({}, {}, {
-        "stall_minutes": pick("stall_minutes", DEFAULT_STALL_MINUTES),
-        "on_coordinator_quota": pick("on_coordinator_quota", DEFAULT_ON_COORDINATOR_QUOTA),
-    })
-
     proj_team = project_data.get("team") if isinstance(project_data.get("team"), dict) else {}
     glob_team = global_data.get("team") if isinstance(global_data.get("team"), dict) else {}
 
@@ -817,15 +719,9 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
     if "coordinators" in proj_team and proj_team["coordinators"] is not None:
         coordinators = list(proj_team["coordinators"])
         coordinators_origin = "project_team"
-    elif "coordinator_fallback" in project_data and project_data["coordinator_fallback"] is not None:
-        coordinators = list(project_data["coordinator_fallback"])
-        coordinators_origin = "project_prefs"
     elif "coordinators" in glob_team and glob_team["coordinators"] is not None:
         coordinators = list(glob_team["coordinators"])
         coordinators_origin = "global_team"
-    elif "coordinator_fallback" in global_data and global_data["coordinator_fallback"] is not None:
-        coordinators = list(global_data["coordinator_fallback"])
-        coordinators_origin = "global_fallback"
 
     executors_origin = ""
     executors: list[str] = []
@@ -889,18 +785,7 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         cheap_budget_usd_job=float(pick("cheap_budget_usd_job", 0.0)),
         setup_models=list(setup_data.get("models", [])),
         builtin_tiers=pick("builtin_tiers", True),
-        check_updates=pick("check_updates", True),
-        coordinator_default=pick("coordinator_default", DEFAULT_COORDINATOR_DEFAULT),
-        coordinator_unrestricted=pick(
-            "coordinator_unrestricted", DEFAULT_COORDINATOR_UNRESTRICTED
-        ),
-        central_poll_s=pick("central_poll_s", DEFAULT_CENTRAL_POLL_S),
-        central_round_timeout_s=pick(
-            "central_round_timeout_s", DEFAULT_CENTRAL_ROUND_TIMEOUT_S
-        ),
-        central_backend=pick("central_backend", DEFAULT_CENTRAL_BACKEND),
-        stall_minutes=continuity["stall_minutes"],
-        on_coordinator_quota=continuity["on_coordinator_quota"],
+        coordinator_timeout_s=int(pick("coordinator_timeout_s", DEFAULT_COORDINATOR_TIMEOUT_S)),
         executors_default=pick("executors_default", DEFAULT_EXECUTORS_DEFAULT),
         max_running_executors=int(pick_machine("max_running_executors", DEFAULT_MAX_RUNNING_EXECUTORS)),
         executor_lease_dir=pick_machine("executor_lease_dir", None),
@@ -909,10 +794,6 @@ def load_prefs(project: Path, global_path: Path | None = None) -> Prefs:
         team_executors=executors,
         team_reviewers=reviewers,
         team_origins=team_origins,
-        notify_url=pick("notify_url", None),
-        notify_secret_file=pick("notify_secret_file", None),
-        notify_allow_http=bool(pick("notify_allow_http", False)),
-        projects_dir=global_data.get("projects_dir") or setup_data.get("projects_dir", None),
         ignore_home_entries=list(
             dict.fromkeys(
                 [

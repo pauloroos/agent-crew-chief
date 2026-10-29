@@ -27,8 +27,6 @@ END = "<!-- END:agent-crew-chief -->"
 def _run(project: Path, *extra: str) -> subprocess.CompletedProcess:
     """Run the installer on ``project`` and capture its output."""
     args = list(extra)
-    if not any(arg.startswith("--no-rtk") for arg in args):
-        args.append("--no-rtk")
     return subprocess.run(
         [sys.executable, "-I", str(INSTALL), str(project), *args],
         capture_output=True,
@@ -392,7 +390,7 @@ def test_missing_ponytail_source_exits_2_unless_no_ponytail(
     assert len(stderr) == 1
     assert "broken-vendor" in stderr[0]
 
-    assert install.main([str(project), "--no-ponytail", "--no-rtk"]) == 0
+    assert install.main([str(project), "--no-ponytail"]) == 0
 
 
 # --- snippet ---------------------------------------------------------------
@@ -411,17 +409,3 @@ def test_installed_snippet_declares_precedence_with_superpowers(tmp_path):
     ) in text
 
 
-def test_rtk_is_downloaded_only_with_with_rtk(tmp_path, monkeypatch):
-    """Installing into a project never downloads rtk unless --with-rtk is given."""
-    from crew_chief import kit_install
-
-    calls = []
-    monkeypatch.setattr(
-        kit_install, "install_kit", lambda **kw: calls.append(kw["do_install_rtk"]) or []
-    )
-    project = tmp_path / "project"
-    project.mkdir()
-
-    assert install.main([str(project), "--no-ponytail"]) == 0
-    assert install.main([str(project), "--no-ponytail", "--with-rtk"]) == 0
-    assert calls == [False, True]
