@@ -81,7 +81,15 @@ def _create_ghost_link(home: Path) -> None:
     target = home / ".claude" / "skills" / "crew-chief"
     if ghost.exists() or ghost.is_symlink():
         ghost.unlink()
-    ghost.symlink_to(target, target_is_directory=True)
+    try:
+        ghost.symlink_to(target, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        # Symlinks need Developer Mode or admin on Windows; a junction does not.
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(ghost))
 
 
 def install_machine_wide(home: Path, dry_run: bool = False) -> list[str]:
