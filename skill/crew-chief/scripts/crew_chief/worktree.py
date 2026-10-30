@@ -691,7 +691,14 @@ def _remove_tree(path: Path) -> None:
 
     if os.name == "nt":
         # the extended-length prefix lifts the 260-character path limit
-        path = Path("\\\\?\\" + str(Path(path).resolve()))
+        full = str(Path(path).resolve())
+        if full.startswith("\\\\?\\"):
+            pass
+        elif full.startswith("\\\\"):
+            full = "\\\\?\\UNC\\" + full[2:]
+        else:
+            full = "\\\\?\\" + full
+        path = Path(full)
     if sys.version_info >= (3, 12):
         shutil.rmtree(path, onexc=unlock)
     else:  # pragma: no cover - Python 3.11 only

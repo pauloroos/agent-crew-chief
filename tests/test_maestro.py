@@ -102,6 +102,21 @@ FAKES = {
         "    records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
         "        'pr_url': 'https://example.test/pr/1'})\n"
     ),
+    # fails its review, then asks the owner during the fix
+    "fixasks": (
+        "import re, sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "m = re.search(r'Write the review to (.+?) in markdown', sys.argv[1])\n"
+        "q = re.search(r'write the question to (.+?) and stop', sys.argv[1])\n"
+        "if m:\n"
+        "    Path(m.group(1)).write_text('VERDICT: FAIL\\nSCORE: 3\\n', encoding='utf-8')\n"
+        "elif 'failed it against the request' in sys.argv[1]:\n"
+        "    Path(q.group(1)).write_text('Keep the old API?', encoding='utf-8')\n"
+        "else:\n"
+        "    records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
+        "        'pr_url': 'https://example.test/pr/1'})\n"
+    ),
     # delivers, but as a reviewer writes no verdict
     "mute": (
         "import sys\nfrom pathlib import Path\n"
@@ -493,7 +508,7 @@ def test_the_review_runs_in_its_own_checkout_of_the_delivered_head(repo, tmp_pat
     assert not any(p.name.startswith("review-") for p in maestro._crew_dir(repo).iterdir())
 
 
-def test_a_completed_front_removes_its_worktrees_and_attempt_branches(repo, tmp_path):
+def test_a_completed_front_removes_its_worktrees(repo, tmp_path):
     folder = _launch(repo, tmp_path, "deliver:m1")
     worktree = Path(maestro.load(folder)["worktree"])
     attempt = worktree.parent / f"{worktree.name}.crew" / "job-1-1-1"
@@ -504,8 +519,44 @@ def test_a_completed_front_removes_its_worktrees_and_attempt_branches(repo, tmp_
     assert record["cleaned_at"] and record["clean_errors"] == []
     assert not worktree.exists() and not attempt.parent.exists()
     branches = subprocess.run(["git", "branch", "--list"], cwd=repo, capture_output=True, text=True).stdout
-    assert "crew/job-1-1-1" not in branches
     assert record["branch"] in branches  # the PR's branch stays
+
+
+def test_clean_deletes_only_the_branches_of_its_own_attempts(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "idle:m1")
+    record = maestro.load(folder)
+    records.save_job(Path(record["worktree"]), {
+        "id": "job-1", "usage": [],
+        "pieces": [{"n": 1, "attempts": [{"branch": "crew/job-1-1-1"}, {"branch": "crew/job-1-1-2"}]}],
+    })
+    # crew/job-1-2-1-1 belongs to job "job-1-2", which a prefix match would take
+    for branch in ("crew/job-1-1-1", "crew/job-1-2-1-1"):
+        subprocess.run(["git", "branch", branch], cwd=repo, check=True)
+
+    [result] = maestro.clean_fronts(repo, [record["id"]])
+
+    branches = subprocess.run(["git", "branch", "--list"], cwd=repo, capture_output=True, text=True).stdout
+    assert "crew/job-1-1-1" not in branches and "crew/job-1-2-1-1" in branches
+    assert result["errors"] == []
+
+
+def test_a_question_during_a_fix_keeps_the_review_for_the_answer(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "fixasks:m1")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "question"
+    assert record["fix"] and record["fix"].endswith("review-1.md")
+
+
+def test_a_delivery_on_the_last_round_is_still_reviewed(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr(maestro, "MAX_ROUNDS", 1)
+    folder = _launch(repo, tmp_path, "deliver:m1")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "completed"
+    assert [r["verdict"] for r in record["reviews"]] == ["pass"]
 
 
 def test_cli_clean_removes_a_named_front(repo, tmp_path, capsys):

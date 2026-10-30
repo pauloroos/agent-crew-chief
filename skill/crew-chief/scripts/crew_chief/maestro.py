@@ -521,7 +521,8 @@ def run(folder: Path | str) -> dict:
         else:
             round_entry = _run_round(record, folder, prefs)
             record["rounds"].append(round_entry)
-            if round_entry["outcome"] == "ok":
+            # a fix that asks the owner keeps its review, so the answer resumes the fix
+            if round_entry["outcome"] == "ok" and not (folder / "question.md").is_file():
                 record["fix"] = None
         record.pop("child_pid", None)
         job = _find_job(record)
@@ -566,7 +567,8 @@ def run(folder: Path | str) -> dict:
             else:
                 record["state"] = "quota" if round_entry["outcome"] == "quota" else "failed"
                 break
-        if len(record["rounds"]) >= MAX_ROUNDS:
+        # a job delivered on the last round still gets its review; fixes are bounded by MAX_REVIEWS
+        if len(record["rounds"]) >= MAX_ROUNDS and not _delivered(job):
             record.update(state="failed", last_error=f"no pull request after {MAX_ROUNDS} rounds")
             break
         _save(folder, record)
@@ -652,11 +654,23 @@ def clean(record: dict) -> dict:
         except (worktrees.WorktreeRemovalError, OSError) as exc:
             errors.append(f"{path}: {exc}")
     _git(repo, "worktree", "prune")
-    if job:
-        for branch in _git(repo, "branch", "--list", f"crew/{job['id']}-*", "--format=%(refname:short)").split():
+    # the branches the job's own attempts made: a prefix match would catch job "x-2" when cleaning "x"
+    branches = {
+        attempt.get("branch")
+        for piece in (job or {}).get("pieces") or []
+        for attempt in piece.get("attempts") or []
+        if str(attempt.get("branch") or "").startswith("crew/")
+    }
+    for branch in sorted(branches):
+        if not _git(repo, "branch", "--list", branch):
+            continue
+        try:
             _git(repo, "branch", "-D", branch)
             removed.append(branch)
-    record.update(cleaned_at=_now(), clean_errors=errors)
+        except MaestroError as exc:
+            errors.append(str(exc))
+    # a front with leftovers stays on the list of the next clean
+    record.update(cleaned_at=None if errors else _now(), clean_errors=errors)
     _save(folder, record)
     return {"id": record["id"], "removed": removed, "errors": errors}
 
