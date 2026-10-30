@@ -1467,6 +1467,21 @@ def test_quota_cooldown_adds_the_subscription_family_for_included(tmp_path):
     assert quota_cooldown(project, 60, now=NOW) == {"claude:opus", "sub:claude"}
 
 
+def test_a_zen_free_limit_pauses_every_zen_free_model(tmp_path):
+    attempt = _quota_attempt("opencode:opencode/glm-5.3-flash-free", 10)
+    attempt["note"] = "provider.free-limit: Free usage limit reached."
+    project = _project(tmp_path, [{"type": "code", "attempts": [attempt]}])
+    executors = [
+        "opencode:opencode/mimo-v2.6-flash-free",
+        "opencode:opencode-go/muse-spark-1.2-contributor",  # the Go plan has its own quota
+        "opencode:opencode/deepseek-v4.1-flash",
+    ]
+
+    assert quota_cooldown(project, 60, now=NOW, executors=executors) == {
+        "opencode:opencode/glm-5.3-flash-free", "opencode:opencode/mimo-v2.6-flash-free",
+    }
+
+
 def test_rank_key_spread_counts_the_subscription_family():
     # codex:a and codex:b share one plan: use of codex:a counts against codex:b.
     b = _ex("codex:b", cost="included")

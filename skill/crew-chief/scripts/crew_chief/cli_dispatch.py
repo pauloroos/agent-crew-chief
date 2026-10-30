@@ -33,7 +33,9 @@ def _cmd_pick(args: argparse.Namespace) -> int:
     cli._piece(cli.records.load_job(project, args.job), args.piece)
     cli._check_models_to_stderr(project, prefs, found, due_only=True)
     stats = cli.build_stats(project)
-    cooling = cli.quota_cooldown(project, prefs.quota_cooldown_min)
+    cooling = cli.quota_cooldown(
+        project, prefs.quota_cooldown_min, executors=[e.id for e in executors]
+    )
     coordinator = args.coordinator or os.environ.get(cli._COORDINATOR_ENV) or None
 
     def choose(job: dict) -> tuple:

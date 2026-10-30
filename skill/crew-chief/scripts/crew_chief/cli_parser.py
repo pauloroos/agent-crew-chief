@@ -568,4 +568,13 @@ def build_parser() -> argparse.ArgumentParser:
     stop_parser.add_argument("coordinator_id")
     stop_parser.set_defaults(handler=cli._cmd_stop)
 
+    clean_parser = subcommands.add_parser(
+        "clean", parents=[common],
+        help="remove the worktrees and attempt branches of finished fronts; their numbers stay",
+    )
+    clean_parser.add_argument(
+        "coordinator_ids", nargs="*", help="fronts to clean (default: every completed front not cleaned yet)"
+    )
+    clean_parser.set_defaults(handler=cli._cmd_clean)
+
     return parser

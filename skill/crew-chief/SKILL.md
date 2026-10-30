@@ -270,11 +270,22 @@ project's code yourself.
    - `failed`: read `last_error` and the round logs in
      `<project>.crew/coordinators/<ID>/`; `CC resume ID` only after the cause
      is fixed, never as a blind retry;
-   - `completed`: note the PR.
-   `CC stop ID` kills a coordinator; its worktree and branch
-   (`maestro/<front>-<id>`) stay.
+   - `failed` after reviews: the review still fails after three tries; read
+     the last `review-N.md` and decide with the user;
+   - `completed`: the review passed; note the PR and its review score.
+   Once a front's job is closed, the same `tool:model` reviews it in a clean
+   session and a checkout of its own: a checklist of each requested item
+   (delivered, partial or missing), the test results and the problems, ending
+   in a verdict and a score. The review goes to `review-N.md` in the
+   coordinator's folder and as a comment on the PR. A failed review sends the
+   coordinator back to fix it on the same PR; a passed one completes the front
+   and removes its worktrees and attempt branches (its folder, numbers and PR
+   branch stay). `CC stop ID` kills a coordinator; its worktree and branch
+   (`maestro/<front>-<id>`) stay. `CC clean` removes what completed fronts
+   left behind; `CC clean ID` removes a stopped or failed front's worktrees
+   once the user gives it up.
 5. **Report** every front with its PR (or branch), its rounds, time, tokens,
-   accepted pieces and score, and what is left. The owner merges; you never
+   accepted pieces, the review's verdict and score, and what is left. The owner merges; you never
    merge, push to the base branch or tag. When the owner lets you merge, merge
    a front's PR only once `status` shows it `completed`: the runner pushes the
    coordinator's tokens to the branch right before, and an earlier merge
@@ -286,7 +297,9 @@ You run headless: nobody can answer a prompt. Follow the job cycle in the
 worktree you were started in, record the job with `job new`, close it (which
 pushes the branch and opens the PR) and stop. `close` writes the CHANGELOG
 entry and the scoreboard: commit those files on the job branch and push it, so
-the PR carries them. Reviewers on claude run without Bash and cannot read the
+the PR carries them. Put the output of the checks you ran (build, lint, tests)
+in the PR description: a reviewer checks the delivery against the request
+afterwards and fails it when they are missing. Reviewers on claude run without Bash and cannot read the
 diff themselves: put the diff in the review brief (or paste it there). If you
 need the owner's decision, write the question to the `question.md` path your
 prompt names and stop; you are resumed with the answer. Every round you run is

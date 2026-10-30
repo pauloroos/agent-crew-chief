@@ -8,6 +8,33 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.6.2] - 2026-10-30
+
+Delivery with checked quality, from the review of the first real maestro runs.
+
+### Added
+- **A review closes every front.** Once a front's job is closed, the same
+  `tool:model` reviews it in a clean session and a checkout of its own: a
+  checklist of each requested item (delivered, partial or missing), the test
+  results and the problems, ending in a verdict and a score. It is written to
+  `review-N.md` in the coordinator's folder and posted on the PR. A failed
+  review sends the coordinator back to fix it on the same PR, up to three
+  reviews; `status` shows the verdicts and the last score.
+- **A completed front cleans up after itself.** Its worktree, its attempts'
+  checkouts and their `crew/` branches go; its folder keeps a copy of the job
+  record, so `status` keeps its numbers. `clean` does the same for completed
+  fronts left from before and, named by ID, for a stopped or failed one.
+
+### Fixed
+- Toolchain caches in the home folder (`.cargo`, `.rustup`, `.yarn`,
+  `.pnpm-store`, `.gradle`, `.m2`, `.nuget`) no longer count as an attempt
+  writing outside its worktree: every Rust build was thrown away.
+- An OpenCode Zen free model that hits the shared free limit pauses every Zen
+  free model, instead of the next one hitting the same limit.
+- The coordinator's runner no longer opens a terminal window on Windows for
+  each git or gh it runs, and worktrees with deep paths (`node_modules`) are
+  removed on Windows.
+
 ## [0.6.1] - 2026-10-30
 
 Fixes from the first real maestro runs (Contratada Fácil and Project Vard).

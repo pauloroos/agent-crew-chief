@@ -8,6 +8,7 @@ cooldown tracking.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -222,8 +223,16 @@ def _lowest_effort(
     return kept
 
 
+def _shares_free_limit(executor_id: str) -> bool:
+    """A free model of OpenCode Zen: they all draw on one anonymous free limit."""
+    return executor_id.startswith("opencode:opencode/") and executor_id.endswith("-free")
+
+
 def quota_cooldown(
-    project: Path, minutes: float, now: datetime | None = None
+    project: Path,
+    minutes: float,
+    now: datetime | None = None,
+    executors: Iterable[str] = (),
 ) -> set[str]:
     """Executors with an attempt that ended in ``quota`` in the last ``minutes``.
 
@@ -232,7 +241,9 @@ def quota_cooldown(
     ``started`` cannot be aged and is ignored. ``minutes <= 0`` turns the
     cooldown off. Corrupt jobs are skipped. An attempt whose cost was
     ``included`` also adds its ``sub:<tool>`` family (see :func:`quota_family`),
-    so :func:`pick` pauses every model of that subscription.
+    so :func:`pick` pauses every model of that subscription. An OpenCode Zen
+    free model that hit ``free-limit`` pauses every Zen free model among
+    ``executors``, since they share that limit.
     """
     from . import scoring
 
@@ -279,6 +290,8 @@ def quota_cooldown(
                     if attempt.get("cost") == "included":
                         # One subscription quota: pause every model of the CLI.
                         cooling.add(scoring.quota_family(executor, "included"))
+                    if _shares_free_limit(executor) and "free-limit" in (attempt.get("note") or ""):
+                        cooling.update(e for e in executors if _shares_free_limit(e))
     return cooling
 
 

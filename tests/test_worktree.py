@@ -544,6 +544,8 @@ def test_agent_tool_entries_in_home_are_not_outside_write(
     (home_dir / ".codex").mkdir()
     (home_dir / ".gemini").mkdir()
     (home_dir / ".local").mkdir()
+    # a Rust build fills cargo's registry cache
+    (home_dir / ".cargo").mkdir()
 
     after = snapshot(git_repo, worktree)
     assert outside_writes(before, after) == []
