@@ -25,9 +25,7 @@ def isolated_global_prefs(tmp_path_factory, monkeypatch) -> Path:
     """
     base = tmp_path_factory.mktemp("global-prefs")
     path = base / "preferences.toml"
-    # Baseline tests must never spawn real update workers or touch the network:
-    # keep the update check disabled in the default isolated global prefs.
-    path.write_text("check_updates = false\n", encoding="utf-8")
+    path.write_text("", encoding="utf-8")
     monkeypatch.setenv("AGENT_CREW_CHIEF_GLOBAL_PREFS", str(path))
     return path
 

@@ -93,6 +93,21 @@ def test_build_antigravity_review_uses_plan_mode(tmp_path):
     assert "--mode" not in work_cmd and "--effort" not in work_cmd
 
 
+def test_build_antigravity_model_with_effort_suffix_takes_no_effort_flag(tmp_path):
+    # Antigravity rejects --effort low next to --model gemini-3.8-flash-medium.
+    from crew_chief.scoring_effort import model_effort
+
+    tool = {"name": "antigravity", "kind": "antigravity", "bin": "agy"}
+    cmd = build_command(
+        tool, "gemini-3.8-flash-medium", tmp_path, "p", tmp_path / "b.md",
+        tmp_path / "o.json", "low", False,
+    )
+    assert "--effort" not in cmd
+    assert model_effort(tool, "gemini-3.8-flash-medium") == "medium"
+    assert model_effort(tool, "claude-sonnet") is None
+    assert model_effort({"kind": "codex"}, "gpt-5.1-codex-max") is None
+
+
 def test_build_generic_formats_placeholders(tmp_path):
     wt = tmp_path / "my wt"
     tool = {

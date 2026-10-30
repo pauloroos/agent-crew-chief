@@ -23,12 +23,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="project root (default: the current directory)",
     )
     common.add_argument(
-        "--projects-dir",
-        metavar="PATH",
-        default=None,
-        help="trusted allowed directory for projects",
-    )
-    common.add_argument(
         "--json", action="store_true", help="print the result as JSON"
     )
 
@@ -45,6 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     interview_parser = subcommands.add_parser(
         "interview", parents=[common], help="start or inspect an interview-mode job (T036, FR-036)"
+    )
+    interview_parser.add_argument(
+        "--projects-dir",
+        metavar="PATH",
+        default=None,
+        help="trusted allowed directory for projects",
     )
     interview_parser.add_argument("--job", default=None, help="job ID to query or inspect")
     interview_parser.add_argument(

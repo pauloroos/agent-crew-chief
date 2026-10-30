@@ -15,8 +15,8 @@ Definitions (a division by zero gives ``None``, never an exception):
   ``cost_usd`` of the attempts whose ``cost`` is ``cheap`` / ``paid``;
   ``cost_unknown`` says whether any of those attempts had ``cost_known``
   false.
-* ``coordinator_tokens``: the job's ``usage`` entries (``coordinator`` and
-  ``central`` roles, see ``records.add_usage``).
+* ``coordinator_tokens``: the job's ``usage`` entries (``coordinator`` role,
+  see ``records.add_usage``).
 * ``usage_recorded``: whether the job has at least one valid ``usage``
   entry. Without one the coordinator's share is unknown, not zero: the
   summary says ``not recorded`` instead of a measured ``0%``.

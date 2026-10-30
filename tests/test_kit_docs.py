@@ -29,13 +29,12 @@ def test_both_readmes_document_base_kit():
 
 
 def test_tutorials_document_base_kit():
-    """Both tutorial 01 files mention the three base kit components."""
+    """Both tutorial 01 files mention the installed base kit components."""
     for path in (TUTORIAL_01, TUTORIAL_01_PT):
         if not path.is_file():
             continue
         text = _read(path)
         assert "Ponytail" in text, f"{path.name} must mention Ponytail"
-        assert "rtk" in text or "RTK" in text, f"{path.name} must mention rtk"
         assert "superpowers" in text, f"{path.name} must mention superpowers"
 
 

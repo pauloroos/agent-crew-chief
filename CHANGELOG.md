@@ -8,7 +8,7 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
-## [Unreleased]
+## [0.6.0] - 2026-10-29
 
 A lighter ACC: the maestro, its coordinators and their numbers, without the
 machinery around them.
@@ -41,7 +41,28 @@ machinery around them.
 - The old central preferences (`coordinator_default`, `coordinator_fallback`,
   `stall_minutes`, `on_coordinator_quota`, `central_*`), which are now
   ignored.
+- `--projects-dir` is accepted only by `acc interview`; the global
+  `projects_dir` preference is ignored.
+- The usage role `central` (`usage add --role coordinator` only).
 - The merge-gate proposal docs.
+
+### Fixed
+- The maestro branch is `maestro/<front>-<id>`, so `job new` inside the
+  coordinator's worktree keeps it instead of switching away.
+- A multi-line prompt is no longer cut at the first line by Windows `.cmd`
+  tools.
+- A coordinator whose CLI is missing falls back to the next one of the list.
+- A blocked delivery stops the coordinator instead of looping round after
+  round.
+- The coordinator's tokens are committed with the job record.
+- `acc stop` no longer races the runner or overwrites a `completed`
+  coordinator.
+- Held fronts stop the clock.
+- `acc status` shows the job's economy alerts.
+- The Antigravity effort flag no longer conflicts with its model.
+- `acc interview` status and end mode follow the launched coordinator, and
+  the interview no longer switches your checkout to an unused job branch.
+- The PR body no longer claims the tests passed unconditionally.
 
 ## [0.5.0] - 2026-10-29
 
@@ -54,7 +75,7 @@ that did not serve it.
   independent fronts, launches one coordinator per front with `acc launch`,
   watches them with `acc central --json`, answers or relays their questions,
   holds or relaunches a coordinator that hit a quota, and reports one PR per
-  front. Tutorial: `docs/tutorials/05-maestro.md`.
+  front. Tutorial: `docs/tutorials/05-maestro.md` (now `04-maestro.md`).
 - **Quota hold:** a coordinator whose CLI stops on a quota or rate limit
   moves to `quota` instead of `failed`; `acc resume` continues it from the
   same records, or the maestro relaunches the front with another `--cli`.

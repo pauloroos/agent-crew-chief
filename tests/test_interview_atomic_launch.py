@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -18,9 +19,8 @@ from crew_chief.interview import InterviewExpiredError
 
 def _isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     prefs = tmp_path / "global-prefs.toml"
-    prefs.write_text("check_updates = false\n", encoding="utf-8")
+    prefs.write_text("", encoding="utf-8")
     monkeypatch.setenv("AGENT_CREW_CHIEF_GLOBAL_PREFS", str(prefs))
-    monkeypatch.delenv("AGENT_CREW_CHIEF_CENTRAL_DIR", raising=False)
     repo = tmp_path / "project"
     repo.mkdir(parents=True, exist_ok=True)
     return repo
@@ -227,3 +227,50 @@ def test_status_racing_final_answers_launches_once(tmp_path: Path, monkeypatch: 
     stored = records.load_job(repo, jid)
     assert stored.get("state") == "running"
     assert stored.get("coordinator_id") == "coord-1"
+
+
+def test_launch_passes_the_interview_end_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The interview's end mode reaches the maestro launch."""
+    repo = _isolated_env(tmp_path, monkeypatch)
+    seen: list[dict] = []
+
+    def fake_launch(*_args, **kwargs):
+        seen.append(kwargs)
+        return {"id": "coord-1", "pid": 999999}
+
+    with patch.object(maestro, "launch", fake_launch):
+        started = svc.start_interview_job(
+            project=repo, request="test request", coordinator="claude:sonnet",
+            executors="own", end_mode="pr_review", title="end-mode",
+        )
+    assert started["state"] == "running"
+    assert seen[0]["end_mode"] == "pr_review"
+    stored = records.load_job(repo, started["job_id"])
+    assert stored["runner_pid"] == 999999 and "supervisor" not in stored
+
+
+def test_status_follows_the_completed_coordinator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A launched interview job reports its maestro coordinator's state and PR."""
+    repo = _isolated_env(tmp_path, monkeypatch)
+    with patch.object(maestro, "launch", lambda *_a, **_k: {"id": "coord-1", "pid": 999999}):
+        started = svc.start_interview_job(
+            project=repo, request="test request", coordinator="claude:sonnet",
+            executors="own", end_mode="pr", title="status-follows",
+        )
+    jid = started["job_id"]
+    assert svc.get_interview_status(project=repo, job_id=jid)["state"] == "running"
+
+    folder = maestro.coordinators_dir(repo) / "coord-1"
+    folder.mkdir(parents=True)
+    pr = "https://github.com/example/repo/pull/7"
+    (folder / "record.json").write_text(json.dumps({
+        "id": "coord-1", "front": "f", "repo": str(repo),
+        "worktree": str(tmp_path / "missing-worktree"), "branch": "maestro/f-coord-1",
+        "coordinators": ["claude:sonnet"], "index": 0, "state": "completed", "pid": None,
+        "created_at": "2026-10-29T10:00:00+00:00", "finished_at": "2026-10-29T10:30:00+00:00",
+        "job_id": None, "pr_url": pr, "rounds": [], "last_error": None,
+    }), encoding="utf-8")
+
+    status = svc.get_interview_status(project=repo, job_id=jid)
+    assert status["state"] == "completed" and status["status"] == "completed"
+    assert status["pr_url"] == pr

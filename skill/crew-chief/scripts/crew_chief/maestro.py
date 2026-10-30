@@ -1,7 +1,7 @@
 """The maestro's coordinators: launch, run with fallback, status, resume, stop.
 
 One coordinator works one front in its own worktree and branch
-(``<project>.crew/coord-<front>-<id>``, branch ``acc/<front>-<id>``). It is a
+(``<project>.crew/coord-<front>-<id>``, branch ``maestro/<front>-<id>``). It is a
 headless run of a configured ``tool:model`` (``[team].coordinators``, the
 same tools the executors use) on a prompt that tells it to follow the
 crew-chief job cycle and end in a PR. A detached runner drives it round by
@@ -45,7 +45,6 @@ MAX_ROUNDS = 6
 DEFAULT_COORDINATOR = "claude:opus"
 ENTRY_SCRIPT = Path(__file__).resolve().parents[1] / "crew-chief.py"
 SKILL_FILE = Path(__file__).resolve().parents[2] / "SKILL.md"
-DONE_STATES = ("completed", "stopped")
 
 
 class MaestroError(Exception):
@@ -122,6 +121,7 @@ def launch(
     executors: str | None = None,
     base: str = "HEAD",
     spawn: bool = True,
+    end_mode: str | None = None,
 ) -> dict:
     """Create the front's worktree and record, start its runner, return the record."""
     repo = Path(_git(Path(repo), "rev-parse", "--show-toplevel"))
@@ -139,7 +139,8 @@ def launch(
 
     coordinator_id = secrets.token_hex(4)
     front = _slug(request_file.stem)
-    branch = f"acc/{front}-{coordinator_id}"
+    # not acc/: job new keeps a feature branch, but replaces an acc/ one with a new job branch
+    branch = f"maestro/{front}-{coordinator_id}"
     worktree = _crew_dir(repo) / f"coord-{front}-{coordinator_id}"
     worktree.parent.mkdir(parents=True, exist_ok=True)
     _git(repo, "worktree", "add", "-b", branch, str(worktree), base)
@@ -155,6 +156,7 @@ def launch(
         "branch": branch,
         "spec_dir": spec_dir,
         "executors": executors,
+        "end_mode": end_mode,
         "coordinators": entries,
         "index": 0,
         "state": "running",
@@ -205,6 +207,12 @@ def _prompt(record: dict, folder: Path, first: bool) -> str:
     lines += [
         "Dispatch the work to the configured executors and reviewers, grade every piece and",
         "close the job; close pushes the branch and opens the pull request. Never merge.",
+    ]
+    if record.get("end_mode"):
+        lines.append(f"Close the job with close --end-mode {record['end_mode']}.")
+    lines += [
+        "close writes the CHANGELOG and the scoreboard after its last push: commit those files "
+        "and push the job branch again.",
         f"Never ask interactively: if you need the owner's decision, write the question to "
         f"{folder / 'question.md'} and stop.",
     ]
@@ -217,22 +225,43 @@ def _prompt(record: dict, folder: Path, first: bool) -> str:
     answers = folder / "answers.md"
     if answers.is_file():
         lines.append(f"The owner's answers to your questions are in {answers}.")
-    return "\n".join(lines)
+    # one line: a Windows .cmd shim (opencode.CMD) passes only the first line of an argument
+    return " ".join(lines)
 
 
 def _find_job(record: dict) -> dict | None:
     worktree = Path(record["worktree"])
     if record.get("job_id"):
         try:
-            return records.load_job(worktree, record["job_id"])
+            job = records.load_job(worktree, record["job_id"])
         except records.RecordError:
             return None
-    known = set(record.get("known_jobs") or [])
-    for job, _, _ in records.iter_jobs(worktree):
-        if job and job.get("id") and job["id"] not in known:
+    else:
+        known = set(record.get("known_jobs") or [])
+        job = next(
+            (j for j, _, _ in records.iter_jobs(worktree) if j and j.get("id") and j["id"] not in known), None
+        )
+        if job:
             record["job_id"] = job["id"]
-            return job
-    return None
+    if job and job.get("job_branch"):
+        # the branch the job pushes, so status names the PR's branch
+        record["branch"] = job["job_branch"]
+    return job
+
+
+def _commit_usage(record: dict) -> None:
+    """Commit the job record ``_book_usage`` changed and push it, when git tracks it."""
+    worktree = Path(record["worktree"])
+    paths = [str(records.job_path(worktree, record["job_id"], suffix)) for suffix in (".json", ".md")]
+    try:
+        tracked = _git(worktree, "ls-files", "--", *paths).splitlines()
+        if not tracked:
+            return
+        _git(worktree, "commit", "-m", "Book coordinator usage", "--", *tracked)
+        _git(worktree, "rev-parse", "--abbrev-ref", "@{u}")
+        _git(worktree, "push")
+    except MaestroError:
+        pass  # no upstream or a failed push: the tokens stay committed or in the worktree's record
 
 
 def _book_usage(record: dict) -> None:
@@ -248,6 +277,7 @@ def _book_usage(record: dict) -> None:
 
     records.update_job(Path(record["worktree"]), record["job_id"], apply)
     record["pending_usage"] = []
+    _commit_usage(record)
 
 
 def _kill_tree(pid: int) -> None:
@@ -268,7 +298,9 @@ def _run_round(record: dict, folder: Path, prefs: config.Prefs) -> dict:
     tool, model = _resolve(entry, prefs)
     worktree = Path(record["worktree"])
     out_file = folder / f"round-{number}.out"
-    prompt = _prompt(record, folder, first=number == 1)
+    _find_job(record)
+    # a fallback after a round that made no job must still start one
+    prompt = _prompt(record, folder, first=not record.get("job_id"))
     cmd = tools.build_command(
         tool, model, worktree, prompt, folder / "request.md", out_file, None, False
     )
@@ -276,6 +308,9 @@ def _run_round(record: dict, folder: Path, prefs: config.Prefs) -> dict:
         # the coordinator pushes and opens the PR: it needs the network the sandbox blocks
         at = cmd.index("-s")
         cmd[at:at + 2] = ["--dangerously-bypass-approvals-and-sandbox"]
+    elif tool["kind"] == "claude-code":
+        # the owner's own MCP servers stay out of the headless coordinator
+        cmd.append("--strict-mcp-config")
     started = datetime.now(timezone.utc)
     stdout_path, stderr_path = folder / f"round-{number}.log", folder / f"round-{number}.err"
     exit_code, timed_out = None, False
@@ -284,19 +319,27 @@ def _run_round(record: dict, folder: Path, prefs: config.Prefs) -> dict:
         stderr_text = f"missing environment for {tool['name']}: {', '.join(tools.missing_env(tool))}"
         stdout = ""
     else:
-        kwargs = {} if os.name == "nt" else {"start_new_session": True}
+        # the detached runner has no console: without this each coordinator opens its own window
+        kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
+        # pick puts this CLI's own executors last; it expects the tool name
+        env["CREW_CHIEF_COORDINATOR"] = tool["name"]
         with open(stdout_path, "w", encoding="utf-8") as out, open(stderr_path, "w", encoding="utf-8") as err:
-            proc = subprocess.Popen(
-                cmd, cwd=worktree, stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=env, **kwargs
-            )
-            record["child_pid"] = proc.pid
-            _save(folder, record)
             try:
-                exit_code = proc.wait(timeout=prefs.coordinator_timeout_s)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                _kill_tree(proc.pid)
-                proc.wait()
+                proc = subprocess.Popen(
+                    cmd, cwd=worktree, stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=env, **kwargs
+                )
+            except OSError as exc:
+                # a missing CLI fails the round, so the next coordinator gets its turn
+                err.write(f"cannot start {cmd[0]}: {exc}\n")
+            else:
+                record["child_pid"] = proc.pid
+                _save(folder, record)
+                try:
+                    exit_code = proc.wait(timeout=prefs.coordinator_timeout_s)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    _kill_tree(proc.pid)
+                    proc.wait()
         stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
         stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace")
     ended = datetime.now(timezone.utc)
@@ -348,8 +391,23 @@ def run(folder: Path | str) -> dict:
         record.pop("child_pid", None)
         job = _find_job(record)
         _book_usage(record)
-        if job and job.get("pr_url"):
-            record.update(state="completed", pr_url=job["pr_url"], finished_at=_now(), last_error=None)
+        stored = load(folder)
+        if stored["state"] == "stopped":
+            # stop() ran during the round: keep its state, no next coordinator
+            record.update(state="stopped", finished_at=stored.get("finished_at"))
+            break
+        job_states = {job.get("state"), job.get("status")} if job else set()
+        if "blocked" in job_states:
+            result = job.get("result") or {}
+            record.update(
+                state="failed",
+                last_error=f"job {job['id']} is blocked: {(result.get('blocked_error') or '').strip()} "
+                f"(failed command: {result.get('failed_command') or ''})",
+            )
+            break
+        # a local end mode closes the job without a pull request
+        if job and (job.get("pr_url") or job_states & {"closed", "delivered"}):
+            record.update(state="completed", pr_url=job.get("pr_url"), last_error=None)
             break
         if (folder / "question.md").is_file():
             record["state"] = "question"
@@ -365,7 +423,8 @@ def run(folder: Path | str) -> dict:
             record.update(state="failed", last_error=f"no pull request after {MAX_ROUNDS} rounds")
             break
         _save(folder, record)
-    record["pid"] = None
+    # held states stop the clock too, so elapsed time is the work, not the wait
+    record.update(pid=None, finished_at=record.get("finished_at") or _now())
     _save(folder, record)
     return record
 
@@ -377,7 +436,7 @@ def resume(repo: Path | str, coordinator_id: str, answer: str | None = None, spa
     if record["state"] == "running" and record.get("pid") and pid_alive(record["pid"]):
         raise MaestroError(f"coordinator {coordinator_id} is still running")
     if record["state"] == "completed":
-        raise MaestroError(f"coordinator {coordinator_id} already delivered {record['pr_url']}")
+        raise MaestroError(f"coordinator {coordinator_id} already delivered {record['pr_url'] or 'its job'}")
     question = folder / "question.md"
     if answer:
         with open(folder / "answers.md", "a", encoding="utf-8") as fh:
@@ -386,7 +445,6 @@ def resume(repo: Path | str, coordinator_id: str, answer: str | None = None, spa
     question.unlink(missing_ok=True)
     record.update(state="running", index=0, last_error=None, finished_at=None)
     # a resumed front gets a fresh round budget
-    record["rounds_before_resume"] = record.get("rounds_before_resume", 0) + len(record["rounds"])
     record["history"] = record.get("history", []) + record["rounds"]
     record["rounds"] = []
     _save(folder, record)
@@ -399,7 +457,10 @@ def stop(repo: Path | str, coordinator_id: str) -> dict:
     """Kill the runner and its coordinator; the worktree and branch stay."""
     folder = _folder(Path(repo), coordinator_id)
     record = load(folder)
-    for key in ("child_pid", "pid"):
+    if record["state"] == "completed":
+        return record
+    # the runner first, so it cannot start the next coordinator once the child dies
+    for key in ("pid", "child_pid"):
         pid = record.get(key)
         if pid and pid_alive(pid):
             _kill_tree(pid)
@@ -422,20 +483,27 @@ def summary(record: dict) -> dict:
     if state == "running" and record.get("pid") and not pid_alive(record["pid"]):
         state = "failed"
         record["last_error"] = record.get("last_error") or "the runner exited unexpectedly"
-    job = _find_job(dict(record))
-    job_economy = economy.job_economy(job, None) if job else None
+    found = dict(record)
+    job = _find_job(found)
+    job_economy = None
+    if job:
+        try:
+            prefs = config.load_prefs(Path(record["worktree"]))
+        except (config.PrefsError, OSError):
+            prefs = None  # the figures still show; only the budget alerts need prefs
+        job_economy = economy.job_economy(job, prefs)
     return {
         "id": record["id"],
         "front": record["front"],
         "state": state,
         "coordinator": record["coordinators"][record["index"]],
         "coordinators": record["coordinators"],
-        "switches": sum(1 for r in rounds if r["outcome"] != "ok"),
+        "switches": sum(1 for a, b in zip(rounds, rounds[1:]) if a["coordinator"] != b["coordinator"]),
         "rounds": len(rounds),
         "seconds": _seconds(record["created_at"], record.get("finished_at")),
         "coordinator_tokens": sum(r.get("tokens_total") or 0 for r in rounds),
         "coordinator_cost_usd": round(sum(r.get("cost_usd") or 0 for r in rounds), 4),
-        "branch": record["branch"],
+        "branch": found["branch"],
         "worktree": record["worktree"],
         "job_id": record.get("job_id") or (job or {}).get("id"),
         "pr_url": record.get("pr_url"),

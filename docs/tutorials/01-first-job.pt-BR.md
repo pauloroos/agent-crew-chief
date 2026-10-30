@@ -4,7 +4,7 @@ Este tutorial usa um projeto Python pequeno e um job real do ACC. Você vai pedi
 
 ## Kit base
 
-Este tutorial pressupõe que o kit base está instalado (Ponytail para prompts concisos, rtk-oss como prefixo opcional de comandos e skills superpowers como test-driven-development, systematic-debugging e verification-before-completion). O instalador copia esses componentes por padrão; use `--no-ponytail`, `--no-rtk` ou `--no-superpowers` para pular algum deles. Consulte o README para detalhes sobre os padrões e o comportamento de cada componente.
+Este tutorial pressupõe que o kit base está instalado (Ponytail para prompts concisos e skills superpowers como test-driven-development, systematic-debugging e verification-before-completion). O instalador copia esses componentes por padrão; use `--no-ponytail` ou `--no-superpowers` para pular algum deles. Consulte o README para detalhes sobre os padrões e o comportamento de cada componente.
 
 ## 1. Copie o projeto de prática
 
@@ -25,7 +25,7 @@ Você deve ver um repositório Git novo e um primeiro commit. Se o Git pedir seu
 Clone uma versão marcada do ACC em algum lugar fora do projeto de prática. Depois instale o ACC na cópia:
 
 ```bash
-git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.6.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py .
 ```
 

@@ -58,7 +58,7 @@ THINK_TYPES = ("design", "research", "diagnosis", "review")
 RISKS = ("low", "medium", "high")
 
 #: Roles that can report their own token spend with :func:`add_usage`.
-USAGE_ROLES = ("coordinator", "central")
+USAGE_ROLES = ("coordinator",)
 
 #: Valid attempt roles.
 ROLES = ("exec", "review")
@@ -489,8 +489,6 @@ def record_team_used(
     return entry
 
 
-add_team_used = record_team_used
-
 
 def save_job(project: Path, job: dict) -> None:
     """Write the job's ``.json`` (indent 2, UTF-8, no escapes) and its ``.md``."""
@@ -766,7 +764,7 @@ def add_usage(
     estimated: bool,
     note: str = "",
 ) -> None:
-    """Append the coordinator's (or central's) own token spend to the job.
+    """Append the coordinator's own token spend to the job.
 
     ``role`` must be in :data:`USAGE_ROLES` and the token counts non-negative
     integers; the entry lands in ``job["usage"]`` with ``tokens_total`` and

@@ -316,11 +316,11 @@ O instalador copia a skill crew-chief junto com ponytail e superpowers (pule
 com `--no-ponytail` ou `--no-superpowers`). Nada é baixado:
 
 ```bash
-git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.6.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe o `agent-crew-chief-v0.5.0.zip` da
+Sem git? Baixe o `agent-crew-chief-v0.6.0.zip` da
 [última release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 descompacte e rode `python install.py /caminho/do/projeto` de dentro da pasta.
 Fixe uma tag (`--branch vX.Y.Z`) para nunca instalar código no meio de uma mudança;
@@ -411,7 +411,7 @@ reviewers = ["codex:gpt-6.1-sol", "claude:sonnet"]
 ```
 
 `acc launch --request-file F` inicia a primeira numa worktree e branch novas
-(`<projeto>.crew/coord-<frente>-<id>`, `acc/<frente>-<id>`). Uma rodada que bate
+(`<projeto>.crew/coord-<frente>-<id>`, `maestro/<frente>-<id>`). Uma rodada que bate
 cota ou falha passa a mesma worktree e o mesmo job para a próxima da lista;
 uma rodada que termina sem PR e sem pergunta continua com a mesma
 coordenadora, até seis rodadas. O `acc status` mostra, por coordenadora:

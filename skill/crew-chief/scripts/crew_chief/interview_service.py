@@ -1,7 +1,7 @@
 """Shared canonical persisted interview service (T036, US9, US2, FR-011, FR-012, FR-036).
 
 Provides canonical job initialization, validation, preference resolution,
-persistence, and cursor-based event queries shared by both CLI and MCP.
+persistence, and cursor-based event queries for the CLI.
 """
 
 from __future__ import annotations
@@ -28,25 +28,11 @@ VALID_END_MODES = ("pr", "pr_review")
 
 
 def get_trusted_projects_dir(explicit: str | Path | None = None) -> Path | None:
-    """Resolve trusted projects_dir from explicit parameter or global/setup preferences.
+    """Resolve trusted projects_dir from the explicit ``--projects-dir`` only.
 
-    Target project preferences are NEVER used to self-authorize projects_dir.
+    No preference file (global or project) can set or self-authorize it.
     """
-    if explicit is not None:
-        return Path(explicit).resolve()
-    try:
-        env_global = os.environ.get("AGENT_CREW_CHIEF_GLOBAL_PREFS") or os.environ.get(
-            "CREW_CHIEF_PREFERENCES"
-        )
-        global_path = Path(env_global) if env_global else config.default_global_path()
-        if global_path and global_path.is_file():
-            data, setup_data = config._read_toml(global_path, split_setup=True)
-            p_dir = data.get("projects_dir") or setup_data.get("projects_dir")
-            if p_dir:
-                return Path(p_dir).resolve()
-    except Exception:
-        pass
-    return None
+    return Path(explicit).resolve() if explicit is not None else None
 
 
 def validate_answer(
@@ -125,7 +111,7 @@ def resolve_project_info(
 ) -> tuple[Path, str]:
     """Resolve project directory Path and project identifier name.
 
-    When projects_dir is configured (explicitly or via global/setup prefs),
+    When projects_dir is given explicitly,
     the resolved project directory must be a strict child of projects_dir
     enforced by resolve_project_path. Root-itself, outside absolute paths,
     path traversal, and symlink escapes are strictly rejected.
@@ -207,10 +193,6 @@ def load_interview_prefs(
         coords = [c for c in project_data["team"]["coordinators"] if c]
         if coords:
             project_prefs["coordinator"] = str(coords[0]).strip()
-    elif project_data.get("coordinator_fallback"):
-        fb = [c for c in project_data["coordinator_fallback"] if c]
-        if fb:
-            project_prefs["coordinator"] = str(fb[0]).strip()
 
     if "coordinator" in global_data and global_data["coordinator"]:
         global_prefs["coordinator"] = str(global_data["coordinator"]).strip()
@@ -221,10 +203,6 @@ def load_interview_prefs(
         coords = [c for c in global_data["team"]["coordinators"] if c]
         if coords:
             global_prefs["coordinator"] = str(coords[0]).strip()
-    elif global_data.get("coordinator_fallback"):
-        fb = [c for c in global_data["coordinator_fallback"] if c]
-        if fb:
-            global_prefs["coordinator"] = str(fb[0]).strip()
 
     # Extract executors
     if "executors" in project_data and project_data["executors"]:
@@ -270,14 +248,21 @@ def load_interview_prefs(
 
 
 def _launch_coordinator(
-    project_dir: Path, req_file: Path, cli_arg: str | None, model_arg: str | None, executors: str | None
+    project_dir: Path,
+    req_file: Path,
+    cli_arg: str | None,
+    model_arg: str | None,
+    executors: str | None,
+    end_mode: str | None,
 ) -> tuple[int, str | None, int | None, str | None]:
     """Start the job's coordinator with the maestro launcher: ``(exit, id, pid, error)``."""
     from . import maestro
 
     entries = [f"{cli_arg}:{model_arg}"] if cli_arg and model_arg else None
     try:
-        record = maestro.launch(project_dir, req_file, coordinators=entries, executors=executors)
+        record = maestro.launch(
+            project_dir, req_file, coordinators=entries, executors=executors, end_mode=end_mode
+        )
     except Exception as exc:
         return 1, None, None, str(exc)
     return 0, record["id"], record.get("pid"), None
@@ -344,8 +329,8 @@ def _launch_completed_interview_job(
         "end_mode": end_mode,
     }
 
-    exit_code, coord_id, supervisor, launch_error = _launch_coordinator(
-        project_dir, req_file, cli_arg, model_arg, executors
+    exit_code, coord_id, runner_pid, launch_error = _launch_coordinator(
+        project_dir, req_file, cli_arg, model_arg, executors, end_mode
     )
 
     if exit_code == 0:
@@ -353,7 +338,7 @@ def _launch_completed_interview_job(
         job["state"] = "running"
         job["status"] = "running"
         job["coordinator_id"] = coord_id
-        job["supervisor"] = supervisor
+        job["runner_pid"] = runner_pid
         job["launch_args"] = launch_info
         job["request_file"] = str(req_file)
 
@@ -361,7 +346,7 @@ def _launch_completed_interview_job(
             "type": "running",
             "state": "running",
             "coordinator_id": coord_id,
-            "supervisor": supervisor,
+            "runner_pid": runner_pid,
             "launch_args": launch_info,
             "at": now_run,
         }
@@ -462,15 +447,6 @@ def start_interview_job(
         now=now,
         executors=exec_mode,
     )
-    try:
-        from .git_delivery import prepare_job_branch
-
-        base_branch = project_prefs.get("base_branch") or "main"
-        branch_name = prepare_job_branch(project_dir, job["id"], base_branch=base_branch)
-        job["job_branch"] = branch_name
-        job["base_branch"] = base_branch
-    except Exception:
-        pass
     job["state"] = state
     if "coordinator" in answers:
         coord_val = answers["coordinator"]["value"]
@@ -509,7 +485,6 @@ def start_interview_job(
     return {
         "ok": True,
         "job_id": job["id"],
-        "job_branch": job.get("job_branch"),
         "state": state,
         "questions": [
             {
@@ -598,7 +573,8 @@ def answer_interview_job(
                 current_state in ("queued", "running", "launching")
                 or current_status in ("queued", "running", "launching")
                 or bool(job.get("coordinator_id"))
-                or bool(job.get("supervisor"))
+                # "supervisor" is the pre-0.6.0 name of runner_pid
+                or bool(job.get("runner_pid") or job.get("supervisor"))
             )
             if not already_launched:
                 ev_done = {"type": "interview_completed", "state": "queued", "at": now_iso}
@@ -666,8 +642,8 @@ def answer_interview_job(
         "end_mode": launch_end_mode,
     }
 
-    exit_code, coord_id, supervisor, launch_error = _launch_coordinator(
-        project_dir, req_file, cli_arg, model_arg, launch_executors
+    exit_code, coord_id, runner_pid, launch_error = _launch_coordinator(
+        project_dir, req_file, cli_arg, model_arg, launch_executors, launch_end_mode
     )
 
     if exit_code == 0:
@@ -676,7 +652,7 @@ def answer_interview_job(
             "type": "running",
             "state": "running",
             "coordinator_id": coord_id,
-            "supervisor": supervisor,
+            "runner_pid": runner_pid,
             "launch_args": launch_info,
             "at": now_run,
         }
@@ -685,7 +661,7 @@ def answer_interview_job(
             stored["state"] = "running"
             stored["status"] = "running"
             stored["coordinator_id"] = coord_id
-            stored["supervisor"] = supervisor
+            stored["runner_pid"] = runner_pid
             stored["launch_args"] = launch_info
             stored["request_file"] = str(req_file)
             try:
@@ -727,6 +703,19 @@ def answer_interview_job(
         }
 
 
+def _coordinator_summary(project_dir: Path, coordinator_id: str | None) -> dict[str, Any] | None:
+    """The maestro summary of the job's coordinator, or ``None`` when it has no record."""
+    if not coordinator_id:
+        return None
+    from . import maestro
+
+    folder = maestro.coordinators_dir(project_dir) / str(coordinator_id)
+    try:
+        return maestro.summary(maestro.load(folder))
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 def get_interview_status(
     project: str | Path | None = None,
     job_id: str | None = None,
@@ -757,14 +746,18 @@ def get_interview_status(
     state = "queued" if raw_state == "ready" else raw_state
     raw_status = job.get("status", raw_state)
     status_val = "queued" if raw_status == "ready" else raw_status
+    pr_url = job.get("pr_url")
+    # Once launched, the job's progress lives in its maestro coordinator record.
+    coordinator = _coordinator_summary(project_dir, job.get("coordinator_id"))
+    if coordinator is not None:
+        state = status_val = coordinator["state"]
+        pr_url = coordinator.get("pr_url") or pr_url
     return {
         "ok": True,
         "job_id": job_id,
         "state": state,
         "status": status_val,
-        "pr_url": job.get("pr_url"),
-        "timestamp": (job.get("notice_payload") or {}).get("timestamp"),
-        "notice_payload": job.get("notice_payload"),
+        "pr_url": pr_url,
         "pending": interview_data.get("pending", []),
         "answers": interview_data.get("answers", {}),
         "team_used": list(job.get("team_used", [])),
@@ -792,28 +785,3 @@ def get_interview_events(
         "cursor": latest_cursor,
     }
 
-
-def list_interview_jobs(
-    project: str | Path | None = None,
-    projects_dir: str | Path | None = None,
-) -> list[dict[str, Any]]:
-    """List all persisted jobs for a project."""
-    project_dir, _ = resolve_project_info(project, projects_dir=projects_dir)
-    directory = records.jobs_dir(project_dir)
-    if not directory.is_dir():
-        return []
-    result = []
-    for file in sorted(directory.glob("*.json")):
-        try:
-            job = records.load_job(project_dir, file.stem)
-            raw_state = job.get("state")
-            state = "queued" if raw_state == "ready" else raw_state
-            result.append({
-                "id": job.get("id", file.stem),
-                "state": state,
-                "title": job.get("title"),
-                "created": job.get("created"),
-            })
-        except Exception:
-            pass
-    return result

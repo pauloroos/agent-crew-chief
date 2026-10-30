@@ -4,7 +4,7 @@ This tutorial uses a tiny Python project and a real ACC job. You will ask a free
 
 ## Base kit
 
-This tutorial assumes the base kit is installed (Ponytail for concise prompts, rtk-oss as an optional command prefix, and superpowers skills such as test-driven-development, systematic-debugging and verification-before-completion). The installer copies these by default; use `--no-ponytail`, `--no-rtk` or `--no-superpowers` to skip them. See the README for details on each component's defaults and behavior.
+This tutorial assumes the base kit is installed (Ponytail for concise prompts and superpowers skills such as test-driven-development, systematic-debugging and verification-before-completion). The installer copies these by default; use `--no-ponytail` or `--no-superpowers` to skip them. See the README for details on each component's defaults and behavior.
 
 ## 1. Copy the practice project
 
@@ -25,7 +25,7 @@ You should see a new Git repository and a first commit. If Git asks for your nam
 Clone a tagged ACC release somewhere outside the practice project, then install it into the copy:
 
 ```bash
-git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.6.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py .
 ```
 

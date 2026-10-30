@@ -26,7 +26,7 @@ What it does:
    ``scoreboard.md`` or ``models-seen.json``, and never edits other skills,
    including a Ponytail it did not install.
 5. Copies the vendored Ponytail skills (``vendor/ponytail/skills/``) into the
-   same two roots, each marked with ``.installed-by-agent-crew-chief``; a
+   same three roots, each marked with ``.installed-by-agent-crew-chief``; a
    Ponytail without that marker is left alone. ``--no-ponytail`` skips the
    step.
 6. Installs vendored superpowers skills (test-driven-development,

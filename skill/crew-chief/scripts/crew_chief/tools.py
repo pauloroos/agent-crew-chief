@@ -122,7 +122,12 @@ def build_command(
     kind = tool["kind"]
     argv0 = str(tool["run_cmd"][0]) if kind == "generic" else tool["bin"]
     exe = shutil.which(tool["bin"]) or argv0
-    use_effort = wants_effort(tool) and effort is not None
+    from .scoring_effort import model_effort
+
+    # A model id that carries its effort takes no second, conflicting flag.
+    use_effort = (
+        wants_effort(tool) and effort is not None and model_effort(tool, model) is None
+    )
     sp_flag = [str(tool["superpowers_flag"])] if (superpowers and tool.get("superpowers_flag")) else []
 
     if kind == "claude-code":
