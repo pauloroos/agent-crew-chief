@@ -342,3 +342,25 @@ def test_status_passes_the_worktree_prefs_to_the_economy(repo, tmp_path, monkeyp
     maestro.status(repo)
 
     assert seen and seen[0] is not None
+
+
+def test_status_reads_the_repo_record_once_the_worktree_is_gone(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "deliver:m1")
+    record = maestro.run(folder)
+    job = records.load_job(Path(record["worktree"]), record["job_id"])
+    records.save_job(repo, job)
+    subprocess.run(["git", "worktree", "remove", "--force", record["worktree"]], cwd=repo, check=True)
+
+    [summary] = maestro.status(repo)
+
+    assert summary["economy"] is not None
+
+
+def test_status_shows_the_whole_error_on_one_line():
+    line = maestro.status_lines([{
+        "id": "a", "front": "f", "state": "failed", "coordinator": "x:m", "rounds": 1, "switches": 0,
+        "seconds": 1, "coordinator_tokens": 0, "economy": None, "question": None, "pr_url": None,
+        "last_error": "job j is blocked: pull request create failed" + chr(10) + "## Accepted" + chr(10) + ")",
+    }])[-1]
+
+    assert line == "    last error: job j is blocked: pull request create failed ## Accepted )"

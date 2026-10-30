@@ -19,7 +19,7 @@ Parte dos tutoriais 01–03 e usa o projeto
 ## 1. Instale o comando `acc`
 
 ```bash
-git clone --branch v0.6.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.6.1 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py --command
 acc --version
 ```

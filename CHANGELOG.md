@@ -8,6 +8,19 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.6.1] - 2026-10-30
+
+Fixes from the first real maestro runs (Contratada Fácil and Project Vard).
+
+### Fixed
+- `status` keeps a front's economy after its worktree is removed: it reads
+  the job record merged into the repository.
+- `status` prints the whole last error on one line instead of its last line
+  (which could be just `)`).
+- The skill tells the maestro to merge a front's PR only once `status` shows
+  it `completed`; merging earlier left the coordinator's tokens out of the
+  job record.
+
 ## [0.6.0] - 2026-10-29
 
 A lighter ACC: the maestro, its coordinators and their numbers, without the
