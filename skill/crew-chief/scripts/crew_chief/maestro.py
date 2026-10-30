@@ -14,7 +14,12 @@ round:
   same coordinator, up to :data:`MAX_ROUNDS` rounds;
 * a coordinator that needs the owner writes ``question.md`` in its folder and
   stops; ``resume --answer`` relays the answer and runs it again;
-* the job's ``pr_url`` (set by ``close``) completes it.
+* once the job is closed (``pr_url`` or a local end mode) the same
+  ``tool:model`` reviews the delivery in a clean session and a checkout of its
+  own: a checklist of what was asked against what was delivered, plus the
+  test results. A failed review sends the coordinator back to fix it, up to
+  :data:`MAX_REVIEWS` reviews; a passed one completes the front and removes
+  its worktrees (:func:`clean`).
 
 Every round records its coordinator, duration, exit code and the tokens the
 CLI reported; the tokens also land in the job's ``usage``, so the job's
@@ -28,6 +33,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -35,12 +41,14 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import config, economy, records, tools
+from . import config, economy, records, tools, worktree as worktrees
 from ._os_compat import pid_alive
 from .dispatch import _quota_hit
 
 #: Rounds a coordinator gets before it is failed for not delivering a PR.
 MAX_ROUNDS = 6
+#: Reviews a front gets; one that still fails after these holds for the owner.
+MAX_REVIEWS = 3
 #: Used when neither ``--coordinator`` nor ``[team].coordinators`` names one.
 DEFAULT_COORDINATOR = "claude:opus"
 ENTRY_SCRIPT = Path(__file__).resolve().parents[1] / "crew-chief.py"
@@ -143,7 +151,8 @@ def launch(
     branch = f"maestro/{front}-{coordinator_id}"
     worktree = _crew_dir(repo) / f"coord-{front}-{coordinator_id}"
     worktree.parent.mkdir(parents=True, exist_ok=True)
-    _git(repo, "worktree", "add", "-b", branch, str(worktree), base)
+    base_sha = _git(repo, "rev-parse", base)
+    _git(repo, "worktree", "add", "-b", branch, str(worktree), base_sha)
 
     folder = coordinators_dir(repo) / coordinator_id
     folder.mkdir(parents=True)
@@ -154,6 +163,7 @@ def launch(
         "repo": str(repo),
         "worktree": str(worktree),
         "branch": branch,
+        "base": base_sha,
         "spec_dir": spec_dir,
         "executors": executors,
         "end_mode": end_mode,
@@ -168,6 +178,8 @@ def launch(
         "pr_url": None,
         "pending_usage": [],
         "rounds": [],
+        "reviews": [],
+        "fix": None,
         "last_error": None,
     }
     _save(folder, record)
@@ -180,7 +192,8 @@ def _spawn(folder: Path, record: dict) -> None:
     """Start the detached runner for ``folder`` and record its pid."""
     kwargs: dict = {}
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        # a hidden console, not none: without one every git or gh the runner calls opens a window
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
     with open(folder / "runner.log", "a", encoding="utf-8") as log:
@@ -207,6 +220,8 @@ def _prompt(record: dict, folder: Path, first: bool) -> str:
     lines += [
         "Dispatch the work to the configured executors and reviewers, grade every piece and",
         "close the job; close pushes the branch and opens the pull request. Never merge.",
+        "Put the output of the checks you ran (build, lint, tests) in the pull request description:",
+        "a reviewer checks the delivery against the request afterwards and fails it without them.",
     ]
     if record.get("end_mode"):
         lines.append(f"Close the job with close --end-mode {record['end_mode']}.")
@@ -216,7 +231,16 @@ def _prompt(record: dict, folder: Path, first: bool) -> str:
         f"Never ask interactively: if you need the owner's decision, write the question to "
         f"{folder / 'question.md'} and stop.",
     ]
-    if not first:
+    if record.get("fix"):
+        lines.append(
+            f"Your job {record.get('job_id') or ''} is closed and delivered, but a reviewer in a clean "
+            f"session failed it against the request: read {record['fix']}. Fix every item it marks "
+            "partial or missing and every problem it lists; run the checks it finds without results "
+            "and put their output in the pull request description. Commit and push to "
+            f"{record['branch']}: the open pull request follows the branch, so do not open another "
+            "one and do not start a new job."
+        )
+    elif not first:
         job = f" (job {record['job_id']})" if record.get("job_id") else ""
         lines.append(
             f"This continues earlier work{job}: read docs/crew-chief/jobs/ in this worktree "
@@ -240,6 +264,10 @@ def _find_job(record: dict) -> dict | None:
                 break
             except records.RecordError:
                 continue
+        snapshot = coordinators_dir(Path(record["repo"])) / record["id"] / "job.json"
+        if job is None and snapshot.is_file():
+            # clean() keeps a copy for a PR not merged yet
+            job = json.loads(snapshot.read_text(encoding="utf-8"))
         if job is None:
             return None
     elif not worktree.is_dir():
@@ -298,17 +326,26 @@ def _kill_tree(pid: int) -> None:
         pass
 
 
-def _run_round(record: dict, folder: Path, prefs: config.Prefs) -> dict:
-    """Run one round of the current coordinator and return its round entry."""
+def _run_round(
+    record: dict, folder: Path, prefs: config.Prefs, *, prompt: str | None = None,
+    cwd: Path | None = None, label: str = "round",
+) -> dict:
+    """Run one round of the current coordinator and return its round entry.
+
+    ``prompt`` and ``cwd`` default to the coordinator's own; a review passes
+    its prompt and checkout, and ``label`` names its logs.
+    """
     # numbered across resumes, so earlier round logs are never overwritten
-    number = len(record.get("history", [])) + len(record["rounds"]) + 1
+    done = record.get("history", []) + record["rounds"] if label == "round" else record.get("reviews", [])
+    number = len(done) + 1
     entry = record["coordinators"][record["index"]]
     tool, model = _resolve(entry, prefs)
-    worktree = Path(record["worktree"])
-    out_file = folder / f"round-{number}.out"
-    _find_job(record)
-    # a fallback after a round that made no job must still start one
-    prompt = _prompt(record, folder, first=not record.get("job_id"))
+    worktree = cwd or Path(record["worktree"])
+    out_file = folder / f"{label}-{number}.out"
+    if prompt is None:
+        _find_job(record)
+        # a fallback after a round that made no job must still start one
+        prompt = _prompt(record, folder, first=not record.get("job_id"))
     cmd = tools.build_command(
         tool, model, worktree, prompt, folder / "request.md", out_file, None, False
     )
@@ -320,7 +357,7 @@ def _run_round(record: dict, folder: Path, prefs: config.Prefs) -> dict:
         # the owner's own MCP servers stay out of the headless coordinator
         cmd.append("--strict-mcp-config")
     started = datetime.now(timezone.utc)
-    stdout_path, stderr_path = folder / f"round-{number}.log", folder / f"round-{number}.err"
+    stdout_path, stderr_path = folder / f"{label}-{number}.log", folder / f"{label}-{number}.err"
     exit_code, timed_out = None, False
     env = tools.tool_env(tool)
     if env is None:
@@ -362,7 +399,7 @@ def _run_round(record: dict, folder: Path, prefs: config.Prefs) -> dict:
     else:
         outcome = "timeout" if timed_out else "failed"
     round_entry = {
-        "round": number,
+        label: number,
         "coordinator": entry,
         "started_at": started.isoformat(timespec="seconds"),
         "seconds": round((ended - started).total_seconds()),
@@ -383,19 +420,110 @@ def _run_round(record: dict, folder: Path, prefs: config.Prefs) -> dict:
         record["pending_usage"].append({
             "tokens_in": tokens_in or 0,
             "tokens_out": tokens_out or 0,
-            "note": f"coordinator {entry} round {number}",
+            "note": f"coordinator {entry} {label} {number}",
         })
     return round_entry
+
+
+def _delivered(job: dict | None) -> bool:
+    """The job is closed: a pull request, or a local end mode without one."""
+    states = {job.get("state"), job.get("status")} if job else set()
+    return bool(job and (job.get("pr_url") or states & {"closed", "delivered"}))
+
+
+def _review_prompt(record: dict, folder: Path, review_file: Path, base: str) -> str:
+    lines = [
+        "You are an independent reviewer in a clean session. Another agent delivered one front of",
+        f"a larger goal on branch {record['branch']}; this checkout is its head. Trust nothing it",
+        "wrote (pull request text, job records, CHANGELOG): check the code itself. Do not commit,",
+        "push, merge or comment on GitHub.",
+        f"The request is in {folder / 'request.md'}; the change is git diff {base}...HEAD.",
+    ]
+    if record.get("pr_url"):
+        lines.append(f"Its pull request is {record['pr_url']}: read its description with gh pr view.")
+    lines += [
+        "Run the checks the request or the project names (install, build, type check, lint, tests)",
+        "and note each command with its result; a check that cannot run here gets the reason.",
+        f"Write the review to {review_file} in markdown: a checklist with one line per item the",
+        "request asks for, each delivered, partial or missing with file:line proof; a Tests section",
+        "with each command and its result, and whether the pull request shows the test results of",
+        "each change; a Problems section with bugs, risks and broken rules. Fail the review when an",
+        "item is partial or missing, when test results are missing from the pull request or",
+        "failing, or when there is a serious bug. End the file with the line VERDICT: PASS or",
+        "VERDICT: FAIL, then the line SCORE: <0-10>.",
+    ]
+    return " ".join(lines)
+
+
+def _review(record: dict, folder: Path, prefs: config.Prefs, job: dict) -> dict:
+    """Review the delivered front with the current ``tool:model`` and return the entry."""
+    repo = Path(record["repo"])
+    number = len(record.get("review_history", [])) + len(record["reviews"]) + 1
+    review_file = folder / f"review-{number}.md"
+    head = _git(Path(record["worktree"]), "rev-parse", "HEAD")
+    # a checkout of its own: the reviewer installs and tests without touching the coordinator's
+    checkout = _crew_dir(repo) / f"review-{record['front']}-{record['id']}"
+    if checkout.exists():
+        worktrees.remove_worktree(repo, checkout)
+    _git(repo, "worktree", "add", "--detach", str(checkout), head)
+    base = record.get("base") or job.get("base_branch") or "main"
+    try:
+        entry = _run_round(
+            record, folder, prefs, prompt=_review_prompt(record, folder, review_file, base),
+            cwd=checkout, label="review",
+        )
+    finally:
+        try:
+            worktrees.remove_worktree(repo, checkout)
+        except worktrees.WorktreeRemovalError:
+            pass  # clean() tries again
+    text = review_file.read_text(encoding="utf-8", errors="replace") if review_file.is_file() else ""
+    verdicts = re.findall(r"^[\W_]*VERDICT:[\W_]*(PASS|FAIL)", text, re.M | re.I)
+    scores = re.findall(r"^[\W_]*SCORE:[\W_]*(\d+(?:[.,]\d+)?)", text, re.M | re.I)
+    entry.update(
+        head=head,
+        file=str(review_file),
+        verdict=verdicts[-1].lower() if verdicts else None,
+        score=float(scores[-1].replace(",", ".")) if scores else None,
+    )
+    if entry["outcome"] == "ok" and not entry["verdict"]:
+        entry.update(outcome="failed", error=f"the reviewer wrote no verdict to {review_file}")
+    return entry
+
+
+def _comment_review(record: dict, entry: dict) -> None:
+    """Post the review on the pull request, so the owner reads it there."""
+    if not record.get("pr_url") or not shutil.which("gh"):
+        return
+    try:
+        subprocess.run(
+            ["gh", "pr", "comment", record["pr_url"], "--body-file", entry["file"]],
+            cwd=record["repo"], stdin=subprocess.DEVNULL, capture_output=True, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass  # the review stays in the coordinator's folder
 
 
 def run(folder: Path | str) -> dict:
     """Drive the coordinator in ``folder`` until it completes, asks or holds."""
     folder = Path(folder)
     record = load(folder)
+    record.setdefault("reviews", [])
     prefs = config.load_prefs(Path(record["worktree"]))
     while True:
-        round_entry = _run_round(record, folder, prefs)
-        record["rounds"].append(round_entry)
+        job = _find_job(record)
+        # a delivered job is reviewed, unless the last review sent it back to be fixed
+        reviewing = _delivered(job) and not record.get("fix")
+        if reviewing:
+            record["pr_url"] = job.get("pr_url")
+            round_entry = _review(record, folder, prefs, job)
+            record["reviews"].append(round_entry)
+        else:
+            round_entry = _run_round(record, folder, prefs)
+            record["rounds"].append(round_entry)
+            # a fix that asks the owner keeps its review, so the answer resumes the fix
+            if round_entry["outcome"] == "ok" and not (folder / "question.md").is_file():
+                record["fix"] = None
         record.pop("child_pid", None)
         job = _find_job(record)
         _book_usage(record)
@@ -413,10 +541,22 @@ def run(folder: Path | str) -> dict:
                 f"(failed command: {result.get('failed_command') or ''})",
             )
             break
-        # a local end mode closes the job without a pull request
-        if job and (job.get("pr_url") or job_states & {"closed", "delivered"}):
-            record.update(state="completed", pr_url=job.get("pr_url"), last_error=None)
-            break
+        if reviewing and round_entry["outcome"] == "ok":
+            _comment_review(record, round_entry)
+            if round_entry["verdict"] == "pass":
+                record.update(state="completed", last_error=None, finished_at=_now())
+                _save(folder, record)
+                clean(record)
+                break
+            if sum(1 for r in record["reviews"] if r.get("verdict") == "fail") >= MAX_REVIEWS:
+                record.update(
+                    state="failed",
+                    last_error=f"the review still fails after {MAX_REVIEWS} reviews: {round_entry['file']}",
+                )
+                break
+            record["fix"] = round_entry["file"]
+            _save(folder, record)
+            continue
         if (folder / "question.md").is_file():
             record["state"] = "question"
             break
@@ -427,7 +567,8 @@ def run(folder: Path | str) -> dict:
             else:
                 record["state"] = "quota" if round_entry["outcome"] == "quota" else "failed"
                 break
-        if len(record["rounds"]) >= MAX_ROUNDS:
+        # a job delivered on the last round still gets its review; fixes are bounded by MAX_REVIEWS
+        if len(record["rounds"]) >= MAX_ROUNDS and not _delivered(job):
             record.update(state="failed", last_error=f"no pull request after {MAX_ROUNDS} rounds")
             break
         _save(folder, record)
@@ -455,6 +596,8 @@ def resume(repo: Path | str, coordinator_id: str, answer: str | None = None, spa
     # a resumed front gets a fresh round budget
     record["history"] = record.get("history", []) + record["rounds"]
     record["rounds"] = []
+    record["review_history"] = record.get("review_history", []) + record.get("reviews", [])
+    record["reviews"] = []
     _save(folder, record)
     if spawn:
         _spawn(folder, record)
@@ -478,6 +621,75 @@ def stop(repo: Path | str, coordinator_id: str) -> dict:
     return record
 
 
+def _registered_worktrees(repo: Path) -> list[Path]:
+    listing = _git(repo, "worktree", "list", "--porcelain")
+    return [Path(line[len("worktree "):]).resolve() for line in listing.splitlines() if line.startswith("worktree ")]
+
+
+def clean(record: dict) -> dict:
+    """Remove a front's worktrees, its attempts' checkouts and their branches.
+
+    The coordinator's folder stays, with a copy of the job record, so ``status``
+    keeps the front's numbers; so does the front's own branch, which holds the
+    pull request's commits.
+    """
+    repo = Path(record["repo"])
+    folder = coordinators_dir(repo) / record["id"]
+    worktree = Path(record["worktree"]).resolve()
+    job = _find_job(dict(record))
+    if job:
+        (folder / "job.json").write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # attempts live in <worktree>.crew, a review checkout beside the worktree
+    attempts = worktree.parent / f"{worktree.name}.crew"
+    review = worktree.parent / f"review-{record['front']}-{record['id']}"
+    targets = [path for path in _registered_worktrees(repo) if path in (worktree, review) or attempts in path.parents]
+    removed, errors = [], []
+    for path in targets + [p for p in (attempts, review) if p.exists() and p not in targets]:
+        try:
+            if path in targets:
+                worktrees.remove_worktree(repo, path)
+            else:
+                worktrees._remove_tree(path)
+            removed.append(str(path))
+        except (worktrees.WorktreeRemovalError, OSError) as exc:
+            errors.append(f"{path}: {exc}")
+    _git(repo, "worktree", "prune")
+    # the branches the job's own attempts made: a prefix match would catch job "x-2" when cleaning "x"
+    branches = {
+        attempt.get("branch")
+        for piece in (job or {}).get("pieces") or []
+        for attempt in piece.get("attempts") or []
+        if str(attempt.get("branch") or "").startswith("crew/")
+    }
+    for branch in sorted(branches):
+        if not _git(repo, "branch", "--list", branch):
+            continue
+        try:
+            _git(repo, "branch", "-D", branch)
+            removed.append(branch)
+        except MaestroError as exc:
+            errors.append(str(exc))
+    # a front with leftovers stays on the list of the next clean
+    record.update(cleaned_at=None if errors else _now(), clean_errors=errors)
+    _save(folder, record)
+    return {"id": record["id"], "removed": removed, "errors": errors}
+
+
+def clean_fronts(repo: Path | str, coordinator_ids: list[str] | None = None) -> list[dict]:
+    """Clean the named fronts, or every completed front not cleaned yet."""
+    repo = Path(_git(Path(repo), "rev-parse", "--show-toplevel"))
+    if coordinator_ids:
+        found = [load(_folder(repo, coordinator_id)) for coordinator_id in coordinator_ids]
+    else:
+        root = coordinators_dir(repo)
+        found = [load(p.parent) for p in root.glob("*/record.json")] if root.is_dir() else []
+        found = [r for r in found if r["state"] == "completed" and not r.get("cleaned_at")]
+    for record in found:
+        if record["state"] == "running" and record.get("pid") and pid_alive(record["pid"]):
+            raise MaestroError(f"coordinator {record['id']} is still running: stop it first")
+    return [clean(record) for record in found]
+
+
 def _seconds(start: str, end: str | None) -> int:
     begin = datetime.fromisoformat(start)
     finish = datetime.fromisoformat(end) if end else datetime.now(timezone.utc)
@@ -487,6 +699,7 @@ def _seconds(start: str, end: str | None) -> int:
 def summary(record: dict) -> dict:
     """One coordinator with its rounds, time, tokens and its job's economy."""
     rounds = record.get("history", []) + record["rounds"]
+    reviews = record.get("review_history", []) + record.get("reviews", [])
     state = record["state"]
     if state == "running" and record.get("pid") and not pid_alive(record["pid"]):
         state = "failed"
@@ -509,8 +722,11 @@ def summary(record: dict) -> dict:
         "switches": sum(1 for a, b in zip(rounds, rounds[1:]) if a["coordinator"] != b["coordinator"]),
         "rounds": len(rounds),
         "seconds": _seconds(record["created_at"], record.get("finished_at")),
-        "coordinator_tokens": sum(r.get("tokens_total") or 0 for r in rounds),
-        "coordinator_cost_usd": round(sum(r.get("cost_usd") or 0 for r in rounds), 4),
+        "coordinator_tokens": sum(r.get("tokens_total") or 0 for r in rounds + reviews),
+        "coordinator_cost_usd": round(sum(r.get("cost_usd") or 0 for r in rounds + reviews), 4),
+        "reviews": [r.get("verdict") or r["outcome"] for r in reviews],
+        "review_score": next((r["score"] for r in reversed(reviews) if r.get("score") is not None), None),
+        "review_file": next((r["file"] for r in reversed(reviews) if r.get("file")), None),
         "branch": found["branch"],
         "worktree": record["worktree"],
         "job_id": record.get("job_id") or (job or {}).get("id"),
@@ -553,6 +769,9 @@ def status_lines(summaries: list[dict]) -> list[str]:
         )
         if s["economy"]:
             lines.append(f"    job {s['job_id']}: {economy.summary_line(economy.Economy(**s['economy']))}")
+        if s.get("reviews"):
+            score = "" if s["review_score"] is None else f", score {s['review_score']:g}/10"
+            lines.append(f"    review: {' -> '.join(s['reviews'])}{score} ({s['review_file']})")
         if s["question"]:
             lines.append(f"    question: {s['question']}")
         if s["last_error"] and s["state"] != "completed":

@@ -369,6 +369,16 @@ def _cmd_stop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_clean(args: argparse.Namespace) -> int:
+    results = maestro.clean_fronts(_project(args), args.coordinator_ids or None)
+    lines = [
+        f"{r['id']}: removed {len(r['removed'])}" + (f", errors: {'; '.join(r['errors'])}" if r["errors"] else "")
+        for r in results
+    ]
+    _emit(args, "\n".join(lines) or "nothing to clean", {"cleaned": results})
+    return 0
+
+
 def _cmd_discover(args: argparse.Namespace) -> int:
     project = _project(args)
     prefs = load_prefs(project)

@@ -80,9 +80,18 @@ AGENT_HOME_ENTRIES: tuple[str, ...] = (
     # Docker Desktop: it updates its own home entry (contexts, build
     # metadata) independently of any attempt.
     ".docker",
-    # Package caches the CLIs fill when they install helpers.
+    # Package caches the CLIs fill when they install helpers, and the build
+    # caches of the toolchains an attempt runs (cargo fills ~/.cargo on any
+    # Rust build).
     ".npm",
     ".bun",
+    ".yarn",
+    ".pnpm-store",
+    ".cargo",
+    ".rustup",
+    ".gradle",
+    ".m2",
+    ".nuget",
     # ACC state (executor leases, daemon caches, etc.)
     ".acc",
     # Windows registry hive of the user, rewritten by any process.
@@ -650,7 +659,8 @@ def _remove_worktree(project: Path, worktree: Path) -> None:
     worktree still exists after all removal attempts.
     """
     result = subprocess.run(
-        ["git", "worktree", "remove", "--force", str(worktree)],
+        # longpaths: a node_modules deep inside the worktree passes Windows' 260 limit
+        ["git", "-c", "core.longpaths=true", "worktree", "remove", "--force", str(worktree)],
         cwd=project,
         capture_output=True,
         text=True,
@@ -679,6 +689,16 @@ def _remove_tree(path: Path) -> None:
         os.chmod(target, stat.S_IWRITE)
         func(target)
 
+    if os.name == "nt":
+        # the extended-length prefix lifts the 260-character path limit
+        full = str(Path(path).resolve())
+        if full.startswith("\\\\?\\"):
+            pass
+        elif full.startswith("\\\\"):
+            full = "\\\\?\\UNC\\" + full[2:]
+        else:
+            full = "\\\\?\\" + full
+        path = Path(full)
     if sys.version_info >= (3, 12):
         shutil.rmtree(path, onexc=unlock)
     else:  # pragma: no cover - Python 3.11 only

@@ -19,6 +19,15 @@ from crew_chief import cli, maestro, records
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "skill" / "crew-chief" / "scripts"
 
+#: Every fake but ``quota`` also reviews: it passes the delivery it is shown.
+REVIEW_PASS = (
+    "import re, sys\nfrom pathlib import Path\n"
+    "m = re.search(r'Write the review to (.+?) in markdown', sys.argv[1])\n"
+    "if m:\n"
+    "    Path(m.group(1)).write_text('- login: delivered\\nVERDICT: PASS\\nSCORE: 8\\n', encoding='utf-8')\n"
+    "    sys.exit(0)\n"
+)
+
 FAKES = {
     "quota": "import sys\nprint('Error: rate limit exceeded', file=sys.stderr)\nsys.exit(1)\n",
     "deliver": (
@@ -66,7 +75,67 @@ FAKES = {
         "subprocess.run(['git', 'commit', '-qm', 'job'], check=True)\n"
         "subprocess.run(['git', 'push', '-qu', 'origin', 'HEAD'], check=True)\n"
     ),
+    # fails the first review, then passes; its fix round only reports
+    "picky": (
+        "import re, sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "m = re.search(r'Write the review to (.+?) in markdown', sys.argv[1])\n"
+        "if m:\n"
+        "    verdict = 'FAIL' if m.group(1).endswith('review-1.md') else 'PASS'\n"
+        "    Path(m.group(1)).write_text(f'- tests: missing\\n**VERDICT: {verdict}**\\nSCORE: 6,5\\n', encoding='utf-8')\n"
+        "elif 'failed it against the request' in sys.argv[1]:\n"
+        "    print('fixed')\n"
+        "else:\n"
+        "    records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
+        "        'pr_url': 'https://example.test/pr/1'})\n"
+    ),
+    # always fails the review
+    "harsh": (
+        "import re, sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "m = re.search(r'Write the review to (.+?) in markdown', sys.argv[1])\n"
+        "if m:\n"
+        "    Path(m.group(1)).write_text('VERDICT: FAIL\\nSCORE: 2\\n', encoding='utf-8')\n"
+        "elif 'failed it against the request' not in sys.argv[1]:\n"
+        "    records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
+        "        'pr_url': 'https://example.test/pr/1'})\n"
+    ),
+    # fails its review, then asks the owner during the fix
+    "fixasks": (
+        "import re, sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "m = re.search(r'Write the review to (.+?) in markdown', sys.argv[1])\n"
+        "q = re.search(r'write the question to (.+?) and stop', sys.argv[1])\n"
+        "if m:\n"
+        "    Path(m.group(1)).write_text('VERDICT: FAIL\\nSCORE: 3\\n', encoding='utf-8')\n"
+        "elif 'failed it against the request' in sys.argv[1]:\n"
+        "    Path(q.group(1)).write_text('Keep the old API?', encoding='utf-8')\n"
+        "else:\n"
+        "    records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
+        "        'pr_url': 'https://example.test/pr/1'})\n"
+    ),
+    # delivers, but as a reviewer writes no verdict
+    "mute": (
+        "import sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "if 'Write the review to' not in sys.argv[1]:\n"
+        "    records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
+        "        'pr_url': 'https://example.test/pr/1'})\n"
+    ),
 }
+FAKES.update({name: REVIEW_PASS + FAKES[name] for name in ("deliver", "local", "commit")})
+
+
+@pytest.fixture(autouse=True)
+def comments(monkeypatch):
+    """The reviews the runner would post on the pull request (no gh in tests)."""
+    posted = []
+    monkeypatch.setattr(maestro, "_comment_review", lambda record, entry: posted.append(entry["file"]))
+    return posted
 
 
 @pytest.fixture
@@ -121,13 +190,16 @@ def test_quota_falls_back_to_the_next_coordinator_and_books_tokens(repo, tmp_pat
     assert record["pr_url"] == "https://example.test/pr/1"
     assert [r["outcome"] for r in record["rounds"]] == ["quota", "ok"]
     assert [r["coordinator"] for r in record["rounds"]] == ["quota:m1", "deliver:m2"]
-    # the quota round ran before the job existed; its tokens still reach the job
-    job = records.load_job(Path(record["worktree"]), "job-1")
-    assert [u["tokens_total"] for u in job["usage"]] == [15, 15]
+    # the quota round ran before the job existed; its tokens still reach the job, whose
+    # copy outlives the worktree the completed front removed
+    assert not Path(record["worktree"]).exists()
+    job = json.loads((folder / "job.json").read_text(encoding="utf-8"))
+    # the review's tokens count for the coordinator too
+    assert [u["tokens_total"] for u in job["usage"]] == [15, 15, 15]
     [summary] = maestro.status(repo)
     assert summary["switches"] == 1
-    assert summary["coordinator_tokens"] == 30
-    assert summary["economy"]["coordinator_tokens"] == 30
+    assert summary["coordinator_tokens"] == 45
+    assert summary["economy"]["coordinator_tokens"] == 45
     assert summary["branch"].startswith("maestro/01-auth-")
 
 
@@ -347,12 +419,14 @@ def test_status_passes_the_worktree_prefs_to_the_economy(repo, tmp_path, monkeyp
 def test_status_reads_the_repo_record_once_the_worktree_is_gone(repo, tmp_path):
     folder = _launch(repo, tmp_path, "deliver:m1")
     record = maestro.run(folder)
-    job = records.load_job(Path(record["worktree"]), record["job_id"])
-    records.save_job(repo, job)
-    subprocess.run(["git", "worktree", "remove", "--force", record["worktree"]], cwd=repo, check=True)
+    # the PR merged: its record is in the repo, and the copy clean() kept is gone
+    snapshot = folder / "job.json"
+    records.save_job(repo, json.loads(snapshot.read_text(encoding="utf-8")))
+    snapshot.unlink()
 
     [summary] = maestro.status(repo)
 
+    assert not Path(record["worktree"]).exists()
     assert summary["economy"] is not None
 
 
@@ -364,3 +438,134 @@ def test_status_shows_the_whole_error_on_one_line():
     }])[-1]
 
     assert line == "    last error: job j is blocked: pull request create failed ## Accepted )"
+
+
+def test_a_failed_review_sends_the_coordinator_back_until_it_passes(repo, tmp_path, monkeypatch, comments):
+    folder = _launch(repo, tmp_path, "picky:m1")
+    prompts = []
+    real_run_round = maestro._run_round
+
+    def spy(record, folder, prefs, **kwargs):
+        if kwargs.get("label", "round") == "round":
+            prompts.append(maestro._prompt(record, folder, first=not record.get("job_id")))
+        return real_run_round(record, folder, prefs, **kwargs)
+
+    monkeypatch.setattr(maestro, "_run_round", spy)
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "completed"
+    assert [r["outcome"] for r in record["rounds"]] == ["ok", "ok"]
+    assert [(r["verdict"], r["score"]) for r in record["reviews"]] == [("fail", 6.5), ("pass", 6.5)]
+    # the fix round names the failed review and stays on the open pull request
+    assert "review-1.md" in prompts[1] and "do not open another one" in prompts[1]
+    assert record["fix"] is None
+    assert comments == [r["file"] for r in record["reviews"]]
+    [summary] = maestro.status(repo)
+    assert summary["reviews"] == ["fail", "pass"]
+    assert any(line.startswith("    review: fail -> pass, score 6.5/10") for line in maestro.status_lines([summary]))
+
+
+def test_a_review_without_a_verdict_falls_back_to_the_next_coordinator(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "mute:m1", "deliver:m2")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "completed"
+    assert [(r["coordinator"], r["outcome"]) for r in record["reviews"]] == [("mute:m1", "failed"), ("deliver:m2", "ok")]
+    assert "no verdict" in record["reviews"][0]["error"]
+
+
+def test_a_review_that_keeps_failing_holds_the_front(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr(maestro, "MAX_REVIEWS", 2)
+    folder = _launch(repo, tmp_path, "harsh:m1")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "failed"
+    assert "after 2 reviews" in record["last_error"]
+    # held fronts keep their worktree for the owner
+    assert Path(record["worktree"]).is_dir()
+
+
+def test_the_review_runs_in_its_own_checkout_of_the_delivered_head(repo, tmp_path, monkeypatch):
+    seen = []
+    real_run_round = maestro._run_round
+
+    def spy(record, folder, prefs, **kwargs):
+        if kwargs.get("label") == "review":
+            cwd = kwargs["cwd"]
+            seen.append((cwd != Path(record["worktree"]), cwd.is_dir(), "clean session" in kwargs["prompt"]))
+        return real_run_round(record, folder, prefs, **kwargs)
+
+    monkeypatch.setattr(maestro, "_run_round", spy)
+    folder = _launch(repo, tmp_path, "deliver:m1")
+
+    record = maestro.run(folder)
+
+    assert seen == [(True, True, True)]
+    assert record["reviews"][0]["head"]
+    assert not any(p.name.startswith("review-") for p in maestro._crew_dir(repo).iterdir())
+
+
+def test_a_completed_front_removes_its_worktrees(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "deliver:m1")
+    worktree = Path(maestro.load(folder)["worktree"])
+    attempt = worktree.parent / f"{worktree.name}.crew" / "job-1-1-1"
+    subprocess.run(["git", "worktree", "add", "-q", "-b", "crew/job-1-1-1", str(attempt)], cwd=worktree, check=True)
+
+    record = maestro.run(folder)
+
+    assert record["cleaned_at"] and record["clean_errors"] == []
+    assert not worktree.exists() and not attempt.parent.exists()
+    branches = subprocess.run(["git", "branch", "--list"], cwd=repo, capture_output=True, text=True).stdout
+    assert record["branch"] in branches  # the PR's branch stays
+
+
+def test_clean_deletes_only_the_branches_of_its_own_attempts(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "idle:m1")
+    record = maestro.load(folder)
+    records.save_job(Path(record["worktree"]), {
+        "id": "job-1", "usage": [],
+        "pieces": [{"n": 1, "attempts": [{"branch": "crew/job-1-1-1"}, {"branch": "crew/job-1-1-2"}]}],
+    })
+    # crew/job-1-2-1-1 belongs to job "job-1-2", which a prefix match would take
+    for branch in ("crew/job-1-1-1", "crew/job-1-2-1-1"):
+        subprocess.run(["git", "branch", branch], cwd=repo, check=True)
+
+    [result] = maestro.clean_fronts(repo, [record["id"]])
+
+    branches = subprocess.run(["git", "branch", "--list"], cwd=repo, capture_output=True, text=True).stdout
+    assert "crew/job-1-1-1" not in branches and "crew/job-1-2-1-1" in branches
+    assert result["errors"] == []
+
+
+def test_a_question_during_a_fix_keeps_the_review_for_the_answer(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "fixasks:m1")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "question"
+    assert record["fix"] and record["fix"].endswith("review-1.md")
+
+
+def test_a_delivery_on_the_last_round_is_still_reviewed(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr(maestro, "MAX_ROUNDS", 1)
+    folder = _launch(repo, tmp_path, "deliver:m1")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "completed"
+    assert [r["verdict"] for r in record["reviews"]] == ["pass"]
+
+
+def test_cli_clean_removes_a_named_front(repo, tmp_path, capsys):
+    folder = _launch(repo, tmp_path, "idle:m1")
+    worktree = Path(maestro.load(folder)["worktree"])
+
+    assert cli.main(["clean", "--project", str(repo)]) == 0
+    assert worktree.is_dir()  # only completed fronts by default
+    assert cli.main(["clean", maestro.load(folder)["id"], "--project", str(repo)]) == 0
+
+    assert not worktree.exists()
+    assert "removed 1" in capsys.readouterr().out
