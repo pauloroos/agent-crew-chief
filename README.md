@@ -308,11 +308,11 @@ superpowers (skip them with `--no-ponytail` or `--no-superpowers`). Nothing is
 downloaded:
 
 ```bash
-git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.6.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.5.0.zip` from the
+No git? Download `agent-crew-chief-v0.6.0.zip` from the
 [latest release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 Pin a tag (`--branch vX.Y.Z`) so you never install code in the middle of a change;
@@ -404,7 +404,7 @@ reviewers = ["codex:gpt-6.1-sol", "claude:sonnet"]
 ```
 
 `acc launch --request-file F` starts the first one in a new worktree and
-branch (`<project>.crew/coord-<front>-<id>`, `acc/<front>-<id>`). A round that
+branch (`<project>.crew/coord-<front>-<id>`, `maestro/<front>-<id>`). A round that
 hits a quota or fails hands the same worktree and job to the next entry; a
 round that ends without a PR or a question continues with the same
 coordinator, up to six rounds. `acc status` shows, per coordinator: state,

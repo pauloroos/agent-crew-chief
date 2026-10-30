@@ -105,20 +105,20 @@ def test_readmes_credit_ponytail():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    """The version is 0.5.0 and the CHANGELOG has its section and the legacy pointer."""
-    assert __version__ == "0.5.0"
+    """The version is 0.6.0 and the CHANGELOG has its section and the legacy pointer."""
+    assert __version__ == "0.6.0"
     text = _read(CHANGELOG)
-    assert "## [0.5.0]" in text
-    current_section = text.split("## [0.5.0]", 1)[1].split("\n## [", 1)[0]
+    assert "## [0.6.0]" in text
+    current_section = text.split("## [0.6.0]", 1)[1].split("\n## [", 1)[0]
     assert "maestro" in current_section.lower()
     assert "agent-crew-chief-legacy" in text
 
 
 def test_install_pins_the_current_release():
-    """Install commands pin the current release tag (v0.5.0), not an older one."""
+    """Install commands pin the current release tag (v0.6.0), not an older one."""
     for path in (README, README_PT, TUTORIAL_01, TUTORIAL_01_PT):
         text = _read(path)
-        assert "v0.5.0" in text, f"{path.name} must pin v0.5.0"
+        assert "v0.6.0" in text, f"{path.name} must pin v0.6.0"
         assert "v0.3.5" not in text, path.name
 
 

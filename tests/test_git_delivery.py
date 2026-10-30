@@ -1300,7 +1300,7 @@ def test_pr_branch_contains_specs_and_code(tmp_path: Path, monkeypatch: pytest.M
             "title": "Test Feature Code",
             "status": "accepted",
             "executor_grade": "claude:opus, score 100",
-            "verification": "All tests passed",
+            "verification": "pytest: 12 passed, see [out.py](file:///C:/Temp/wt/out.py)",
             "type": "code",
         },
     ]
@@ -1328,7 +1328,41 @@ def test_pr_branch_contains_specs_and_code(tmp_path: Path, monkeypatch: pytest.M
     assert "Test Feature Spec" in body_content, "PR body should include spec piece title"
     assert "Test Feature Code" in body_content, "PR body should include code piece title"
     assert "Spec reviewed and approved" in body_content, "PR body should include spec verification"
-    assert "All tests passed" in body_content, "PR body should include code verification"
+    assert "pytest: 12 passed, see out.py" in body_content, "PR body should include code verification"
+    # No job record with proofs: no unconditional test claim, no local file links.
+    assert "All tests passed" not in body_content
+    assert "file:" not in body_content
+
+
+def test_create_pr_body_reports_recorded_proofs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from crew_chief import records
+    from crew_chief.git_delivery import create_pr
+
+    job = records.new_job(tmp_path, "Proofs", "do it", True, "requested")
+    records.add_piece(job, "Bit", "code", "low")
+    attempt = {"n": 1, "branch": "b", "role": "exec", "status": "ok",
+               "proof": {"cmd": "pytest -q", "exit": 0, "passed": True},
+               "note": "wrote file:///C:/Temp/wt/out.py"}
+    records.add_attempt(job, 1, attempt)
+    records.mark_accepted(job, 1, attempt)
+    records.save_job(tmp_path, job)
+
+    bodies = []
+
+    def fake_run(cmd, *args, **kwargs):
+        if "create" in cmd:
+            bodies.append(cmd[cmd.index("--body") + 1])
+            return subprocess.CompletedProcess(cmd, 0, "https://github.com/t/r/pull/1\n", "")
+        return subprocess.CompletedProcess(cmd, 0, "[]\n", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    create_pr(tmp_path, job["id"], "acc/x", is_sdd=False, accepted_pieces=[
+        {"n": 1, "title": "Bit", "verification": attempt["note"]},
+    ])
+
+    assert "- Piece 1 proof `pytest -q`: passed" in bodies[0]
+    assert "wrote C:/Temp/wt/out.py" in bodies[0]
+    assert "All tests passed" not in bodies[0]
 
 
 def _setup_sdd_job_for_close(work: Path, tmp_path: Path, job_name: str = "SDD Job"):

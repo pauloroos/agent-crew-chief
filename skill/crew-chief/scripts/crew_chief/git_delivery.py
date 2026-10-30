@@ -6,10 +6,41 @@ to ensure the branch is rooted at the latest origin/<base_branch>.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
 __all__ = ["prepare_job_branch", "push_to_origin", "create_pr", "create_pr_review_comment", "handle_git_failure"]
+
+#: ``[text](file:///...)``: a link to a local worktree, dead for PR readers.
+_FILE_MD_LINK = re.compile(r"\[([^\]]*)\]\(file://[^)]*\)")
+#: The scheme of a bare ``file://`` URI (keeps a Windows drive path as ``C:/...``).
+_FILE_SCHEME = re.compile(r"file:///(?=[A-Za-z]:)|file://")
+
+
+def _proof_lines(repo: Path, job_id: str) -> list[str]:
+    """One line per accepted attempt with a recorded proof; ``[]`` without a job."""
+    from . import records
+    from .cli_dispatch import _proof_text
+
+    try:
+        job = records.load_job(repo, job_id)
+    except Exception:
+        return []
+    lines = []
+    for piece in job.get("pieces") or []:
+        accepted = piece.get("accepted")
+        if not isinstance(accepted, dict):
+            continue
+        attempt = next(
+            (a for a in piece.get("attempts") or [] if a.get("n") == accepted.get("attempt")),
+            {},
+        )
+        proof = attempt.get("proof")
+        if isinstance(proof, dict):
+            cmd = f" `{proof['cmd']}`" if proof.get("cmd") else ""
+            lines.append(f"- Piece {piece.get('n')} proof{cmd}: {_proof_text(proof)}")
+    return lines
 
 
 def handle_git_failure(
@@ -310,13 +341,14 @@ def create_pr(
     body_lines.extend([
         "## Verification Proofs",
         "",
-        "- All tests passed",
+        *_proof_lines(repo, job_id),
         "- No force pushes used",
         "- Single PR per job enforced",
         "",
     ])
 
     body = "\n".join(body_lines)
+    body = _FILE_SCHEME.sub("", _FILE_MD_LINK.sub(r"\1", body))
 
     # Check if PR already exists for this branch
     try:

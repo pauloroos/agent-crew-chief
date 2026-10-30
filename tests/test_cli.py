@@ -2123,6 +2123,34 @@ def test_dispatch_defaults_to_picked_effort(
     assert seen == ["low", "medium", "high"]
 
 
+def test_antigravity_model_effort_suffix_is_the_effort(
+    git_repo, fake_bin, monkeypatch, capsys
+):
+    # gemini-x-medium carries its effort: no ladder "low" that would conflict.
+    _write_prefs(git_repo, """
+[[tools]]
+name = "antigravity"
+kind = "antigravity"
+bin = "agy"
+models = ["gemini-x-medium"]
+
+[[models]]
+match = "antigravity:*"
+cost = "free"
+""")
+    fake_bin("agy", _STUB)
+    _only_bins(monkeypatch, {"agy"})
+    brief = _write(git_repo.parent / "brief.md", "Create out.py.\n")
+    seen = _spy_dispatch(monkeypatch)
+    job = _ladder_job(git_repo)
+
+    assert main(_pick_argv(git_repo, job, "--json")) == 0
+    assert json.loads(capsys.readouterr().out)["effort"] == "medium"
+    main(_effort_dispatch_argv(git_repo, job, brief, "antigravity:gemini-x-medium",
+                               "--effort", "low"))
+    assert seen == ["medium"]
+
+
 def test_dispatch_default_effort_is_none_for_a_tool_without_effort(
     git_repo, fake_bin, monkeypatch, capsys
 ):

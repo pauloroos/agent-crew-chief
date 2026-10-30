@@ -8,6 +8,8 @@ import random
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .scoring_effort import model_effort
+
 if TYPE_CHECKING:
     from . import cli
 
@@ -205,7 +207,10 @@ def _cmd_pick(args: argparse.Namespace) -> int:
                 piece=args.piece,
             )
         effort = (
-            cli.picked_effort(choice, job, args.piece) if choice is not None else None
+            model_effort(choice.tool, choice.model)
+            or cli.picked_effort(choice, job, args.piece)
+            if choice is not None
+            else None
         )
         return choice, reason, effort
 
@@ -262,7 +267,8 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
 
     brief = cli._read_text(Path(args.brief_file), "--brief-file")
     cli._check_models_to_stderr(project, prefs, found, due_only=True)
-    effort = args.effort
+    # A model id with an effort suffix fixes the effort; build_command adds no flag.
+    effort = model_effort(executor.tool, executor.model) or args.effort
     if effort is None:
         # The effort ``pick`` printed: lowest first, one step up per failure.
         effort = cli.picked_effort(

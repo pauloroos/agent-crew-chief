@@ -16,8 +16,6 @@ from typing import Any
 
 MANIFEST_PATH = Path(__file__).resolve().parent / "kit_manifest.json"
 
-SUPERPOWERS_LICENSE = "MIT"
-
 
 def _load_manifest(path: Path | None = None) -> dict[str, Any]:
     """Load the kit manifest JSON."""

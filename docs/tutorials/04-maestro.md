@@ -19,7 +19,7 @@ It builds on tutorials 01–03 and uses the
 ## 1. Install the `acc` command
 
 ```bash
-git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.6.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py --command
 acc --version
 ```
@@ -91,4 +91,5 @@ to the base branch or tags.
 
 - Fronts must be independent; overlapping files mean conflicting PRs.
 - A coordinator gets six rounds per run; `acc resume` gives it six more.
-- `acc stop ID` stops a coordinator; its worktree and branch stay for you.
+- `acc stop ID` stops a coordinator; its worktree and branch
+  (`maestro/<front>-<id>`) stay for you.

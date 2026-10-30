@@ -223,13 +223,13 @@ def _collect_accepted_pieces(job: dict) -> list[dict]:
                         None,
                     )
                     if att:
-                        verification_str = (
-                            att.get("verification")
-                            or att.get("proof")
-                            or att.get("note")
-                        )
+                        proof = att.get("proof")
+                        if isinstance(proof, dict):
+                            from .cli_dispatch import _proof_text
+                            proof = _proof_text(proof)
+                        verification_str = att.get("verification") or proof or att.get("note")
             if not verification_str:
-                verification_str = "All tests passed"
+                verification_str = "not recorded"
 
             item = {
                 "n": piece.get("n"),

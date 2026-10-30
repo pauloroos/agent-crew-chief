@@ -33,7 +33,39 @@ FAKES = {
         "path = re.search(r'write the question to (.+?) and stop', sys.argv[1]).group(1)\n"
         "Path(path).write_text('Which database?', encoding='utf-8')\n"
     ),
-    "idle": "print('worked a bit')\n",
+    "idle": "import os\nprint('worked a bit as', os.environ.get('CREW_CHIEF_COORDINATOR'))\n",
+    "block": (
+        "import sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
+        "    'state': 'blocked', 'status': 'blocked',\n"
+        "    'result': {'blocked_error': 'remote rejected', 'failed_command': 'git push origin x'}})\n"
+    ),
+    "local": (
+        "import sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': [],\n"
+        "    'state': 'closed', 'status': 'closed'})\n"
+    ),
+    "stopme": (
+        "import json, re, sys\nfrom pathlib import Path\n"
+        "path = Path(re.search(r'write the question to (.+?) and stop', sys.argv[1]).group(1)).parent / 'record.json'\n"
+        "record = json.loads(path.read_text(encoding='utf-8'))\n"
+        "record['state'] = 'stopped'\n"
+        "path.write_text(json.dumps(record), encoding='utf-8')\n"
+        "sys.exit(1)\n"
+    ),
+    "commit": (
+        "import subprocess, sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "from crew_chief import records\n"
+        "records.save_job(Path.cwd(), {'id': 'job-1', 'pieces': [], 'usage': []})\n"
+        "subprocess.run(['git', 'add', 'docs'], check=True)\n"
+        "subprocess.run(['git', 'commit', '-qm', 'job'], check=True)\n"
+        "subprocess.run(['git', 'push', '-qu', 'origin', 'HEAD'], check=True)\n"
+    ),
 }
 
 
@@ -77,9 +109,14 @@ def test_quota_falls_back_to_the_next_coordinator_and_books_tokens(repo, tmp_pat
         lambda *a, **k: {"tokens_in": 10, "tokens_out": 5, "tokens_total": 15, "cost_usd": None, "steps": 3},
     )
     folder = _launch(repo, tmp_path, "quota:m1", "deliver:m2")
+    prompts = []
+    real_prompt = maestro._prompt
+    monkeypatch.setattr(maestro, "_prompt", lambda r, f, first: prompts.append(first) or real_prompt(r, f, first))
 
     record = maestro.run(folder)
 
+    # the quota round made no job, so the fallback starts one instead of continuing
+    assert prompts == [True, True]
     assert record["state"] == "completed"
     assert record["pr_url"] == "https://example.test/pr/1"
     assert [r["outcome"] for r in record["rounds"]] == ["quota", "ok"]
@@ -91,7 +128,7 @@ def test_quota_falls_back_to_the_next_coordinator_and_books_tokens(repo, tmp_pat
     assert summary["switches"] == 1
     assert summary["coordinator_tokens"] == 30
     assert summary["economy"]["coordinator_tokens"] == 30
-    assert summary["branch"].startswith("acc/01-auth-")
+    assert summary["branch"].startswith("maestro/01-auth-")
 
 
 def test_every_coordinator_on_quota_holds_until_resume(repo, tmp_path):
@@ -100,10 +137,14 @@ def test_every_coordinator_on_quota_holds_until_resume(repo, tmp_path):
     record = maestro.run(folder)
     assert record["state"] == "quota"
     assert "rate limit" in record["last_error"]
+    assert record["finished_at"]
+    # two failed rounds, one change of coordinator
+    assert maestro.status(repo)[0]["switches"] == 1
 
     resumed = maestro.resume(repo, record["id"], spawn=False)
     assert resumed["state"] == "running"
     assert resumed["index"] == 0
+    assert resumed["finished_at"] is None
     assert len(resumed["history"]) == 2
 
 
@@ -131,6 +172,7 @@ def test_rounds_without_a_pr_continue_then_fail(repo, tmp_path, monkeypatch):
     assert len(record["rounds"]) == 2
     assert "no pull request" in record["last_error"]
     assert "This continues earlier work" in maestro._prompt(record, folder, first=False)
+    assert "worked a bit as idle" in (folder / "round-1.log").read_text(encoding="utf-8")
 
 
 def test_launch_rejects_an_unknown_tool(repo, tmp_path):
@@ -172,6 +214,7 @@ def test_a_resumed_coordinator_continues_and_keeps_its_logs(repo, tmp_path, monk
     folder = _launch(repo, tmp_path, "idle:m1")
     record = maestro.run(folder)
     maestro.resume(repo, record["id"], spawn=False)
+    records.save_job(Path(record["worktree"]), {"id": "job-1", "pieces": [], "usage": []})
 
     prompts = []
     real_prompt = maestro._prompt
@@ -180,4 +223,122 @@ def test_a_resumed_coordinator_continues_and_keeps_its_logs(repo, tmp_path, monk
 
     assert prompts == [False]
     assert (folder / "round-1.log").is_file() and (folder / "round-2.log").is_file()
-    assert [u["tokens_in"] for u in maestro.load(folder)["pending_usage"]] == [40, 40]
+    job = records.load_job(Path(record["worktree"]), "job-1")
+    assert [u["tokens_in"] for u in job["usage"]] == [40, 40]
+
+
+def test_the_job_branch_becomes_the_coordinator_branch(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "idle:m1")
+    record = maestro.load(folder)
+    records.save_job(Path(record["worktree"]), {"id": "job-1", "pieces": [], "usage": [], "job_branch": "feature/x"})
+
+    assert maestro.status(repo)[0]["branch"] == "feature/x"
+
+
+def test_the_prompt_is_one_line_and_names_the_end_mode(repo, tmp_path):
+    record = maestro.launch(repo, _request(tmp_path), coordinators=["idle:m1"], spawn=False, end_mode="pr_review")
+    folder = maestro.coordinators_dir(repo) / record["id"]
+
+    prompt = maestro._prompt(maestro.load(folder), folder, first=True)
+
+    assert "\n" not in prompt
+    assert "close --end-mode pr_review" in prompt
+    assert "CHANGELOG" in prompt
+
+
+def test_a_coordinator_that_cannot_start_falls_back(repo, tmp_path, monkeypatch):
+    real = maestro.tools.build_command
+    missing = str(tmp_path / "no-such-cli.exe")
+    monkeypatch.setattr(
+        maestro.tools, "build_command",
+        lambda tool, *a, **k: [missing] if tool["name"] == "idle" else real(tool, *a, **k),
+    )
+    folder = _launch(repo, tmp_path, "idle:m1", "deliver:m2")
+
+    record = maestro.run(folder)
+
+    assert [r["outcome"] for r in record["rounds"]] == ["failed", "ok"]
+    assert "cannot start" in record["rounds"][0]["error"]
+    assert record["state"] == "completed"
+
+
+def test_a_claude_coordinator_ignores_user_mcp_servers(repo, tmp_path, monkeypatch):
+    commands = []
+    real = maestro.tools.build_command
+    monkeypatch.setattr(maestro.tools, "build_command", lambda *a, **k: commands.append(real(*a, **k)) or commands[-1])
+    monkeypatch.setattr(maestro.tools, "tool_env", lambda tool: None)
+    folder = _launch(repo, tmp_path, "claude:opus")
+
+    maestro.run(folder)
+
+    assert "--strict-mcp-config" in commands[0]
+
+
+def test_a_blocked_job_fails_the_coordinator(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "block:m1", "deliver:m2")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "failed"
+    assert len(record["rounds"]) == 1
+    assert "remote rejected" in record["last_error"] and "git push origin x" in record["last_error"]
+
+
+def test_a_job_closed_without_a_pr_completes(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "local:m1")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "completed"
+    assert record["pr_url"] is None
+    assert len(record["rounds"]) == 1
+
+
+def test_booked_coordinator_tokens_are_committed_and_pushed(repo, tmp_path, monkeypatch):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+    monkeypatch.setattr(maestro, "MAX_ROUNDS", 1)
+    monkeypatch.setattr(
+        maestro.tools, "parse_metrics",
+        lambda *a, **k: {"tokens_in": 10, "tokens_out": 5, "tokens_total": 15, "cost_usd": None, "steps": None},
+    )
+    folder = _launch(repo, tmp_path, "commit:m1")
+
+    record = maestro.run(folder)
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=record["worktree"], capture_output=True, text=True).stdout.strip()
+
+    assert git("log", "-1", "--format=%s") == "Book coordinator usage"
+    assert git("status", "--porcelain", "docs") == ""
+    assert git("rev-parse", "HEAD") == git("rev-parse", "@{u}")
+
+
+def test_a_stop_during_a_round_is_kept(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "stopme:m1", "deliver:m2")
+
+    record = maestro.run(folder)
+
+    assert record["state"] == "stopped"
+    assert len(record["rounds"]) == 1
+    assert maestro.load(folder)["state"] == "stopped"
+
+
+def test_stop_leaves_a_completed_coordinator_alone(repo, tmp_path):
+    folder = _launch(repo, tmp_path, "deliver:m1")
+    record = maestro.run(folder)
+
+    assert maestro.stop(repo, record["id"]) == maestro.load(folder)
+    assert maestro.load(folder)["state"] == "completed"
+
+
+def test_status_passes_the_worktree_prefs_to_the_economy(repo, tmp_path, monkeypatch):
+    seen = []
+    real = maestro.economy.job_economy
+    monkeypatch.setattr(maestro.economy, "job_economy", lambda job, prefs: seen.append(prefs) or real(job, prefs))
+    maestro.run(_launch(repo, tmp_path, "deliver:m1"))
+
+    maestro.status(repo)
+
+    assert seen and seen[0] is not None

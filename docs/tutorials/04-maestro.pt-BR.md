@@ -19,7 +19,7 @@ Parte dos tutoriais 01–03 e usa o projeto
 ## 1. Instale o comando `acc`
 
 ```bash
-git clone --branch v0.5.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.6.0 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py --command
 acc --version
 ```
@@ -91,4 +91,5 @@ merge, push na branch base nem tag.
 
 - As frentes precisam ser independentes; arquivos em comum dão PRs em conflito.
 - Uma coordenadora tem seis rodadas por execução; `acc resume` dá mais seis.
-- `acc stop ID` para uma coordenadora; a worktree e a branch ficam para você.
+- `acc stop ID` para uma coordenadora; a worktree e a branch
+  (`maestro/<frente>-<id>`) ficam para você.

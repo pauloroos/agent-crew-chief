@@ -1,11 +1,8 @@
 """Proof of job_branch wiring across public create paths and delivery flow.
 
-1. Interview path: creates a job via interview, accepts one piece, and the
-   job branch exists on origin containing that piece commit.
-2. Bootstrap path (job new + spec import): creates a job, imports spec, accepts
+1. Bootstrap path (job new + spec import): creates a job, imports spec, accepts
    one piece, and the job branch exists on origin containing that piece commit.
-3. MCP path: created job record has the same job_branch.
-4. Fake gh on PATH: PR step runs once per job, argv is asserted, no second PR
+2. Fake gh on PATH: PR step runs once per job, argv is asserted, no second PR
    for the same job.
 """
 from __future__ import annotations
@@ -18,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from crew_chief import interview_service, records, worktree
+from crew_chief import records, worktree
 from crew_chief.cli import main
 
 
@@ -95,68 +92,6 @@ def _get_gh_calls(log_file: Path) -> list[list[str]]:
         return []
     lines = [line.strip() for line in log_file.read_text(encoding="utf-8").splitlines() if line.strip()]
     return [json.loads(line) for line in lines]
-
-
-def test_interview_path_job_branch_and_origin_push(tmp_path: Path) -> None:
-    """Interview path creates a job with job_branch and pushes piece commit on accept."""
-    bare = _init_bare_origin(tmp_path)
-    work = _init_work_repo(tmp_path, bare)
-
-    # 1. Start interview job via public interview_service entry point
-    res = interview_service.start_interview_job(
-        project=work,
-        request="Implement interview feature",
-        coordinator="claude:sonnet",
-        executors="own",
-        end_mode="pr",
-        title="Interview Feature",
-    )
-    assert res.get("ok") is True
-    job_id = res["job_id"]
-
-    # Assert job record has job_branch
-    job = records.load_job(work, job_id)
-    expected_branch = f"acc/{job_id}"
-    assert job.get("job_branch") == expected_branch
-    assert job.get("base_branch") == "main"
-
-    # 2. Add a piece and create an attempt commit in a worktree
-    records.update_job(
-        work,
-        job_id,
-        lambda stored: records.add_piece(stored, "Feature piece", "code", "low"),
-    )
-    wt, attempt_branch = worktree.create_worktree(work, job_id, 1, 1)
-    (wt / "interview_feat.txt").write_text("interview implementation\n", encoding="utf-8")
-    _run_git(wt, "add", "interview_feat.txt")
-    _run_git(wt, "commit", "-m", "feat: implement interview feature")
-
-    attempt = {
-        "n": 1,
-        "role": "exec",
-        "status": "ok",
-        "branch": attempt_branch,
-        "worktree": str(wt),
-    }
-    records.update_job(
-        work,
-        job_id,
-        lambda stored: stored["pieces"][0]["attempts"].append(attempt),
-    )
-
-    # 3. Accept piece via canonical CLI
-    exit_code = main(["accept", "--project", str(work), "--job", job_id, "--piece", "1"])
-    assert exit_code == 0
-
-    # 4. Assert job branch exists on origin containing the piece commit
-    proc_remote = _run_git(bare, "log", "-n", "5", "--format=%s", expected_branch)
-    assert proc_remote.returncode == 0
-    assert "feat: implement interview feature" in proc_remote.stdout
-
-    # Assert the file exists on the branch in the origin repo
-    proc_show = _run_git(bare, "show", f"{expected_branch}:interview_feat.txt")
-    assert proc_show.returncode == 0
-    assert "interview implementation" in proc_show.stdout
 
 
 def test_bootstrap_path_job_branch_and_origin_push(tmp_path: Path) -> None:
@@ -241,16 +176,17 @@ def test_fake_gh_pr_step_runs_once(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     bare = _init_bare_origin(tmp_path)
     work = _init_work_repo(tmp_path, bare)
 
-    # Start an interview job
-    res = interview_service.start_interview_job(
-        project=work,
-        request="PR step feature",
-        coordinator="claude:sonnet",
-        executors="own",
-        end_mode="pr",
-        title="PR Step Feature",
-    )
-    job_id = res["job_id"]
+    # Start a job
+    req_file = tmp_path / "req.md"
+    req_file.write_text("PR step feature\n", encoding="utf-8")
+    assert main([
+        "job", "new",
+        "--project", str(work),
+        "--title", "PR Step Feature",
+        "--request-file", str(req_file),
+        "--executors", "own",
+    ]) == 0
+    job_id = next((work / "docs" / "crew-chief" / "jobs").glob("*.json")).stem
     expected_branch = f"acc/{job_id}"
 
     # Accept one piece

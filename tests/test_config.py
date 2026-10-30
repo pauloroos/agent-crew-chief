@@ -573,9 +573,6 @@ def test_team_claude_ghost_supported_without_server_login(tmp_path):
     assert prefs.team["reviewers"] == ["claude-ghost:claude-sonnet-5"]
 
 
-# --- projects_dir (T031, FR-024) ---------------------------------------------
-
-
 def test_max_running_executors_defaults_to_3_and_can_be_set(tmp_path):
     f = tmp_path / "global.toml"
     f.write_text("max_running_executors = 5\n", encoding="utf-8")

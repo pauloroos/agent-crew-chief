@@ -134,7 +134,7 @@ def test_empty_job_has_none_values_and_no_alerts():
 def test_summary_line_with_all_values():
     job = _job_with(attempts=[("opencode:a", "free", "ok", 9000)],
                     accepted_executor="opencode:a",
-                    usage=[("central", 500, 500, True)],
+                    usage=[("coordinator", 500, 500, True)],
                     grades={"opencode:a": 90})
     line = summary_line(job_economy(job, _prefs(), now=NOW))
     assert line == ("free work: 100% of pieces, 90% of tokens · "
@@ -183,7 +183,7 @@ def test_summary_line_with_recorded_usage_keeps_percent_and_estimated():
     """Recorded usage keeps the share, the estimate mark and the wording."""
     job = _job_with(attempts=[("opencode:a", "free", "ok", 9000)],
                     accepted_executor="opencode:a",
-                    usage=[("central", 500, 500, True)])
+                    usage=[("coordinator", 500, 500, True)])
     e = job_economy(job, _prefs(), now=NOW)
     assert e.usage_recorded is True
     assert e.coordinator_tokens == 1000
@@ -234,8 +234,8 @@ def test_add_usage_validates_role_and_tokens():
     assert entry["role"] == "coordinator" and entry["tokens_in"] == 10
     assert entry["tokens_out"] == 5 and entry["tokens_total"] == 15
     assert entry["estimated"] is True and entry["note"] == "plan"
-    for bad in [("worker", 1, 1), ("central", -1, 1), ("central", 1.5, 1),
-                ("central", True, 1), ("central", 1, "2")]:
+    for bad in [("worker", 1, 1), ("central", 1, 1), ("coordinator", -1, 1),
+                ("coordinator", 1.5, 1), ("coordinator", True, 1), ("coordinator", 1, "2")]:
         with pytest.raises(ValueError):
             records.add_usage(job, bad[0], bad[1], bad[2], False)
     assert len(job["usage"]) == 1
@@ -456,7 +456,7 @@ def test_summary_line_includes_tiers_only_when_used():
     free_only = summary_line(job_economy(
         _job_with(attempts=[("opencode:a", "free", "ok", 9000)],
                   accepted_executor="opencode:a",
-                  usage=[("central", 500, 500, True)],
+                  usage=[("coordinator", 500, 500, True)],
                   grades={"opencode:a": 90}), _prefs(), now=NOW))
     assert free_only == (
         "free work: 100% of pieces, 90% of tokens · "

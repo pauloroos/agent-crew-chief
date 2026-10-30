@@ -167,6 +167,18 @@ def next_effort(tool: dict, failures: int) -> str | None:
     return scoring._EFFORT_STEPS[min(max(failures, 0), len(scoring._EFFORT_STEPS) - 1)]
 
 
+def model_effort(tool: dict, model: str) -> str | None:
+    """The effort an Antigravity model id carries (``gemini-3.8-flash-medium``).
+
+    Antigravity lists one model id per effort and rejects an ``--effort`` that
+    differs from it; ``None`` for other tools and for an id without suffix.
+    """
+    if tool.get("kind") != "antigravity":
+        return None
+    match = _EFFORT_SUFFIX.search(model)
+    return match.group(1) if match else None
+
+
 def _lowest_effort(
     executors: list[Executor], job: dict | None, piece: int | None
 ) -> list[Executor]:

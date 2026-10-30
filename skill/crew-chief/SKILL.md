@@ -232,7 +232,7 @@ asks how the executors are doing.
 
 When the user hands you a goal too big for one job, or asks for the maestro,
 you do not coordinate pieces yourself: you run coordinators. Each coordinator
-works in its own worktree and branch, runs the job cycle below with its own
+works in its own worktree and branch, runs the job cycle above with its own
 executors and reviewers, grades every piece and ends in one PR. You plan the
 fronts, launch them, keep them unblocked and report. You never edit the
 project's code yourself.
@@ -271,7 +271,8 @@ project's code yourself.
      `<project>.crew/coordinators/<ID>/`; `CC resume ID` only after the cause
      is fixed, never as a blind retry;
    - `completed`: note the PR.
-   `CC stop ID` kills a coordinator; its worktree and branch stay.
+   `CC stop ID` kills a coordinator; its worktree and branch
+   (`maestro/<front>-<id>`) stay.
 5. **Report** every front with its PR (or branch), its rounds, time, tokens,
    accepted pieces and score, and what is left. The owner merges; you never
    merge, push to the base branch or tag.
@@ -280,10 +281,14 @@ project's code yourself.
 
 You run headless: nobody can answer a prompt. Follow the job cycle in the
 worktree you were started in, record the job with `job new`, close it (which
-pushes the branch and opens the PR) and stop. If you need the owner's
-decision, write the question to the `question.md` path your prompt names and
-stop; you are resumed with the answer. Every round you run is timed and its
-tokens are added to the job's `usage` for you, so do not `usage add` them.
+pushes the branch and opens the PR) and stop. `close` writes the CHANGELOG
+entry and the scoreboard: commit those files on the job branch and push it, so
+the PR carries them. Reviewers on claude run without Bash and cannot read the
+diff themselves: put the diff in the review brief (or paste it there). If you
+need the owner's decision, write the question to the `question.md` path your
+prompt names and stop; you are resumed with the answer. Every round you run is
+timed and its tokens are added to the job's `usage` for you, so do not
+`usage add` them.
 
 ## Spec-driven work
 
@@ -651,10 +656,6 @@ delivers exactly one pull request from the job branch to main at the end.
 
 In `own` and `free_first` modes, native subagents are forbidden for code, tests
 and reviews.
-
-## Future process
-
-The merge gate flow for v0.5.0 is documented in [docs/process/merge-gate.md](../../docs/process/merge-gate.md) and its pt-BR sibling [docs/process/merge-gate.pt-BR.md](../../docs/process/merge-gate.pt-BR.md).
 
 ## Safety
 
