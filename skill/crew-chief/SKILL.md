@@ -275,7 +275,10 @@ project's code yourself.
    (`maestro/<front>-<id>`) stay.
 5. **Report** every front with its PR (or branch), its rounds, time, tokens,
    accepted pieces and score, and what is left. The owner merges; you never
-   merge, push to the base branch or tag.
+   merge, push to the base branch or tag. When the owner lets you merge, merge
+   a front's PR only once `status` shows it `completed`: the runner pushes the
+   coordinator's tokens to the branch right before, and an earlier merge
+   leaves them out of the job record.
 
 ### When you are the launched coordinator
 

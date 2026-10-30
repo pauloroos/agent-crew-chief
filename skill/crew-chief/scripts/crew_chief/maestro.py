@@ -232,10 +232,18 @@ def _prompt(record: dict, folder: Path, first: bool) -> str:
 def _find_job(record: dict) -> dict | None:
     worktree = Path(record["worktree"])
     if record.get("job_id"):
-        try:
-            job = records.load_job(worktree, record["job_id"])
-        except records.RecordError:
+        job = None
+        # the merged record in the repo still holds the numbers once the worktree is gone
+        for where in (worktree, Path(record["repo"])):
+            try:
+                job = records.load_job(where, record["job_id"])
+                break
+            except records.RecordError:
+                continue
+        if job is None:
             return None
+    elif not worktree.is_dir():
+        return None
     else:
         known = set(record.get("known_jobs") or [])
         job = next(
@@ -548,7 +556,7 @@ def status_lines(summaries: list[dict]) -> list[str]:
         if s["question"]:
             lines.append(f"    question: {s['question']}")
         if s["last_error"] and s["state"] != "completed":
-            lines.append(f"    last error: {s['last_error'].splitlines()[-1][:200]}")
+            lines.append(f"    last error: {' '.join(s['last_error'].split())[:300]}")
         if s["pr_url"]:
             lines.append(f"    PR: {s['pr_url']}")
     return lines
