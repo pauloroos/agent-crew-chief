@@ -23,9 +23,10 @@ def _entry(model: str, value: int, kind: str = "code", cost: str = "free", days:
 def test_append_and_read_skip_a_broken_line(ledger_home: Path):
     ledger.append({"kind": "code", "agent": "codex", "model": "m", "score": 80, "note": None})
     with ledger.ledger_path().open("a", encoding="utf-8") as handle:
-        handle.write('{"cut short\n')
+        handle.write('{"cut short')
+    ledger.append({"kind": "code", "agent": "codex", "model": "m", "score": 70})
     entries = ledger.read()
-    assert len(entries) == 1
+    assert [e["score"] for e in entries] == [80, 70]
     assert entries[0]["at"] and "note" not in entries[0]
     assert ledger.ledger_path().parent == ledger_home
 
@@ -89,6 +90,9 @@ def _v06_project(tmp_path: Path) -> Path:
         "attempts": [{"executor": "opencode:m", "cost": "free"}],
         "grades": {"opencode:m": {"score": 55, "graded_at": "2026-10-30T02:00:00+00:00"},
                    "claude:opus": {"score": None}},
+    }, {
+        "n": 2, "title": "old", "type": "code", "attempts": [],
+        "grade": {"executor": "codex:m", "score": 90, "graded_at": "2026-10-29T00:00:00+00:00"},
     }]}
     (jobs / "20261030-x.json").write_text(json.dumps(job), encoding="utf-8")
     return project
@@ -96,9 +100,10 @@ def _v06_project(tmp_path: Path) -> Path:
 
 def test_import_v06_copies_grades_once(tmp_path: Path):
     project = _v06_project(tmp_path)
-    assert ledger.import_v06(project) == 1
+    assert ledger.import_v06(project) == 2
     assert ledger.import_v06(project) == 0
-    [entry] = ledger.read()
+    entry, legacy = ledger.read()
+    assert (legacy["agent"], legacy["score"], legacy["job"]) == ("codex", 90, "old")
     assert entry["at"] == "2026-10-30T02:00:00+00:00"
     assert (entry["project"], entry["kind"], entry["agent"], entry["model"]) == ("shop", "tests", "opencode", "m")
     assert (entry["cost"], entry["outcome"], entry["score"], entry["job"]) == ("free", "fail", 55, "login")
@@ -139,7 +144,7 @@ def test_cli_record_refuses_a_score_out_of_range(capsys):
 
 def test_cli_import(tmp_path: Path, capsys):
     assert main(["import", str(_v06_project(tmp_path))]) == 0
-    assert "imported 1 grades from shop" in capsys.readouterr().out
+    assert "imported 2 grades from shop" in capsys.readouterr().out
     assert main(["import", str(tmp_path / "nothing")]) == 2
 
 

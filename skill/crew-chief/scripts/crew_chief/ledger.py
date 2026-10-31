@@ -28,9 +28,11 @@ def append(entry: dict) -> dict:
     entry = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
     path = ledger_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    # a line cut short by a crash has no newline: start on a fresh one
+    torn = path.is_file() and path.stat().st_size and not path.read_bytes().endswith(b"\n")
     # one short append per entry: parallel coordinators do not interleave lines
     with path.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        handle.write(("\n" if torn else "") + json.dumps(entry, ensure_ascii=False) + "\n")
     return entry
 
 
@@ -58,7 +60,13 @@ def import_v06(project: Path) -> int:
     for path in sorted((project / "docs" / "crew-chief" / "jobs").glob("*.json")):
         job = json.loads(path.read_text(encoding="utf-8"))
         for piece in job.get("pieces", []):
-            for executor, grade in (piece.get("grades") or {}).items():
+            grades = dict(piece.get("grades") or {})
+            legacy = piece.get("grade")  # records older than per-executor grades
+            if isinstance(legacy, dict) and legacy.get("executor"):
+                grades.setdefault(legacy["executor"], legacy)
+            for executor, grade in grades.items():
+                if not isinstance(grade, dict):
+                    continue
                 ref = f"{project.name}/{job.get('id', path.stem)}#{piece.get('n')}/{executor}"
                 if ref in done or not isinstance(grade.get("score"), (int, float)):
                     continue
