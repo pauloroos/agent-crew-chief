@@ -23,7 +23,25 @@ def test_skill_md_names_every_subcommand_and_stays_short():
     commands = _parser()._subparsers._group_actions[0].choices
     for name in commands:
         assert f"ACC {name}" in text, name
-    assert len(text.splitlines()) <= 130
+    assert len(text.splitlines()) <= 180
+
+
+def test_skill_md_covers_spec_kit_skills_and_plain_mode():
+    text = _read(SKILL_MD)
+    for phrase in (
+        "specs/",
+        "tasks.md",
+        "test-driven-development",
+        "systematic-debugging",
+        "verification-before-completion",
+        "ponytail",
+        "git worktree add",
+        "taskkill",
+        "kill --",
+    ):
+        assert phrase in text, phrase
+    for name in ("spec", "plan", "tasks"):
+        assert (SKILL_MD.parent / "templates" / "spec" / f"{name}.md").is_file(), name
 
 
 def test_version_is_current_and_changelog_has_its_section():
