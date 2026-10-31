@@ -14,6 +14,11 @@ of work, kept in `~/.crew-chief/ledger.jsonl`, outside every repository.
 (or `.claude/skills/...`, whichever exists). Orca commands follow the guide
 from `orca skills get orchestration`: load it once before the first one.
 
+Any CLI can coordinate (Claude Code, Codex, OpenCode, ...), and its workers
+can be any Orca agent. Run in an Orca terminal of the project, so Orca knows
+you as the coordinator; if `orca status --json` shows no running Orca, stop
+and tell the user to open it.
+
 Do not ask permission between steps. Ask only when the request itself is
 unclear; otherwise report at the end.
 
@@ -60,10 +65,11 @@ self-contained and names:
 ## 4. Monitor
 
 ```text
-orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 900000 --json
+orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 100000 --json
 ```
 
-Answer questions, handle every `worker_done`, ack, and wait again until every
+Keep each wait under 2 minutes: your CLI kills longer commands. An empty
+result only means wait again. Answer questions, handle every `worker_done`, ack, and wait again until every
 lane is done. Follow the Orca guide for empty waits and stuck workers.
 
 A worker can miss its spec on a cold start: after 5 minutes with no commit,

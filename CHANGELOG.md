@@ -8,6 +8,18 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.7.1] - 2026-10-31
+
+### Fixed
+- **Waiting on workers fits every coordinator CLI.** SKILL.md waited 15
+  minutes in one `check --wait`, longer than Claude Code (10 minutes) or
+  OpenCode (2 minutes) let a command run; it now waits under 2 minutes and
+  waits again.
+
+### Changed
+- SKILL.md says any CLI can coordinate, from an Orca terminal of the project,
+  and to stop when Orca is not running.
+
 ## [0.7.0] - 2026-10-31
 
 A restart around the one thing ACC adds: a score per model. Two real runs on
