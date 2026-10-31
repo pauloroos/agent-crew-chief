@@ -67,6 +67,9 @@ def test_suggest_takes_the_cheapest_proven_model():
     assert score.suggest(rows, max_cost="free")["model"] == "free-good"
     # nothing proven: the best score so far, even with one job
     assert score.suggest(score.table([_entry("x", 40), _entry("y", 65)], now=NOW))["model"] == "y"
+    # a tie goes to the cheaper model
+    tie = score.table([_entry("paid", 90, cost="paid"), _entry("free", 90, cost="free")], now=NOW)
+    assert score.suggest(tie)["model"] == "free"
     assert score.suggest([]) is None
 
 

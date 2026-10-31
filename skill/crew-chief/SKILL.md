@@ -66,6 +66,11 @@ orca orchestration check --wait --types "worker_done,escalation,question" --time
 Answer questions, handle every `worker_done`, ack, and wait again until every
 lane is done. Follow the Orca guide for empty waits and stuck workers.
 
+A worker can miss its spec on a cold start: after 5 minutes with no commit,
+look at `orca orchestration worker-read --dispatch <id> --source auto --json`.
+An empty prompt means it never started: `worker-stop` it and start the job
+again, recording nothing.
+
 ## 5. Review and score every job
 
 On each `worker_done`:
@@ -87,7 +92,10 @@ On each `worker_done`:
 - When every lane passed: in your checkout on `acc/<slug>`, merge each lane
   (`git merge --no-ff acc/<slug>-<lane>`), resolve conflicts, run the
   project's tests, push the branch and open the pull request with `gh pr create`.
-- Release every worker and remove the lane worktrees (`orca worktree rm`).
+- Release every worker and remove the lane worktrees (`orca worktree rm
+  --worktree branch:acc/<slug>-<lane>`, which also deletes the lane branch).
+  If it says the folder is open in another program, a worker's leftover
+  process holds it: leave it and say so in the report.
 - Report to the user: the pull request, each job with its model, outcome and
   score, anything left open, and `ACC score --kind <kinds used>`.
 
@@ -96,6 +104,8 @@ On each `worker_done`:
 - Never commit or push to `main`, never `--force`, never rewrite pushed
   history. The owner merges the pull request unless they said otherwise.
 - Workers never push, merge or open pull requests; you do.
+- Orca may put the lane worktrees inside your checkout: never `git add -A`
+  or `git add .` there; add files by name.
 - Never create, copy or ask for credentials or tokens.
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.

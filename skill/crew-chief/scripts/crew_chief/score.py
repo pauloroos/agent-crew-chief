@@ -81,7 +81,7 @@ def suggest(rows: list[dict], max_cost: str | None = None) -> dict | None:
     sure = [r for r in rows if r["score"] >= GOOD and r["n"] >= SURE_N]
     if sure:
         return min(sure, key=lambda r: (_tier(r), -r["score"]))
-    return max(rows, key=lambda r: r["score"], default=None)
+    return max(rows, key=lambda r: (r["score"], -_tier(r)), default=None)
 
 
 def render(rows: list[dict]) -> str:
