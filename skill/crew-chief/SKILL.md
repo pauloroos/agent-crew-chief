@@ -155,7 +155,7 @@ On each `worker_done` (plain mode: when the worker's process ends):
 ## 6. Deliver
 
 - When every lane passed: in your checkout on `acc/<slug>`, merge each lane
-  (`git merge --no-ff acc/<slug>-<lane>`), resolve conflicts, run the
+  (`git merge --no-ff --no-edit acc/<slug>-<lane>`), resolve conflicts, run the
   project's tests, use verification-before-completion, then push the branch
   and open the pull request with `gh pr create`.
 - Release every worker; remove lane worktrees and branches: Orca mode `orca
