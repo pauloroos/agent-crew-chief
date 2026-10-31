@@ -249,8 +249,8 @@ In PowerShell, the last two are:
 
 A folder "open in another program" can block the lane cleanup on Windows (a
 worker's leftover process, often an MCP server, holds it): the coordinator
-leaves it and says so. Once that process ends (or after a reboot), run
-`git worktree prune` and `git branch -D acc/<slug>-<lane>`.
+leaves it and says so. Once that process ends (or after a reboot), delete
+that folder, then run `git worktree prune` and `git branch -D acc/<slug>-<lane>`.
 
 ## 10. A small request, without a spec
 

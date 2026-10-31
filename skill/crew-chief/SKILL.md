@@ -112,18 +112,19 @@ and logs sit next to it, never inside. Per lane, add the worktree from your
 checkout. Per job, write the job spec to `../<repo>-acc-logs/<lane>-<job>.md`
 and start the worker in the background from inside the worktree with the
 prompt "Do the job in <its absolute path>" (a spec on the command line breaks
-on Windows), log `../<repo>-acc-logs/<lane>-<job>.log`, PID in `<lane>.pid`:
+on Windows), log `../<repo>-acc-logs/<lane>-<job>.log`, PID in `../<repo>-acc-logs/<lane>.pid`
+(never inside the worktree):
 
 ```text
 git worktree add ../<repo>-acc-<lane> -b acc/<slug>-<lane> acc/<slug>
 claude -p "<prompt>" --model <model> --dangerously-skip-permissions   # refused as root
 codex exec -C <worktree> -s workspace-write -m <model> "<prompt>"
 opencode run --standalone --auto -m <model> "<prompt>"
-# Linux/macOS: start, then kill the whole process group
-setsid nohup <cmd> > <log> 2>&1 & echo $! > <lane>.pid
+# Linux/macOS: start (job control off, so $! is the worker), then kill its group
+set +m; setsid nohup <cmd> > "<log>" 2>&1 & echo $! > "<pidfile>"
 kill -- -<pid>
 # Windows (PowerShell): start, then kill the whole tree
-$p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <worktree> -PassThru -WindowStyle Hidden -RedirectStandardOutput <log> -RedirectStandardError <log>.err; Set-Content <lane>.pid $p.Id -Encoding ascii
+$p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <worktree> -PassThru -WindowStyle Hidden -RedirectStandardOutput "<log>" -RedirectStandardError "<log>.err"; Set-Content "<pidfile>" $p.Id -Encoding ascii
 taskkill /PID <pid> /T /F
 ```
 

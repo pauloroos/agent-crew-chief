@@ -254,7 +254,7 @@ No PowerShell, os dois últimos ficam:
 No Windows, uma pasta "aberta em outro programa" pode travar a limpeza da trilha
 (um processo que sobrou do worker, muitas vezes um servidor MCP, segura a
 pasta): o coordenador deixa a pasta e avisa. Quando esse processo terminar (ou
-depois de reiniciar), rode `git worktree prune` e
+depois de reiniciar), apague essa pasta e rode `git worktree prune` e
 `git branch -D acc/<slug>-<lane>`.
 
 ## 10. Um pedido pequeno, sem spec

@@ -372,6 +372,19 @@ def test_missing_kit_source_exits_2_only_when_wanted(tmp_path, monkeypatch, caps
     assert install.main([str(project), *flags]) == 0
 
 
+def test_one_missing_kit_skill_stops_the_install(tmp_path, monkeypatch, capsys):
+    import shutil
+
+    vendor = tmp_path / "vendor"
+    shutil.copytree(install.VENDOR, vendor)
+    kit = next(iter(install.KITS))
+    shutil.rmtree(vendor / kit / "skills" / install.KITS[kit][0])
+    monkeypatch.setattr(install, "VENDOR", vendor)
+
+    assert install.main([str(_project(tmp_path))]) == 2
+    assert install.KITS[kit][0] in capsys.readouterr().err
+
+
 # --- snippet ---------------------------------------------------------------
 
 

@@ -128,8 +128,9 @@ def _sync_tree(source: Path, destination: Path) -> None:
 
 
 def _missing_kit(kits: list[str]) -> Path | None:
-    """The vendor folder of the first wanted kit that is missing, else None."""
-    return next((VENDOR / k for k in kits if not (VENDOR / k / "skills").is_dir()), None)
+    """The first vendored skill folder of a wanted kit that is missing, else None."""
+    folders = (VENDOR / k / "skills" / name for k in kits for name in KITS[k])
+    return next((folder for folder in folders if not folder.is_dir()), None)
 
 
 def _install_kits(base: Path, kits: list[str]) -> list[str]:
