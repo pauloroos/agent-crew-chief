@@ -8,6 +8,38 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.7.0] - 2026-10-31
+
+A restart around the one thing ACC adds: a score per model. Two real runs on
+Contratada Fácil showed the 0.6 machinery cost more than it delivered (46% of
+attempts ended `ok`, many lost to ACC itself), so the running and monitoring
+move to Orca and ACC keeps the method and the scoreboard.
+
+### Changed
+- **Lanes instead of a worktree per attempt.** The coordinator groups jobs
+  into lanes, one branch and one Orca worktree each; lanes run in parallel
+  and a lane's jobs run in order. Orca starts and watches the workers
+  (`orca orchestration worker-start`, `check --wait`).
+- **The CLI is four commands:** `pick`, `record`, `score` and `import`.
+- **Scores live outside the repository**, in `~/.crew-chief/ledger.jsonl`,
+  shared by every project on the machine: no records in pull requests. A score
+  is a mean of grades in which recent jobs weigh more, with one imaginary 50
+  so a single 100 is not a perfect score.
+- **SKILL.md is about 100 lines**, and the project snippet sends the agent to
+  the skill only when the user asks for ACC.
+- **`install.py` installs the skill and the snippet, nothing else.**
+
+### Added
+- **`ACC import <project>`** copies the grades an ACC 0.6 project kept in
+  `docs/crew-chief/jobs` into the ledger, once.
+
+### Removed
+- The maestro, dispatch and its sidecar, executor slots, the worktree per
+  attempt, git delivery, the interview, spec-driven mode, preferences,
+  discovery, models-seen, economy and spend, changelog and decisions files,
+  the superpowers and Ponytail kits, the `acc` command wrapper, the tutorials
+  and the example project.
+
 ## [0.6.3] - 2026-10-30
 
 ### Fixed

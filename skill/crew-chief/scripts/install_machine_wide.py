@@ -131,16 +131,6 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="home directory to install into (default: current user's home)",
     )
-    parser.add_argument(
-        "--no-superpowers",
-        action="store_true",
-        help="do not install superpowers skills",
-    )
-    parser.add_argument(
-        "--no-ponytail",
-        action="store_true",
-        help="do not install the vendored Ponytail skills",
-    )
     args = parser.parse_args(argv)
 
     home = Path(args.home).expanduser() if args.home else Path.home()
@@ -150,20 +140,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     report = install_machine_wide(home, args.dry_run)
-
-    # Install kit components (superpowers, ponytail) if not opted out
-    scripts_dir = REPO_ROOT / "skill" / "crew-chief" / "scripts"
-    if str(scripts_dir) not in sys.path:
-        sys.path.insert(0, str(scripts_dir))
-    from crew_chief.kit_install import install_kit
-    kit_report = install_kit(
-        project_dir=None,  # machine-wide mode
-        do_install_superpowers=not args.no_superpowers,
-        do_install_ponytail=not args.no_ponytail,
-        dry_run=args.dry_run,
-        home=home,
-    )
-    report.extend(kit_report)
 
     for line in report:
         print(line)
