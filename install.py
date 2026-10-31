@@ -3,15 +3,14 @@
 
 Usage::
 
-    python install.py <project> [--force-snippet] [--no-ponytail]
-        [--no-superpowers]
-    python install.py --command [--bin-dir DIR]
+    python install.py <project> [--force-snippet]
 
 What it does:
 
 1. Copies ``skill/crew-chief/`` into ``<project>/.claude/skills/crew-chief/``,
    ``<project>/.agents/skills/crew-chief/`` and
-   ``<project>/.gemini/skills/crew-chief/``, replacing earlier copies.
+   ``<project>/.gemini/skills/crew-chief/``, replacing earlier copies (files
+   that differ only in CRLF are left as they are).
 2. Inserts or replaces the snippet (``templates/snippet.md``) between
    ``<!-- BEGIN:agent-crew-chief -->`` and ``<!-- END:agent-crew-chief -->``:
    in ``AGENTS.md`` (created if missing), in ``CLAUDE.md`` (left alone when it
@@ -20,30 +19,11 @@ What it does:
    YAML frontmatter ``alwaysApply: true``). In ``AGENTS.md``, a file that
    starts with another tool's managed block gets the snippet right after that
    block's END line; otherwise the snippet is appended at the end.
-3. Creates ``docs/crew-chief/preferences.toml`` from the example only if it is
-   missing, plus ``docs/crew-chief/jobs/.gitkeep``.
-4. Never touches an existing ``preferences.toml``, ``jobs/``,
-   ``scoreboard.md`` or ``models-seen.json``, and never edits other skills,
-   including a Ponytail it did not install.
-5. Copies the vendored Ponytail skills (``vendor/ponytail/skills/``) into the
-   same three roots, each marked with ``.installed-by-agent-crew-chief``; a
-   Ponytail without that marker is left alone. ``--no-ponytail`` skips the
-   step.
-6. Installs vendored superpowers skills (test-driven-development,
-   systematic-debugging, verification-before-completion). ``--no-superpowers``
-   skips this step.
 
-``--command`` installs only the user-scoped ``acc`` wrapper for this released
-bundle (Windows ``acc.cmd``, Linux/macOS executable ``acc``) into
-``--bin-dir`` or the platform's user bin directory, without a project. It
-never creates project files, never edits global preferences and never changes
-``PATH``: it prints where the wrapper went and leaves ``PATH`` to the owner.
-Combining ``--command`` with a project installs both.
-
-A file without markers is left alone once the skill is installed in the project
-(``.claude/skills/crew-chief``, ``.agents/skills/crew-chief`` or
-``.gemini/skills/crew-chief`` already exists): the markers were removed on
-purpose. ``--force-snippet`` inserts the snippet anyway.
+It writes nothing else: scores live in ``~/.crew-chief/``, outside the project.
+A file without markers is left alone once the skill is installed in the project:
+the markers were removed on purpose. ``--force-snippet`` inserts the snippet
+anyway.
 
 It prints every change and exits ``2`` with one line when ``<project>`` is not
 an existing directory. Standard library only, so ``python -I install.py`` works.
@@ -52,6 +32,7 @@ an existing directory. Standard library only, so ``python -I install.py`` works.
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -63,7 +44,6 @@ MARKER_END = "<!-- END:agent-crew-chief -->"
 REPO_ROOT = Path(__file__).resolve().parent
 SKILL_SOURCE = REPO_ROOT / "skill" / "crew-chief"
 SNIPPET_SOURCE = SKILL_SOURCE / "templates" / "snippet.md"
-PREFS_SOURCE = SKILL_SOURCE / "templates" / "preferences.example.toml"
 
 #: Name of the installed skill directory and the roots it is copied into.
 SKILL_NAME = "crew-chief"
@@ -73,24 +53,15 @@ SKILL_ROOTS = (
     Path(".gemini") / "skills",
 )
 
-#: The vendored Ponytail skills and the marker put in every copy we install.
-PONYTAIL_SOURCE = REPO_ROOT / "vendor" / "ponytail" / "skills"
-PONYTAIL_SKILLS = ("ponytail", "ponytail-review")
-PONYTAIL_MARKER = ".installed-by-agent-crew-chief"
-
-#: Project-relative paths the installer creates (never overwrites).
-PREFS_RELATIVE = Path("docs") / "crew-chief" / "preferences.toml"
-JOBS_GITKEEP_RELATIVE = Path("docs") / "crew-chief" / "jobs" / ".gitkeep"
 CURSOR_RULE_RELATIVE = Path(".cursor") / "rules" / "agent-crew-chief.mdc"
 
 #: Frontmatter written on top of the Cursor rule.
 CURSOR_FRONTMATTER = (
     "---\n"
-    "description: agent-crew-chief - the coordinator splits non-trivial tasks and dispatches them to the project's executor CLIs.\n"
+    "description: agent-crew-chief - runs work through parallel Orca agents and scores every model.\n"
     "alwaysApply: true\n"
     "---\n\n"
 )
-
 
 
 # --- file helpers ----------------------------------------------------------
@@ -107,18 +78,32 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
+def _same_text(a: Path, b: Path) -> bool:
+    return a.read_bytes().replace(b"\r\n", b"\n") == b.read_bytes().replace(b"\r\n", b"\n")
+
+
 def _copy_skill(destination: Path) -> None:
-    """Make ``destination`` a fresh copy of the skill directory."""
-    _sync_tree(SKILL_SOURCE, destination)
+    """Make ``destination`` match the skill directory, without caches.
 
-
-def _sync_tree(source: Path, destination: Path, prune: bool = True) -> None:
-    """Copy ``source`` over ``destination``, keeping files that differ only in CRLF."""
-    if str(SCRIPTS_DIR) not in sys.path:
-        sys.path.insert(0, str(SCRIPTS_DIR))
-    from crew_chief.kit_install import sync_tree
-
-    sync_tree(source, destination, prune)
+    A file that differs only in CRLF is kept: a Windows checkout with
+    ``core.autocrlf`` holds CRLF copies, and rewriting them with LF makes git
+    list every one as modified with no diff.
+    """
+    wanted = set()
+    for item in SKILL_SOURCE.rglob("*"):
+        relative = item.relative_to(SKILL_SOURCE)
+        if "__pycache__" in relative.parts or item.suffix == ".pyc":
+            continue
+        wanted.add(relative)
+        target = destination / relative
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif not (target.is_file() and _same_text(item, target)):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+    for item in sorted(destination.rglob("*"), reverse=True):
+        if item.relative_to(destination) not in wanted:
+            shutil.rmtree(item) if item.is_dir() else item.unlink()
 
 
 def _block(snippet: str) -> str:
@@ -219,45 +204,7 @@ def _install_cursor_rule(
     return f"{relative}: {action}"
 
 
-def _install_data(project: Path) -> list[str]:
-    """Create the preferences file and jobs placeholder when they are missing."""
-    report: list[str] = []
-    prefs = project / PREFS_RELATIVE
-    if prefs.is_file():
-        report.append(f"{PREFS_RELATIVE.as_posix()} kept")
-    else:
-        _write(prefs, _read(PREFS_SOURCE))
-        report.append(f"created {PREFS_RELATIVE.as_posix()}")
-    gitkeep = project / JOBS_GITKEEP_RELATIVE
-    if gitkeep.is_file():
-        report.append(f"{JOBS_GITKEEP_RELATIVE.as_posix()} kept")
-    else:
-        _write(gitkeep, "")
-        report.append(f"created {JOBS_GITKEEP_RELATIVE.as_posix()}")
-    return report
-
-
-def _install_ponytail(project: Path) -> list[str]:
-    """Copy the vendored Ponytail skills, replacing only copies we made."""
-    report: list[str] = []
-    for root in SKILL_ROOTS:
-        for name in PONYTAIL_SKILLS:
-            destination = project / root / name
-            relative = (root / name).as_posix()
-            if destination.exists() and not (destination / PONYTAIL_MARKER).is_file():
-                report.append(
-                    f"ponytail: {relative} exists and was not installed by "
-                    "agent-crew-chief, left alone"
-                )
-                continue
-            # the kit installs its own ponytail copy, LICENSE and VERSION in this folder too
-            _sync_tree(PONYTAIL_SOURCE / name, destination, prune=False)
-            _write(destination / PONYTAIL_MARKER, "")
-            report.append(f"copied {name} to {relative}")
-    return report
-
-
-def install(project: Path, force: bool, ponytail: bool = True) -> list[str]:
+def install(project: Path, force: bool) -> list[str]:
     """Install or update the skill in ``project`` and return the report lines."""
     destinations = [project / root / SKILL_NAME for root in SKILL_ROOTS]
     installed = any(destination.is_dir() for destination in destinations)
@@ -267,8 +214,6 @@ def install(project: Path, force: bool, ponytail: bool = True) -> list[str]:
         _copy_skill(destination)
         report.append(f"copied skill to {(root / SKILL_NAME).as_posix()}")
 
-    if ponytail:
-        report.extend(_install_ponytail(project))
 
     block = _block(_read(SNIPPET_SOURCE).strip("\n"))
 
@@ -292,34 +237,10 @@ def install(project: Path, force: bool, ponytail: bool = True) -> list[str]:
     if (project / ".cursor").is_dir():
         report.append(_install_cursor_rule(project, block, installed, force))
 
-    report.extend(_install_data(project))
     return report
 
 
 # --- entry point -----------------------------------------------------------
-
-
-#: Where the released bundle's ``crew_chief`` package lives.
-SCRIPTS_DIR = SKILL_SOURCE / "scripts"
-
-
-def _install_command_wrapper(bin_dir: Path | None) -> list[str]:
-    """Install the ``acc`` wrapper for this bundle and return the report lines."""
-    from crew_chief.command_install import (
-        default_bin_dir,
-        install_command,
-        path_hint,
-    )
-
-    directory = Path(bin_dir).expanduser() if bin_dir else default_bin_dir()
-    target = install_command(
-        REPO_ROOT,
-        directory,
-        Path(sys.executable),
-        sys.platform,
-        replace_owned=True,
-    )
-    return [f"installed {target}", path_hint(directory)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -328,87 +249,23 @@ def main(argv: list[str] | None = None) -> int:
         prog="install.py",
         description="Install (or update) the crew-chief skill in a project.",
     )
-    parser.add_argument(
-        "project", nargs="?", help="path to the target project"
-    )
+    parser.add_argument("project", help="path to the target project")
     parser.add_argument(
         "--force-snippet",
         action="store_true",
         help="re-insert the snippet even if the markers were removed",
     )
-    parser.add_argument(
-        "--no-ponytail",
-        action="store_true",
-        help="do not install the vendored Ponytail skills",
-    )
-    parser.add_argument(
-        "--no-superpowers",
-        action="store_true",
-        help="do not install superpowers skills",
-    )
-    parser.add_argument(
-        "--command",
-        action="store_true",
-        help="install only the user-scoped `acc` wrapper for this bundle",
-    )
-    parser.add_argument(
-        "--bin-dir",
-        help="directory that receives the `acc` wrapper (default: user bin)",
-    )
     args = parser.parse_args(argv)
-
-    if args.bin_dir and not args.command:
-        parser.error("--bin-dir requires --command")
-    if args.project is None and not args.command:
-        parser.error("give a project to install into, or --command")
 
     if not SKILL_SOURCE.is_dir():
         print(f"install.py: skill source not found at {SKILL_SOURCE}", file=sys.stderr)
         return 2
-    if args.project and not args.no_ponytail and not PONYTAIL_SOURCE.is_dir():
-        print(
-            f"install.py: ponytail source not found at {PONYTAIL_SOURCE}",
-            file=sys.stderr,
-        )
-        return 2
-
-    project = Path(args.project).expanduser() if args.project else None
-    if project is not None and not project.is_dir():
+    project = Path(args.project).expanduser()
+    if not project.is_dir():
         print(f"{project}: no such directory", file=sys.stderr)
         return 2
 
-    report = install(project, args.force_snippet, not args.no_ponytail) if project else []
-
-    # Install kit components (superpowers, ponytail) if not opted out
-    if project is not None:
-        if str(SCRIPTS_DIR) not in sys.path:
-            sys.path.insert(0, str(SCRIPTS_DIR))
-        from crew_chief.kit_install import install_kit
-        kit_report = install_kit(
-            project_dir=project,
-            do_install_superpowers=not args.no_superpowers,
-            do_install_ponytail=not args.no_ponytail,
-        )
-        report.extend(kit_report)
-
-    if args.command:
-        if not (SCRIPTS_DIR / "crew_chief").is_dir():
-            print(
-                f"install.py: skill source not found at {SKILL_SOURCE}",
-                file=sys.stderr,
-            )
-            return 2
-        if str(SCRIPTS_DIR) not in sys.path:
-            sys.path.insert(0, str(SCRIPTS_DIR))
-        from crew_chief.command_install import CommandInstallError
-
-        try:
-            report += _install_command_wrapper(args.bin_dir)
-        except CommandInstallError as error:
-            print(f"install.py: {error}", file=sys.stderr)
-            return 2
-
-    for line in report:
+    for line in install(project, args.force_snippet):
         print(line)
     return 0
 

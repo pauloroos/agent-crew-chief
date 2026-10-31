@@ -1,9 +1,7 @@
 """Tests for ``install.py`` — the installer/updater of the crew-chief skill.
 
 Every test runs the installer as a real process (``sys.executable`` on
-``install.py``) so that the documented invocation is the one under test. The
-isolated-mode test keeps discovery hermetic by pointing ``PATH`` at an empty
-directory: no executor CLI is installed in CI, and none is spawned locally.
+``install.py``) so that the documented invocation is the one under test.
 """
 
 from __future__ import annotations
@@ -14,11 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import install
-from crew_chief.config import classify, load_prefs
-
 INSTALL = Path(__file__).resolve().parents[1] / "install.py"
-VENDOR = Path(__file__).resolve().parents[1] / "vendor" / "ponytail"
 
 BEGIN = "<!-- BEGIN:agent-crew-chief -->"
 END = "<!-- END:agent-crew-chief -->"
@@ -67,7 +61,7 @@ def test_install_creates_everything_once(tmp_path):
         root = project / relative
         assert (root / "SKILL.md").is_file()
         assert (root / "scripts" / "crew-chief.py").is_file()
-        assert (root / "templates" / "preferences.example.toml").is_file()
+        assert (root / "templates" / "snippet.md").is_file()
 
     agents = _read(project / "AGENTS.md")
     assert agents.count(BEGIN) == 1
@@ -77,8 +71,7 @@ def test_install_creates_everything_once(tmp_path):
     claude = _read(project / "CLAUDE.md")
     assert claude.count(BEGIN) == 1
 
-    assert (project / "docs" / "crew-chief" / "preferences.toml").is_file()
-    assert (project / "docs" / "crew-chief" / "jobs" / ".gitkeep").is_file()
+    assert not (project / "docs").exists()
 
     assert not (project / "GEMINI.md").exists()
     assert not (project / ".cursor").exists()
@@ -100,7 +93,7 @@ def test_deploys_to_all_four_cli_paths(tmp_path):
         root = project / relative
         assert (root / "SKILL.md").is_file()
         assert (root / "scripts" / "crew-chief.py").is_file()
-        assert (root / "templates" / "preferences.example.toml").is_file()
+        assert (root / "templates" / "snippet.md").is_file()
 
     gemini = _read(project / "GEMINI.md")
     assert gemini.count(BEGIN) == 1
@@ -158,14 +151,15 @@ def test_install_leaves_other_skills_and_data_alone(tmp_path):
 # --- reinstall -------------------------------------------------------------
 
 
-def test_reinstall_keeps_prefs_and_jobs_and_replaces_snippet(tmp_path):
+def test_reinstall_replaces_the_snippet_and_stale_skill_files(tmp_path):
     project = _project(tmp_path)
     assert _run(project).returncode == 0
 
-    prefs = project / "docs" / "crew-chief" / "preferences.toml"
-    prefs.write_text(_read(prefs) + "\n# my edit\n", encoding="utf-8")
-    job = project / "docs" / "crew-chief" / "jobs" / "20260101-0000-my-job.json"
-    job.write_text("{}\n", encoding="utf-8")
+    skill = project / ".agents" / "skills" / "crew-chief"
+    stale = skill / "scripts" / "crew_chief" / "dispatch.py"
+    stale.write_text("old\n", encoding="utf-8")
+    crlf = skill / "SKILL.md"
+    crlf.write_bytes(crlf.read_bytes().replace(b"\n", b"\r\n"))
 
     agents = project / "AGENTS.md"
     text = _read(agents)
@@ -178,8 +172,8 @@ def test_reinstall_keeps_prefs_and_jobs_and_replaces_snippet(tmp_path):
     result = _run(project)
 
     assert result.returncode == 0, result.stderr
-    assert _read(prefs).endswith("# my edit\n")
-    assert _read(job) == "{}\n"
+    assert not stale.exists()
+    assert b"\r\n" in crlf.read_bytes()  # a CRLF checkout of the same text is left alone
 
     rewritten = _read(agents)
     assert rewritten.count(BEGIN) == 1
@@ -237,102 +231,6 @@ def test_gemini_and_cursor_only_when_present(tmp_path):
     assert rule.count(BEGIN) == 1
 
 
-# --- the vendored Ponytail -------------------------------------------------
-
-
-def test_vendor_ponytail_is_pinned_and_licensed():
-    assert "MIT" in _read(VENDOR / "LICENSE")
-    assert _read(VENDOR / "VERSION").splitlines()[0] == "v5.3.2"
-    for skill in install.PONYTAIL_SKILLS:
-        assert (VENDOR / "skills" / skill / "SKILL.md").is_file()
-
-
-def test_install_adds_ponytail_with_marker(tmp_path):
-    project = _project(tmp_path)
-
-    result = _run(project)
-
-    assert result.returncode == 0, result.stderr
-    for root in (".claude/skills", ".agents/skills"):
-        for skill in install.PONYTAIL_SKILLS:
-            destination = project / root / skill
-            assert (destination / "SKILL.md").is_file()
-            assert (destination / install.PONYTAIL_MARKER).is_file()
-    assert not (project / ".claude" / "skills" / "crew-chief" / "vendor").exists()
-
-
-def test_install_updates_own_ponytail(tmp_path):
-    project = _project(tmp_path)
-    assert _run(project).returncode == 0
-
-    installed = project / ".claude" / "skills" / "ponytail" / "SKILL.md"
-    installed.write_text("stale\n", encoding="utf-8")
-
-    assert _run(project).returncode == 0
-
-    assert _read(installed) == _read(VENDOR / "skills" / "ponytail" / "SKILL.md")
-
-
-def test_install_leaves_foreign_ponytail_alone(tmp_path):
-    project = _project(tmp_path)
-    mine = project / ".claude" / "skills" / "ponytail" / "SKILL.md"
-    mine.parent.mkdir(parents=True)
-    mine.write_text("mine", encoding="utf-8")
-
-    result = _run(project)
-
-    assert result.returncode == 0, result.stderr
-    assert _read(mine) == "mine"
-    left_alone = [line for line in result.stdout.splitlines() if "left alone" in line]
-    assert any("ponytail" in line for line in left_alone)
-    assert (project / ".agents" / "skills" / "ponytail" / "SKILL.md").is_file()
-
-
-def test_no_ponytail_skips_and_keeps_existing(tmp_path):
-    project = _project(tmp_path)
-
-    assert _run(project, "--no-ponytail").returncode == 0
-    assert not (project / ".claude" / "skills" / "ponytail").exists()
-    assert not (project / ".agents" / "skills" / "ponytail").exists()
-
-    assert _run(project).returncode == 0
-    assert _run(project, "--no-ponytail").returncode == 0
-
-    assert (project / ".claude" / "skills" / "ponytail" / "SKILL.md").is_file()
-    assert (project / ".agents" / "skills" / "ponytail" / "SKILL.md").is_file()
-
-
-# --- the installed preferences template ------------------------------------
-
-
-def test_installed_template_does_not_shadow_global_scalars(tmp_path, monkeypatch):
-    project = _project(tmp_path)
-    assert _run(project).returncode == 0
-
-    global_file = tmp_path / "global.toml"
-    global_file.write_text(
-        'review_default = "x:y"\nstrong_order = ["a"]\n', encoding="utf-8"
-    )
-    monkeypatch.setenv("AGENT_CREW_CHIEF_GLOBAL_PREFS", str(global_file))
-
-    prefs = load_prefs(project)
-
-    assert prefs.review_default == "x:y"
-    assert prefs.strong_order == ["a"]
-
-
-def test_installed_template_preview_free_still_trains(tmp_path):
-    project = _project(tmp_path)
-    assert _run(project).returncode == 0
-
-    prefs = load_prefs(project)
-
-    assert classify("opencode:opencode-go/foo-preview-free", prefs) == ("free", True)
-
-
-# --- the installed CLI -----------------------------------------------------
-
-
 def test_installed_cli_runs_under_isolated_mode(tmp_path):
     project = _project(tmp_path)
     assert _run(project).returncode == 0
@@ -350,10 +248,8 @@ def test_installed_cli_runs_under_isolated_mode(tmp_path):
             sys.executable,
             "-I",
             str(cli),
-            "discover",
+            "score",
             "--json",
-            "--project",
-            str(project),
         ],
         capture_output=True,
         text=True,
@@ -362,8 +258,7 @@ def test_installed_cli_runs_under_isolated_mode(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert isinstance(payload["executors"], list)
+    assert json.loads(result.stdout) == []
 
 
 # --- errors ----------------------------------------------------------------
@@ -379,33 +274,16 @@ def test_missing_project_exits_2_with_one_line(tmp_path):
     assert "nope" in result.stderr
 
 
-def test_missing_ponytail_source_exits_2_unless_no_ponytail(
-    tmp_path, monkeypatch, capsys
-):
-    project = _project(tmp_path)
-    monkeypatch.setattr(install, "PONYTAIL_SOURCE", tmp_path / "broken-vendor")
-
-    assert install.main([str(project)]) == 2
-    stderr = capsys.readouterr().err.strip().splitlines()
-    assert len(stderr) == 1
-    assert "broken-vendor" in stderr[0]
-
-    assert install.main([str(project), "--no-ponytail"]) == 0
-
-
 # --- snippet ---------------------------------------------------------------
 
 
-def test_installed_snippet_declares_precedence_with_superpowers(tmp_path):
+def test_installed_snippet_points_at_the_skill(tmp_path):
     project = _project(tmp_path)
 
     result = _run(project)
 
     assert result.returncode == 0, result.stderr
     text = _read(project / "AGENTS.md")
-    assert (
-        "If the superpowers skills are also installed, use them to discuss and "
-        "design; use crew-chief to execute the plan."
-    ) in text
+    assert ".agents/skills/crew-chief/SKILL.md" in text
 
 
