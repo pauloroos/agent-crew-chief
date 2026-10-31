@@ -8,6 +8,15 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.6.3] - 2026-10-30
+
+### Fixed
+- **Updating on Windows no longer marks every installed file as modified.**
+  A checkout with `core.autocrlf` keeps CRLF copies; the installer used to
+  delete and rewrite them with LF, so git listed the whole skill and the kits
+  as changed with no diff. It now rewrites only files whose text changed and
+  removes only files the new version dropped.
+
 ## [0.6.2] - 2026-10-30
 
 Delivery with checked quality, from the review of the first real maestro runs.

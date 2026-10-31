@@ -52,7 +52,6 @@ an existing directory. Standard library only, so ``python -I install.py`` works.
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 
@@ -92,7 +91,6 @@ CURSOR_FRONTMATTER = (
     "---\n\n"
 )
 
-_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 
 
 # --- file helpers ----------------------------------------------------------
@@ -110,10 +108,17 @@ def _write(path: Path, text: str) -> None:
 
 
 def _copy_skill(destination: Path) -> None:
-    """Replace ``destination`` with a fresh copy of the skill directory."""
-    if destination.exists():
-        shutil.rmtree(destination)
-    shutil.copytree(SKILL_SOURCE, destination, ignore=_COPY_IGNORE)
+    """Make ``destination`` a fresh copy of the skill directory."""
+    _sync_tree(SKILL_SOURCE, destination)
+
+
+def _sync_tree(source: Path, destination: Path, prune: bool = True) -> None:
+    """Copy ``source`` over ``destination``, keeping files that differ only in CRLF."""
+    if str(SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS_DIR))
+    from crew_chief.kit_install import sync_tree
+
+    sync_tree(source, destination, prune)
 
 
 def _block(snippet: str) -> str:
@@ -245,9 +250,8 @@ def _install_ponytail(project: Path) -> list[str]:
                     "agent-crew-chief, left alone"
                 )
                 continue
-            if destination.exists():
-                shutil.rmtree(destination)
-            shutil.copytree(PONYTAIL_SOURCE / name, destination, ignore=_COPY_IGNORE)
+            # the kit installs its own ponytail copy, LICENSE and VERSION in this folder too
+            _sync_tree(PONYTAIL_SOURCE / name, destination, prune=False)
             _write(destination / PONYTAIL_MARKER, "")
             report.append(f"copied {name} to {relative}")
     return report
