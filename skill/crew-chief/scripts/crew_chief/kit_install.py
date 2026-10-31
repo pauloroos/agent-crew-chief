@@ -25,6 +25,42 @@ def _load_manifest(path: Path | None = None) -> dict[str, Any]:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+def _same_text(a: Path, b: Path) -> bool:
+    return a.read_bytes().replace(b"\r\n", b"\n") == b.read_bytes().replace(b"\r\n", b"\n")
+
+
+def sync_file(source: Path, destination: Path) -> None:
+    """Copy ``source`` over ``destination`` unless they differ only in CRLF.
+
+    A Windows checkout with ``core.autocrlf`` holds CRLF copies; rewriting them
+    with LF makes git list every one as modified with no diff.
+    """
+    if destination.is_file() and _same_text(source, destination):
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
+
+def sync_tree(source: Path, destination: Path, prune: bool = True) -> None:
+    """Make ``destination`` match ``source`` (without caches) via :func:`sync_file`.
+
+    ``prune=False`` keeps files ``source`` lacks, for a folder another installer shares.
+    """
+    wanted = set()
+    for item in source.rglob("*"):
+        relative = item.relative_to(source)
+        if "__pycache__" in relative.parts or item.suffix == ".pyc":
+            continue
+        wanted.add(relative)
+        if item.is_dir():
+            (destination / relative).mkdir(parents=True, exist_ok=True)
+        else:
+            sync_file(item, destination / relative)
+    for item in sorted(destination.rglob("*"), reverse=True) if prune else ():
+        if item.relative_to(destination) not in wanted:
+            shutil.rmtree(item) if item.is_dir() else item.unlink()
+
+
 
 def install_superpowers(dest_dir: Path, dry_run: bool = False,
                         manifest: dict | None = None,
@@ -82,13 +118,13 @@ def install_superpowers(dest_dir: Path, dry_run: bool = False,
     # Copy LICENSE
     license_src = src / "LICENSE"
     if license_src.is_file():
-        shutil.copy2(license_src, dest / "LICENSE")
+        sync_file(license_src, dest / "LICENSE")
         report.append(f"copied superpowers LICENSE to {dest / 'LICENSE'}")
 
     # Copy VERSION
     version_src = src / "VERSION"
     if version_src.is_file():
-        shutil.copy2(version_src, dest / "VERSION")
+        sync_file(version_src, dest / "VERSION")
         report.append(f"copied superpowers VERSION to {dest / 'VERSION'}")
 
     # Copy skills
@@ -101,9 +137,7 @@ def install_superpowers(dest_dir: Path, dry_run: bool = False,
         skill_src = skills_src / skill_name
         skill_dest = dest / skill_name
         if skill_src.is_dir():
-            if skill_dest.exists():
-                shutil.rmtree(skill_dest)
-            shutil.copytree(skill_src, skill_dest)
+            sync_tree(skill_src, skill_dest)
             report.append(f"installed superpowers skill: {skill_name}")
         else:
             report.append(f"superpowers: skill {skill_name} not found in source")
@@ -151,21 +185,19 @@ def install_ponytail(dest_dir: Path, dry_run: bool = False,
         for item in skills_src.iterdir():
             if item.is_dir():
                 skill_dest = dest / item.name
-                if skill_dest.exists():
-                    shutil.rmtree(skill_dest)
-                shutil.copytree(item, skill_dest)
+                sync_tree(item, skill_dest)
                 report.append(f"installed ponytail skill: {item.name}")
 
     # Copy LICENSE
     license_src = src / "LICENSE"
     if license_src.is_file():
-        shutil.copy2(license_src, dest / "LICENSE")
+        sync_file(license_src, dest / "LICENSE")
         report.append(f"copied ponytail LICENSE to {dest / 'LICENSE'}")
 
     # Copy VERSION
     version_src = src / "VERSION"
     if version_src.is_file():
-        shutil.copy2(version_src, dest / "VERSION")
+        sync_file(version_src, dest / "VERSION")
         report.append(f"copied ponytail VERSION to {dest / 'VERSION'}")
 
     return report

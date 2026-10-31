@@ -29,6 +29,7 @@ from crew_chief.kit_install import (
     install_kit,
     install_ponytail,
     install_superpowers,
+    sync_tree,
 )
 
 MANIFEST = SCRIPTS_DIR / "crew_chief" / "kit_manifest.json"
@@ -178,3 +179,23 @@ def test_install_machine_wide_accepts_opt_outs(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_sync_tree_keeps_crlf_copies_and_drops_stale_files(tmp_path):
+    """A CRLF checkout of the same text is left alone; real changes and removals land."""
+    source, dest = tmp_path / "src", tmp_path / "dest"
+    (source / "sub").mkdir(parents=True)
+    (source / "same.md").write_bytes(b"a\nb\n")
+    (source / "sub" / "new.md").write_bytes(b"new\n")
+    (source / "__pycache__").mkdir()
+    (source / "__pycache__" / "x.pyc").write_bytes(b"0")
+    (dest / "old").mkdir(parents=True)
+    (dest / "same.md").write_bytes(b"a\r\nb\r\n")
+    (dest / "old" / "gone.md").write_bytes(b"x")
+    sync_tree(source, dest)
+    assert (dest / "same.md").read_bytes() == b"a\r\nb\r\n"
+    assert (dest / "sub" / "new.md").read_bytes() == b"new\n"
+    assert not (dest / "old").exists() and not (dest / "__pycache__").exists()
+    (source / "same.md").write_bytes(b"changed\n")
+    sync_tree(source, dest)
+    assert (dest / "same.md").read_bytes() == b"changed\n"

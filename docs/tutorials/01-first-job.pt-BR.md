@@ -25,7 +25,7 @@ Você deve ver um repositório Git novo e um primeiro commit. Se o Git pedir seu
 Clone uma versão marcada do ACC em algum lugar fora do projeto de prática. Depois instale o ACC na cópia:
 
 ```bash
-git clone --branch v0.6.2 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
+git clone --branch v0.6.3 https://github.com/pauloroos/agent-crew-chief ~/tools/agent-crew-chief
 python -I ~/tools/agent-crew-chief/install.py .
 ```
 
