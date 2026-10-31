@@ -62,11 +62,11 @@ project where the skill is installed.
 You need [Orca](https://github.com/stablyai/orca) running and Python 3.11+.
 
 ```bash
-git clone --branch v0.7.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.7.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.7.0.zip` from the
+No git? Download `agent-crew-chief-v0.7.1.zip` from the
 [latest release](https://github.com/pauloroos/agent-crew-chief/releases/latest),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 

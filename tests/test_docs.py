@@ -27,7 +27,7 @@ def test_skill_md_names_every_subcommand_and_stays_short():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    assert __version__ == "0.7.0"
+    assert __version__ == "0.7.1"
     text = _read(CHANGELOG)
     current_section = text.split(f"## [{__version__}]", 1)[1].split("\n## [", 1)[0]
     assert current_section.strip()
