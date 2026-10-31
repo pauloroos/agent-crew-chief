@@ -3,7 +3,8 @@
 
 Usage::
 
-    python install.py <project> [--force-snippet]
+    python install.py <project> [--force-snippet] [--no-superpowers]
+        [--no-ponytail]
 
 What it does:
 
@@ -19,6 +20,13 @@ What it does:
    YAML frontmatter ``alwaysApply: true``). In ``AGENTS.md``, a file that
    starts with another tool's managed block gets the snippet right after that
    block's END line; otherwise the snippet is appended at the end.
+3. Copies the vendored skill kits into the same three roots, one folder per
+   skill: superpowers (``vendor/superpowers/skills/``: test-driven-development,
+   systematic-debugging, verification-before-completion) and Ponytail
+   (``vendor/ponytail/skills/``: ponytail, ponytail-review). Each copy is
+   marked with ``.installed-by-agent-crew-chief``; a folder without that
+   marker belongs to someone else and is left alone. ``--no-superpowers`` and
+   ``--no-ponytail`` skip a kit and leave any copy already there.
 
 It writes nothing else: scores live in ``~/.crew-chief/``, outside the project.
 A file without markers is left alone once the skill is installed in the project:
@@ -26,7 +34,8 @@ the markers were removed on purpose. ``--force-snippet`` inserts the snippet
 anyway.
 
 It prints every change and exits ``2`` with one line when ``<project>`` is not
-an existing directory. Standard library only, so ``python -I install.py`` works.
+an existing directory or a wanted kit's vendor folder is missing. Standard
+library only, so ``python -I install.py`` works.
 """
 
 from __future__ import annotations
@@ -52,6 +61,18 @@ SKILL_ROOTS = (
     Path(".agents") / "skills",
     Path(".gemini") / "skills",
 )
+
+#: Vendored skill kits: kit name -> its skills under ``vendor/<kit>/skills/``.
+VENDOR = REPO_ROOT / "vendor"
+KITS = {
+    "superpowers": (
+        "test-driven-development",
+        "systematic-debugging",
+        "verification-before-completion",
+    ),
+    "ponytail": ("ponytail", "ponytail-review"),
+}
+KIT_MARKER = ".installed-by-agent-crew-chief"
 
 CURSOR_RULE_RELATIVE = Path(".cursor") / "rules" / "agent-crew-chief.mdc"
 
@@ -82,16 +103,16 @@ def _same_text(a: Path, b: Path) -> bool:
     return a.read_bytes().replace(b"\r\n", b"\n") == b.read_bytes().replace(b"\r\n", b"\n")
 
 
-def _copy_skill(destination: Path) -> None:
-    """Make ``destination`` match the skill directory, without caches.
+def _sync_tree(source: Path, destination: Path) -> None:
+    """Make ``destination`` match ``source``, without caches; keep the kit marker.
 
     A file that differs only in CRLF is kept: a Windows checkout with
     ``core.autocrlf`` holds CRLF copies, and rewriting them with LF makes git
     list every one as modified with no diff.
     """
-    wanted = set()
-    for item in SKILL_SOURCE.rglob("*"):
-        relative = item.relative_to(SKILL_SOURCE)
+    wanted = {Path(KIT_MARKER)}
+    for item in source.rglob("*"):
+        relative = item.relative_to(source)
         if "__pycache__" in relative.parts or item.suffix == ".pyc":
             continue
         wanted.add(relative)
@@ -104,6 +125,32 @@ def _copy_skill(destination: Path) -> None:
     for item in sorted(destination.rglob("*"), reverse=True):
         if item.relative_to(destination) not in wanted:
             shutil.rmtree(item) if item.is_dir() else item.unlink()
+
+
+def _missing_kit(kits: list[str]) -> Path | None:
+    """The first vendored skill folder of a wanted kit that is missing, else None."""
+    folders = (VENDOR / k / "skills" / name for k in kits for name in KITS[k])
+    return next((folder for folder in folders if not folder.is_dir()), None)
+
+
+def _install_kits(base: Path, kits: list[str]) -> list[str]:
+    """Copy each skill of ``kits`` into every root, replacing only our copies."""
+    report: list[str] = []
+    for kit in kits:
+        for name in KITS[kit]:
+            for root in SKILL_ROOTS:
+                destination = base / root / name
+                relative = (root / name).as_posix()
+                if destination.exists() and not (destination / KIT_MARKER).is_file():
+                    report.append(
+                        f"{relative} exists and was not installed by "
+                        "agent-crew-chief, left alone"
+                    )
+                    continue
+                _sync_tree(VENDOR / kit / "skills" / name, destination)
+                (destination / KIT_MARKER).touch()
+                report.append(f"copied {name} to {relative}")
+    return report
 
 
 def _block(snippet: str) -> str:
@@ -204,16 +251,16 @@ def _install_cursor_rule(
     return f"{relative}: {action}"
 
 
-def install(project: Path, force: bool) -> list[str]:
+def install(project: Path, force: bool, kits: list[str] | None = None) -> list[str]:
     """Install or update the skill in ``project`` and return the report lines."""
     destinations = [project / root / SKILL_NAME for root in SKILL_ROOTS]
     installed = any(destination.is_dir() for destination in destinations)
 
     report: list[str] = []
     for root, destination in zip(SKILL_ROOTS, destinations):
-        _copy_skill(destination)
+        _sync_tree(SKILL_SOURCE, destination)
         report.append(f"copied skill to {(root / SKILL_NAME).as_posix()}")
-
+    report.extend(_install_kits(project, list(KITS) if kits is None else kits))
 
     block = _block(_read(SNIPPET_SOURCE).strip("\n"))
 
@@ -255,17 +302,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="re-insert the snippet even if the markers were removed",
     )
+    for kit in KITS:
+        parser.add_argument(
+            f"--no-{kit}", action="store_true", help=f"do not install the {kit} skills"
+        )
     args = parser.parse_args(argv)
 
     if not SKILL_SOURCE.is_dir():
         print(f"install.py: skill source not found at {SKILL_SOURCE}", file=sys.stderr)
+        return 2
+    kits = [kit for kit in KITS if not getattr(args, f"no_{kit}")]
+    missing = _missing_kit(kits)
+    if missing:
+        print(f"install.py: kit source not found at {missing}", file=sys.stderr)
         return 2
     project = Path(args.project).expanduser()
     if not project.is_dir():
         print(f"{project}: no such directory", file=sys.stderr)
         return 2
 
-    for line in install(project, args.force_snippet):
+    for line in install(project, args.force_snippet, kits):
         print(line)
     return 0
 

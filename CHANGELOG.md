@@ -8,6 +8,36 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.8.0] - 2026-10-31
+
+Brings back what 0.7 cut without asking: the owner had decided on 2026-10-29
+to keep spec-driven work with the interview and the skills kit. And not
+everyone runs Orca, so lanes now also run on plain git worktrees.
+
+### Added
+- **Spec stage.** A request that is not small gets an interview (at most 5
+  questions, in one message), then `specs/<NNN>-<slug>/spec.md` and
+  `tasks.md` (plus `plan.md` when needed), committed on the feature branch
+  before any lane. Lanes come from the `[P]` tasks. Showing the spec and the
+  lanes is the one stop of the run; "run directly" / "sem spec" skips it.
+- **Skills kit in both installers.** superpowers (test-driven-development,
+  systematic-debugging, verification-before-completion) and ponytail
+  (ponytail, ponytail-review), with the `.installed-by-agent-crew-chief`
+  marker; `--no-superpowers` and `--no-ponytail`. Job specs carry a fixed
+  "Working rules" block that tells workers to use them.
+- **Plain mode, without Orca.** Lanes on `git worktree add`, workers started
+  in the background with `claude -p`, `codex exec` or `opencode run`, watched
+  through commits, changed files and logs, killed as a process tree after 30
+  idle minutes.
+- **Tutorial and example project:** `docs/tutorial.md` (+ pt-BR) on
+  `examples/hello-crew`, with a "did it work?" checklist of commands and
+  expected outputs.
+
+### Changed
+- SKILL.md grows to about 180 lines (spec first, working rules, plain mode).
+- README rewritten around the 0.8 flow, the two modes, the kit and how to
+  read the scoreboard, with a "Using it" section.
+
 ## [0.7.1] - 2026-10-31
 
 ### Fixed

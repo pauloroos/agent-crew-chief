@@ -3,13 +3,20 @@
 
 Usage::
 
-    python install_machine_wide.py [--dry-run] [--home DIR]
+    python install_machine_wide.py [--dry-run] [--home DIR] [--no-superpowers]
+        [--no-ponytail]
 
 Installs to:
 * ``~/.claude/skills/crew-chief/`` (Claude Code)
 * ``~/.claude-ghost/`` link (Claude ghost routing)
 * ``~/.agents/skills/crew-chief/`` (Codex and OpenCode)
 * ``~/.gemini/skills/crew-chief/`` plus ``~/GEMINI.md`` reference (Gemini CLI)
+
+It also copies the vendored superpowers and Ponytail skills into
+``~/.claude/skills/``, ``~/.agents/skills/`` and ``~/.gemini/skills/`` with
+``install.py``'s rule: each copy carries ``.installed-by-agent-crew-chief`` and
+a folder without that marker is left alone. ``--no-superpowers`` and
+``--no-ponytail`` skip a kit.
 
 The install is idempotent: running it again updates existing copies without
 duplicating files. ``--dry-run`` reports what would be installed without
@@ -20,13 +27,15 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 from pathlib import Path
 
 #: Where this repository keeps the skill source.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SKILL_SOURCE = REPO_ROOT / "skill" / "crew-chief"
+
+sys.path.insert(0, str(REPO_ROOT))
+import install as repo_install  # noqa: E402  (the kit copy lives in the repo's install.py)
 
 #: The four CLI paths relative to HOME.
 CLI_PATHS = [
@@ -49,14 +58,6 @@ To load ACC in any repo, type: "load ACC, do X"
 
 {MARKER_END}
 """
-
-
-def _copy_skill(source: Path, destination: Path) -> None:
-    """Replace destination with a fresh copy of the skill directory."""
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
 
 
 def _write_gemini_md(home: Path) -> None:
@@ -92,8 +93,11 @@ def _create_ghost_link(home: Path) -> None:
         _winapi.CreateJunction(str(target), str(ghost))
 
 
-def install_machine_wide(home: Path, dry_run: bool = False) -> list[str]:
-    """Install the skill to all four CLI paths and return report lines."""
+def install_machine_wide(
+    home: Path, dry_run: bool = False, kits: list[str] | None = None
+) -> list[str]:
+    """Install the skill and the kits to all CLI paths and return report lines."""
+    kits = list(repo_install.KITS) if kits is None else kits
     report: list[str] = []
 
     for relative_path in CLI_PATHS:
@@ -103,10 +107,18 @@ def install_machine_wide(home: Path, dry_run: bool = False) -> list[str]:
         if dry_run:
             report.append(f"would install crew-chief to ~/{relative_path}")
         else:
-            _copy_skill(SKILL_SOURCE, destination)
+            repo_install._sync_tree(SKILL_SOURCE, destination)
             report.append(f"installed crew-chief to ~/{relative_path}")
 
-    if not dry_run:
+    if dry_run:
+        for kit in kits:
+            report.extend(
+                f"would install {name} to ~/{(root / name).as_posix()}"
+                for name in repo_install.KITS[kit]
+                for root in repo_install.SKILL_ROOTS
+            )
+    else:
+        report.extend(repo_install._install_kits(home, kits))
         _create_ghost_link(home)
         report.append("created ~/.claude-ghost link")
         _write_gemini_md(home)
@@ -131,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="home directory to install into (default: current user's home)",
     )
+    for kit in repo_install.KITS:
+        parser.add_argument(
+            f"--no-{kit}", action="store_true", help=f"do not install the {kit} skills"
+        )
     args = parser.parse_args(argv)
 
     home = Path(args.home).expanduser() if args.home else Path.home()
@@ -138,8 +154,13 @@ def main(argv: list[str] | None = None) -> int:
     if not SKILL_SOURCE.is_dir():
         print(f"install_machine_wide.py: skill source not found at {SKILL_SOURCE}", file=sys.stderr)
         return 2
+    kits = [kit for kit in repo_install.KITS if not getattr(args, f"no_{kit}")]
+    missing = repo_install._missing_kit(kits)
+    if missing:
+        print(f"install_machine_wide.py: kit source not found at {missing}", file=sys.stderr)
+        return 2
 
-    report = install_machine_wide(home, args.dry_run)
+    report = install_machine_wide(home, args.dry_run, kits)
 
     for line in report:
         print(line)

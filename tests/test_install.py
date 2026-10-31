@@ -274,6 +274,117 @@ def test_missing_project_exits_2_with_one_line(tmp_path):
     assert "nope" in result.stderr
 
 
+# --- vendored skill kits ---------------------------------------------------
+
+sys.path.insert(0, str(INSTALL.parent))
+import install  # noqa: E402
+
+ROOTS = (".claude/skills", ".agents/skills", ".gemini/skills")
+KIT_SKILLS = [(kit, name) for kit, names in install.KITS.items() for name in names]
+
+
+def test_vendor_kits_are_pinned_and_licensed():
+    for kit, name in KIT_SKILLS:
+        assert (install.VENDOR / kit / "LICENSE").is_file()
+        assert (install.VENDOR / kit / "VERSION").is_file()
+        assert (install.VENDOR / kit / "skills" / name / "SKILL.md").is_file()
+
+
+def test_install_adds_every_kit_skill_with_marker(tmp_path):
+    project = _project(tmp_path)
+
+    result = _run(project)
+
+    assert result.returncode == 0, result.stderr
+    for root in ROOTS:
+        for _, name in KIT_SKILLS:
+            destination = project / root / name
+            assert (destination / "SKILL.md").is_file()
+            assert (destination / install.KIT_MARKER).is_file()
+
+
+def test_reinstall_updates_own_kit_copy_and_keeps_marker(tmp_path):
+    project = _project(tmp_path)
+    assert _run(project).returncode == 0
+
+    skill = project / ".claude" / "skills" / "systematic-debugging"
+    (skill / "SKILL.md").write_text("stale\n", encoding="utf-8")
+    (skill / "extra.md").write_text("old\n", encoding="utf-8")
+
+    assert _run(project).returncode == 0
+
+    source = install.VENDOR / "superpowers" / "skills" / "systematic-debugging"
+    assert _read(skill / "SKILL.md") == _read(source / "SKILL.md")
+    assert not (skill / "extra.md").exists()
+    assert (skill / install.KIT_MARKER).is_file()
+
+
+def test_install_leaves_foreign_kit_copy_alone(tmp_path):
+    project = _project(tmp_path)
+    mine = project / ".claude" / "skills" / "ponytail" / "SKILL.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("mine", encoding="utf-8")
+
+    result = _run(project)
+
+    assert result.returncode == 0, result.stderr
+    assert _read(mine) == "mine"
+    assert not (mine.parent / install.KIT_MARKER).exists()
+    assert any(
+        ".claude/skills/ponytail" in line and "left alone" in line
+        for line in result.stdout.splitlines()
+    )
+    assert (project / ".agents" / "skills" / "ponytail" / "SKILL.md").is_file()
+
+
+def test_no_kit_flags_skip_and_keep_existing(tmp_path):
+    for kit in install.KITS:
+        project = tmp_path / kit
+        project.mkdir()
+
+        assert _run(project, f"--no-{kit}").returncode == 0
+        for root in ROOTS:
+            for name in install.KITS[kit]:
+                assert not (project / root / name).exists()
+            for other, name in KIT_SKILLS:
+                if other != kit:
+                    assert (project / root / name / "SKILL.md").is_file()
+
+        assert _run(project).returncode == 0
+        skill = project / ".claude" / "skills" / install.KITS[kit][0] / "SKILL.md"
+        skill.write_text("kept\n", encoding="utf-8")
+        assert _run(project, f"--no-{kit}").returncode == 0
+        assert _read(skill) == "kept\n"
+
+
+def test_missing_kit_source_exits_2_only_when_wanted(tmp_path, monkeypatch, capsys):
+    project = _project(tmp_path)
+    monkeypatch.setattr(install, "VENDOR", tmp_path / "broken-vendor")
+
+    for kit in install.KITS:
+        others = [f"--no-{other}" for other in install.KITS if other != kit]
+        assert install.main([str(project), *others]) == 2
+        stderr = capsys.readouterr().err.strip().splitlines()
+        assert len(stderr) == 1
+        assert "broken-vendor" in stderr[0]
+
+    flags = [f"--no-{kit}" for kit in install.KITS]
+    assert install.main([str(project), *flags]) == 0
+
+
+def test_one_missing_kit_skill_stops_the_install(tmp_path, monkeypatch, capsys):
+    import shutil
+
+    vendor = tmp_path / "vendor"
+    shutil.copytree(install.VENDOR, vendor)
+    kit = next(iter(install.KITS))
+    shutil.rmtree(vendor / kit / "skills" / install.KITS[kit][0])
+    monkeypatch.setattr(install, "VENDOR", vendor)
+
+    assert install.main([str(_project(tmp_path))]) == 2
+    assert install.KITS[kit][0] in capsys.readouterr().err
+
+
 # --- snippet ---------------------------------------------------------------
 
 

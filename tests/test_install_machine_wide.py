@@ -76,3 +76,59 @@ def test_installs_to_all_four_cli_paths(tmp_path):
     # Idempotent second run
     result2 = _run("--home", str(home))
     assert result2.returncode == 0, result2.stderr
+
+# --- vendored skill kits ---------------------------------------------------
+
+import install_machine_wide  # noqa: E402
+
+KITS = install_machine_wide.repo_install.KITS
+MARKER = install_machine_wide.repo_install.KIT_MARKER
+ROOTS = (".claude/skills", ".agents/skills", ".gemini/skills")
+
+
+def test_installs_kits_with_marker_and_leaves_foreign_copy(tmp_path):
+    home = tmp_path / "home"
+    foreign = home / ".agents" / "skills" / "test-driven-development" / "SKILL.md"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_text("mine", encoding="utf-8")
+
+    result = _run("--home", str(home))
+
+    assert result.returncode == 0, result.stderr
+    for root in ROOTS:
+        for names in KITS.values():
+            for name in names:
+                destination = home / root / name
+                if destination == foreign.parent:
+                    continue
+                assert (destination / "SKILL.md").is_file()
+                assert (destination / MARKER).is_file()
+    assert _read(foreign) == "mine"
+    assert not (foreign.parent / MARKER).exists()
+    assert "left alone" in result.stdout
+
+
+def test_no_kit_flags_skip_each_kit(tmp_path):
+    for kit, names in KITS.items():
+        home = tmp_path / kit
+
+        assert _run("--home", str(home), f"--no-{kit}").returncode == 0
+
+        for root in ROOTS:
+            for name in names:
+                assert not (home / root / name).exists()
+
+
+def test_missing_kit_source_exits_2_only_when_wanted(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        install_machine_wide.repo_install, "VENDOR", tmp_path / "broken-vendor"
+    )
+    home = str(tmp_path / "home")
+
+    assert install_machine_wide.main(["--home", home, "--dry-run"]) == 2
+    stderr = capsys.readouterr().err.strip().splitlines()
+    assert len(stderr) == 1
+    assert "broken-vendor" in stderr[0]
+
+    flags = [f"--no-{kit}" for kit in KITS]
+    assert install_machine_wide.main(["--home", home, "--dry-run", *flags]) == 0
