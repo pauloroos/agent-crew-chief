@@ -123,14 +123,15 @@ opencode run --standalone --auto -m <model> "<prompt>"
 setsid nohup <cmd> > <log> 2>&1 & echo $! > <lane>.pid
 kill -- -<pid>
 # Windows (PowerShell): start, then kill the whole tree
-$p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <worktree> -PassThru -RedirectStandardOutput <log> -RedirectStandardError <log>.err; Set-Content <lane>.pid $p.Id -Encoding ascii
+$p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <worktree> -PassThru -WindowStyle Hidden -RedirectStandardOutput <log> -RedirectStandardError <log>.err; Set-Content <lane>.pid $p.Id -Encoding ascii
 taskkill /PID <pid> /T /F
 ```
 
 Monitor, each wait under 2 minutes: process alive, new commits
 (`git -C <worktree> log --oneline acc/<slug>..`), changed files (`git -C
-<worktree> status --porcelain`, newest mtime) and log growth (`claude -p`
-prints only at the end). Process gone means the job ended: review it (step 5);
+<worktree> status --porcelain`, newest mtime) and log growth (`<log>` and
+`<log>.err`, where opencode writes its progress; `claude -p` prints only at
+the end). Process gone means the job ended: review it (step 5);
 the exit code does not decide the outcome, the commits and the check do.
 30 minutes with no commit, file change or log growth: kill the tree; it is a
 failed attempt. A plain worker cannot ask you anything: keep specs self-contained.
