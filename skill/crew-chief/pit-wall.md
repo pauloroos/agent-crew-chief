@@ -68,19 +68,25 @@ check is not yet accepted.
 ### How
 
 1. Pick two scrutineers: `ACC pick --kind review --exclude <driver>`, then
-   `--exclude <first-scrutineer>` too. Prefer a different model family
+   `--exclude <first-scrutineer>` too, in the `agent:model` form (e.g.
+   `--exclude opencode:provider/model-a`). Prefer a different model family
    (`models.toml` notes say which). They run in parallel in the lane worktree,
    read-only.
-2. Each scrutineer reads the diff range `<start>..HEAD`, the job spec path and
-   writes findings using the prompt in `templates/scrutineer.md`.
-   - Plain mode: output to `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>.md`.
-   - Orca mode: findings come back in the `worker_done` message.
-3. Merge findings, drop duplicates and any you cannot confirm.
+2. Fill `templates/scrutineer.md` with the diff range `<start>..HEAD`, the job
+   spec path and the output file, and save it per scrutineer.
+   - Plain mode: prompt file `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>-prompt.md`,
+     started like a driver with "Do the review in <its absolute path>";
+     output `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>.md`.
+   - Orca mode: the filled prompt is the `worker-start` spec; findings come
+     back in the `worker_done` message.
+3. Merge findings, drop duplicates and any you cannot confirm. Then do your
+   own pass over the risky path: a "pass" with no findings is not proof.
 4. Confirmed findings go back to the **same driver model** in a fresh session
    (a **pit stop**). It fixes on top of its work: no reset here. At most 2 pit
    stops, then pass or Relay.
-5. Score each scrutineer as `--kind review`: confirmed findings count for it,
-   false alarms against it.
+5. Score each scrutineer as `--kind review`: confirmed findings count for it;
+   false alarms and real problems it missed (found by you, the other
+   scrutineer or the crew chief) count against it.
 
 Fewer than two eligible scrutineers (by pace, `models.toml` or missing CLIs):
 use the one available plus your own review, and say so in the lane report.
