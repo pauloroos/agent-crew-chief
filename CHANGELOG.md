@@ -20,8 +20,10 @@ which keeps their full history, releases and changelog.
   terminal. Without tmux, behaviour falls back to background process with
   log and PID, unchanged from 0.11.x.
 - **`crew_chief.terminals` module.** `terminal_name(slug, lane, role, attempt)`
-  builds the standard name; `tmux_session_commands(...)` returns the start,
-  kill and log paths for a tmux session. Both covered by unit tests.
+  builds the standard name. `log_file(logs_dir, name)` returns the same log
+  path used in Plain mode, and `tmux_new_session`, `tmux_pipe_pane`,
+  `tmux_session_pid`, `tmux_attach` and `tmux_kill_session` build the tmux
+  commands. All unit tested without a real tmux.
 
 ### Changed
 - **SKILL.md step 3** now requires starting the race engineer as an Orca
