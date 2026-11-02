@@ -17,13 +17,14 @@ self-contained and names:
 - **Working rules** - the block from SKILL.md, word for word.
 - **Finish** - commit the work on the current branch with a clear message; do
   not push, merge or open a pull request; never run `git config`; send
-  `worker_done` (plain: exit). When commits need a set author, start the
+  `worker_done` (without Orca: exit). When commits need a set author, start the
   driver with `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and
   `GIT_COMMITTER_EMAIL` in its environment: some CLIs refuse `git -c ...`.
 - When the job changes the CLI and docs are another lane's job, say in the
   spec which docs tests may fail until the lanes merge.
 
-When the driver is done (Orca: `worker_done`; plain: its process ended):
+When the driver is done (Orca: `worker_done`; without Orca: its background
+process ended):
 
 1. Read its commits (`git -C <worktree> log -p <start>..HEAD`) and run the
    job's check yourself. Do not trust the driver's summary; the exit code
@@ -79,9 +80,9 @@ check is not yet accepted.
    it and pick again. They run in parallel in the lane worktree, read-only.
 2. Fill `templates/scrutineer.md` with the diff range `<start>..HEAD`, the job
    spec path and the output file, and save it per scrutineer.
-   - Plain mode: prompt file `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>-prompt.md`,
-     started like a driver with "Do the review in <its absolute path>";
-     output `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>.md`.
+   - Without Orca: prompt file `../<repo>-acc-logs/<name>-prompt.md`, started
+     like a driver, as a background process, with "Do the review in <its
+     absolute path>"; output `../<repo>-acc-logs/<name>.md`.
    - Orca mode: the filled prompt is the `worker-start` spec; findings come
      back in the `worker_done` message.
 3. Merge findings, drop duplicates and any you cannot confirm. Then do your
@@ -100,7 +101,8 @@ use the one available plus your own review, and say so in the lane report.
 ## Edge cases
 
 - **Names.** `<job>` in file names is a short slug of the job title. A pit
-  stop's spec is `<lane>-<job>-pitstop-<n>.md`.
+  stop's spec is `<name>-pitstop-<n>.md`, where `<name>` is the standard name
+  of the job it fixes.
 - **Partly done, tests green.** If the work is usable but the spec is not
   fully met, the job goes to Scrutineering (when it applies) and a pit stop
   for what is missing. Relay with Fresh tyres is for work that is wrong or
@@ -123,29 +125,54 @@ use the one available plus your own review, and say so in the lane report.
 ## Starting and watching drivers
 
 A driver runs in the lane worktree on the lane branch. Its prompt is the job
-spec.
+spec. Lane worktrees are created as children of the crew chief worktree
+(`orca worktree create ... --parent-worktree <crew chief worktree selector>`,
+e.g. `active`, `branch:<crew chief branch>` or `path:<path>`), so Orca shows
+them under the run. Every engineer, driver and scrutineer is named with the standard name,
+`acc-<slug>-<lane>-<job>-<role>` for the first attempt and
+`acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th, where `<slug>` comes from
+the feature branch `acc/<slug>`, `<job>` is a short slug of the job title, and
+`<role>` is `engineer`, `driver` or `scrutineer`: the Orca tab title and the
+log file name are the same. Scrutineers running in parallel use `-1` and `-2`
+(or higher attempt numbers) to stay unique.
 
 ### Orca mode
 
+The race engineer always starts as an Orca worker in the existing lane
+worktree, never as the crew chief's subagent. The worktree already exists, so
+do not pass `--name` to `worker-start`; rename the terminal to the standard
+title afterwards. The rename `<handle>` comes from the `worker-start`
+receipt, `worker-show`, or `orca terminal list --worktree <lane worktree>
+--json`.
+
 ```text
-orca orchestration worker-start --spec "<job spec>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --json
+orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --json
+orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-<job>-engineer --json
+orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<job>-<role> --command "<driver command>" --json
 orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 100000 --json
 ```
 
-Keep each wait under 2 minutes: CLIs kill longer commands. An empty result only
-means wait again. Answer questions, handle every `worker_done`, ack it
-(`check --ack <delivery>`), then release the worker. A driver can miss its spec
-on a cold start: after 5 minutes with no commit, look at `orca orchestration
-worker-read --dispatch <id> --source auto --json`. An empty prompt means it
-never started: `worker-stop` it and start the job again, recording nothing.
+Use `worker-start` when Orca knows the agent (`--agent <id>`); use
+`orca agent launch --surface terminal` for a lone terminal, or
+`orca terminal create` with the driver's command line when it does not.
+Rename fails for workers without a terminal: fall back to
+`orca terminal create --title <standard name>` or note it in the lane report,
+and rely on `worker-read`. When the Chat UI does not expose a terminal handle,
+skip the rename and rely on `worker-read`. Keep each wait under 2 minutes: CLIs
+kill longer commands. An empty result only means wait again. Answer questions,
+handle every `worker_done`, ack it (`check --ack <delivery>`), then release the
+worker. A driver can miss its spec on a cold start: after 5 minutes with no
+commit, look at `orca orchestration worker-read --dispatch <id> --source auto
+--json`. An empty prompt means it never started: `worker-stop` it and start the
+job again, recording nothing.
 
-### Plain mode
+### Background mode
 
-Write the job spec to `../<repo>-acc-logs/<lane>-<job>.md` and start the
-driver in the background from inside the lane worktree with the prompt "Do the
-job in <its absolute path>" (a spec on the command line breaks on Windows).
-Log `../<repo>-acc-logs/<lane>-<job>.log`, PID in
-`../<repo>-acc-logs/<lane>-<job>.pid`, never inside the worktree:
+Without Orca, write the job spec to `../<repo>-acc-logs/<name>.md` and start
+the driver in the background from inside the lane worktree with the prompt "Do
+the job in <its absolute path>" (a spec on the command line breaks on Windows).
+Log `../<repo>-acc-logs/<name>.log`, PID in `../<repo>-acc-logs/<name>.pid`,
+never inside the worktree:
 
 ```text
 claude -p "<prompt>" --model <model> --dangerously-skip-permissions   # refused as root
@@ -159,13 +186,15 @@ $p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <worktree> -Pa
 taskkill /PID <pid> /T /F
 ```
 
-Monitor, each wait under 2 minutes (a harness that blocks long sleeps
-takes a background wait that ends when the driver's process exits): process alive, new commits (`git -C
-<worktree> log --oneline <start>..`), changed files (`git -C <worktree> status
---porcelain`, newest mtime) and log growth (`<log>` and `<log>.err`, where
-opencode writes its progress; `claude -p` prints only at the end). Process
+**Monitor.** Each wait stays under 2 minutes (a harness that blocks long sleeps
+takes a background wait that ends when the driver exits). The progress signals
+work in both modes: Orca `orca orchestration worker-read --dispatch <id>
+--source auto --json`; background growth of the log and its `.err`, where
+opencode writes its progress (`claude -p` prints only at the end). In every
+mode also watch new commits (`git -C <worktree> log --oneline <start>..`) and
+changed files (`git -C <worktree> status --porcelain`, newest mtime). Process
 gone means the job ended: review it (Stint). 30 minutes with no commit, file
-change or log growth: kill the tree; it is a failed attempt. A plain driver
+change or log growth: kill it; it is a failed attempt. A background driver
 cannot ask you anything: keep specs self-contained.
 
 ## Risk

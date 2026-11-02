@@ -139,15 +139,16 @@ merge das trilhas em acc/<slug> → testes → push → pull request (você faz 
 
 O chefe de equipe escolhe no começo de cada execução:
 
-| | Modo Orca | Modo simples |
+| | Modo Orca | Modo segundo plano |
 | --- | --- | --- |
 | Quando | `orca status --json` mostra um Orca rodando | nos outros casos, ou quando você pede |
 | Onde você roda o chefe de equipe | num terminal do Orca no projeto | qualquer terminal, VS Code, qualquer CLI |
-| Trilhas | worktrees do Orca | `git worktree add ../<repo>-acc-<trilha>` |
-| Pilotos | `orca orchestration worker-start` | `claude -p`, `codex exec` ou `opencode run` em segundo plano |
+| Trilhas | worktrees do Orca, cada uma filha da worktree do chefe de equipe (`orca worktree create ... --parent-worktree <worktree do chefe de equipe>`) | `git worktree add ../<repo>-acc-<trilha>` |
+| Engenheiros | worker do Orca na worktree da trilha | processo em segundo plano com log e PID |
+| Pilotos | `orca orchestration worker-start` ou `orca terminal create` | `claude -p`, `codex exec` ou `opencode run` em segundo plano |
 | Acompanhamento | painel do Orca, `check --wait`, perguntas dos pilotos | processo vivo, commits novos, arquivos alterados, `../<repo>-acc-logs/*.log` |
 
-No modo simples não há canal de perguntas: um piloto que precisa de uma
+No modo segundo plano não há canal de perguntas: um piloto que precisa de uma
 resposta para ou chuta, então a spec tem que se bastar. Um job com 30 minutos
 sem commit, sem arquivo alterado e sem log crescendo é encerrado e conta como
 tentativa reprovada.
@@ -156,18 +157,16 @@ tentativa reprovada.
 
 Como você acompanha o progresso e onde os artefatos ficam depende do modo:
 
-- **Com um engenheiro de corrida subagente** (ex.: Claude Code): os relatórios
-  das trilhas chegam no chat. No modo Orca, use o painel do Orca e
-  `worker-read`.
-- **Modo simples:** a pasta `../<repo>-acc-logs/` ao lado do repo guarda os
-  artefatos de cada trilha. Arquivos por job: `<trilha>-engineer.md` (o brief
-  do engenheiro) e `<trilha>-engineer.log` quando o engenheiro é uma sessão
-  CLI; `<trilha>-<job>.md` (spec do job), `.log` e `.log.err` (o opencode
-  escreve o progresso em `.err`; o `claude -p` só imprime no final), `.pid`;
-  `<trilha>-<job>-scrutineer-<n>-prompt.md` e
-  `<trilha>-<job>-scrutineer-<n>.md` (achados, última linha `VERDICT:`); specs
-  de pit stop seguem o mesmo padrão. A pasta é apagada na entrega, quando nada
-  mais roda.
+- **Modo Orca:** o engenheiro de corrida é um worker do Orca na worktree da
+  trilha. Os relatórios das trilhas chegam no chat; use o painel do Orca e
+  `worker-read`. Liste os terminais com `orca terminal list --json`.
+- **Modo segundo plano:** a pasta `../<repo>-acc-logs/` ao lado do repo guarda
+  os artefatos de cada trilha. Arquivos por agente: `<nome>.md` (brief ou spec
+  do job), `<nome>.log` e `<nome>.log.err` (o opencode escreve o progresso em
+  `.err`; o `claude -p` só imprime no final), `<nome>.pid`, onde `<nome>` é o
+  nome padrão `acc-<slug>-<trilha>-<job>-<papel>[-<n>]`. Prompts e achados dos
+  fiscais seguem o mesmo padrão. A pasta é apagada na entrega, quando nada mais
+  roda.
 - **Progresso no git:** `git -C ../<repo>-acc-<trilha> log --oneline acc/<slug>..`.
 - **Notas:** `~/.crew-chief/ledger.jsonl`; leia com `ACC score` (modelos
   listados não testados viram `not tried yet (N): ...`), um tipo com
@@ -291,7 +290,7 @@ Fale com o seu agente; comece com "ACC". Exemplos de pedido:
 Conduzindo uma execução:
 
 - **Pular a spec:** diga "sem spec" (ou "run directly").
-- **Forçar o modo simples:** diga "sem Orca" (ou "modo simples").
+- **Forçar o modo segundo plano:** diga "sem Orca" (ou "modo segundo plano").
 - **Limitar custo:** diga "só modelos grátis" ou "nada acima de included"; o
   chefe de equipe passa `--max-cost free|included|cheap|paid` para o `ACC pick`.
 
@@ -317,12 +316,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.11.1.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.1),
+Sem git? Baixe `agent-crew-chief-v0.12.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -347,7 +346,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.11.1
+git -C agent-crew-chief checkout v0.12.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

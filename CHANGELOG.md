@@ -8,6 +8,38 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.12.0] - 2026-11-02
+
+### Added
+- **Visible terminals for every crew member.** In Orca mode, race engineers,
+  drivers and scrutineers start as Orca workers or terminals with a standard
+  title (`acc-<slug>-<lane>-<job>-<role>[-<n>]`), so every agent is reachable
+  from the Orca UI or CLI. Without Orca, behaviour falls back to background
+  process with log and PID, unchanged from 0.11.x.
+- **`crew_chief.terminals` module.** `terminal_name(slug, lane, job, role,
+  attempt)` builds the standard name including the job slug for uniqueness
+  across parallel jobs and scrutineers. `log_file(logs_dir, name)` returns
+  the standard log path used in background mode (Orca-mode workers produce
+  no `.log` files).
+- **Lane worktrees are children of the crew chief worktree.** `orca worktree
+  create` passes `--parent-worktree <crew chief worktree selector>`, so Orca
+  shows every lane under the run.
+
+### Changed
+- **SKILL.md step 3** now requires starting the race engineer as an Orca
+  worker (`orca orchestration worker-start`) in the existing lane worktree,
+  never as a subagent of the crew chief, regardless of harness. The worktree
+  already exists, so `--name` is not passed; the standard title is applied
+  with `orca terminal rename` afterwards (skipped when the Chat UI does not
+  expose a terminal handle). Drivers and scrutineers follow the same rule:
+  supervised worker when Orca knows the agent, otherwise `orca terminal
+  create` with the standard title.
+- **pit-wall.md "Starting and watching drivers"** documents two modes (Orca
+  worker/terminal and background) with real commands and the standard naming
+  convention.
+- **templates/race-engineer.md** points engineers at the new pit-wall
+  section and the `terminals` helper for consistent naming.
+
 ## [0.11.1] - 2026-11-01
 
 ### Changed

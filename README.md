@@ -135,15 +135,16 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
 
 The crew chief chooses at the start of every run:
 
-| | Orca mode | Plain mode |
+| | Orca mode | Background mode |
 | --- | --- | --- |
 | When | `orca status --json` shows a running Orca | otherwise, or when you ask for it |
 | Where you run the crew chief | an Orca terminal of the project | any terminal, VS Code, any CLI |
-| Lanes | Orca worktrees | `git worktree add ../<repo>-acc-<lane>` |
-| Drivers | `orca orchestration worker-start` | `claude -p`, `codex exec` or `opencode run` in the background |
+| Lanes | Orca worktrees, each a child of the crew chief worktree (`orca worktree create ... --parent-worktree <crew chief worktree selector>`) | `git worktree add ../<repo>-acc-<lane>` |
+| Engineers | Orca worker in the lane worktree | background process with log and PID |
+| Drivers | `orca orchestration worker-start` or `orca terminal create` | `claude -p`, `codex exec` or `opencode run` in the background |
 | Watching | Orca panel, `check --wait`, driver questions | process alive, new commits, changed files, `../<repo>-acc-logs/*.log` |
 
-Plain mode has no question channel: a driver that needs an answer stops or
+Background mode has no question channel: a driver that needs an answer stops or
 guesses, so specs must be self-contained. A job with 30 minutes of no commit,
 no file change and no log growth is killed and counts as a failed attempt.
 
@@ -151,17 +152,16 @@ no file change and no log growth is killed and counts as a failed attempt.
 
 How you watch progress and where the artifacts land depends on the mode:
 
-- **With a subagent race engineer** (e.g. Claude Code): lane reports arrive in
-  the chat. In Orca mode, use the Orca panel and `worker-read`.
-- **Plain mode:** the folder `../<repo>-acc-logs/` next to the repo holds the
-  artifacts for each lane. Files per job: `<lane>-engineer.md` (the engineer's
-  brief) and `<lane>-engineer.log` when the engineer is a CLI session;
-  `<lane>-<job>.md` (job spec), `.log` and `.log.err` (opencode writes its
-  progress to `.err`; `claude -p` prints only at the end), `.pid`;
-  `<lane>-<job>-scrutineer-<n>-prompt.md` and
-  `<lane>-<job>-scrutineer-<n>.md` (findings, last line `VERDICT:`); pit-stop
-  specs follow the same pattern. The folder is deleted at delivery, once
-  nothing runs.
+- **Orca mode:** the race engineer is an Orca worker in the lane worktree. Lane
+  reports arrive in the chat; use the Orca panel and `worker-read`. List
+  terminals with `orca terminal list --json`.
+- **Background mode:** the folder `../<repo>-acc-logs/` next to the repo holds
+  the artifacts for each lane. Files per agent: `<name>.md` (brief or job
+  spec), `<name>.log` and `<name>.log.err` (opencode writes its progress to
+  `.err`; `claude -p` prints only at the end), `<name>.pid`, where `<name>`
+  is the standard name `acc-<slug>-<lane>-<job>-<role>[-<n>]`. Scrutineer
+  prompts and findings follow the same pattern. The folder is deleted at
+  delivery, once nothing runs.
 - **Progress in git:** `git -C ../<repo>-acc-<lane> log --oneline acc/<slug>..`.
 - **Grades:** `~/.crew-chief/ledger.jsonl`; read them with `ACC score`
   (untried listed models collapse into `not tried yet (N): ...`), one kind
@@ -283,7 +283,7 @@ Talk to your agent; start with "ACC". Example prompts:
 Steering a run:
 
 - **Skip the spec:** say "run directly" (or "sem spec").
-- **Force plain mode:** say "without Orca" (or "plain mode").
+- **Force background mode:** say "without Orca" (or "background mode").
 - **Limit cost:** say "free models only" or "nothing above included"; the
   crew chief passes `--max-cost free|included|cheap|paid` to `ACC pick`.
 
@@ -309,12 +309,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.11.1.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.1),
+No git? Download `agent-crew-chief-v0.12.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -339,7 +339,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.11.1
+git -C agent-crew-chief checkout v0.12.0
 python agent-crew-chief/install.py /path/to/project
 ```
 

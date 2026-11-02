@@ -2,7 +2,7 @@
 
 [English](tutorial.md) · **Português**
 
-Este passo a passo roda o ACC v0.11.1 de ponta a ponta no `examples/hello-crew`,
+Este passo a passo roda o ACC v0.12.0 de ponta a ponta no `examples/hello-crew`,
 um projeto Python minúsculo que vem com o ACC. Ele tem dois módulos
 independentes, cada um com o seu teste:
 
@@ -34,7 +34,7 @@ Copie o exemplo para **fora** do checkout do ACC. Dentro dele, as trilhas e as
 branches `acc/*` cairiam no próprio repositório do ACC.
 
 ```bash
-git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -43,7 +43,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -61,14 +61,14 @@ ter as skills também.
 
 ```bash
 python ~/acc/install.py .
-git add . && git commit -m "Install ACC 0.11.1"
+git add . && git commit -m "Install ACC 0.12.0"
 alias ACC='python -I .agents/skills/crew-chief/scripts/crew-chief.py'
 ACC score --kind code
 ```
 
 ```powershell
 python $HOME\acc\install.py .
-git add .; git commit -m "Install ACC 0.11.1"
+git add .; git commit -m "Install ACC 0.12.0"
 function ACC { python -I .agents/skills/crew-chief/scripts/crew-chief.py @args }
 ACC score --kind code
 ```
@@ -92,15 +92,16 @@ servem.
 
 O **chefe de equipe** é o seu CLI coordenador. Ele escreve a spec, planeja as
 trilhas, escolhe os modelos, faz a parada de aprovação, despacha um
-**engenheiro de corrida** por trilha (seu próprio subagente ou uma sessão CLI
-em background), confere os relatórios deles, dá nota, faz o merge e entrega.
-Engenheiros rodam **pilotos** (workers) e **fiscais**; o chefe de equipe nunca
-roda pilotos ele mesmo, exceto num pedido pequeno sem spec.
+**engenheiro de corrida** por trilha (um worker do Orca no modo Orca, ou uma
+sessão CLI em segundo plano caso contrário), confere os relatórios deles, dá
+nota, faz o merge e entrega. Engenheiros rodam **pilotos** (workers) e
+**fiscais**; o chefe de equipe nunca roda pilotos ele mesmo, exceto num pedido
+pequeno sem spec.
 
 - **Modo Orca:** adicione `~/scratch/hello-crew` ao Orca e abra um terminal do
   projeto no Orca. Ali, `orca status --json` deve mostrar o Orca rodando.
-- **Modo simples:** qualquer terminal (ou o VS Code), em `~/scratch/hello-crew`.
-  Se o Orca estiver rodando e você quiser o modo simples mesmo assim, ponha
+- **Modo em segundo plano:** qualquer terminal (ou o VS Code), em `~/scratch/hello-crew`.
+  Se o Orca estiver rodando e você quiser o modo em segundo plano mesmo assim, ponha
   "Sem Orca." no pedido.
 
 Abra o seu CLI ali: `claude`, `codex` ou `opencode`.
@@ -175,19 +176,23 @@ Responda `aprovado`. Daqui em diante o chefe de equipe não para até o relatór
 
 O chefe de equipe despacha um engenheiro de corrida por trilha. Cada engenheiro
 inicia pilotos no worktree da trilha e coordena Stint / Relay / Pneus novos /
-Vistoria naquela trilha.
+Vistoria naquela trilha. Todo agente roda num terminal visível com o nome
+padrão `acc-<slug>-<trilha>-<papel>` (ou `-<n>` nas repetições).
 
-**Modo Orca:** o painel do Orca mostra workers, um por worktree de trilha. De
-outro terminal:
+**Modo Orca:** cada worktree de trilha é criada como filha da worktree do
+chefe de equipe (`orca worktree create ... --parent-worktree <worktree do
+chefe de equipe>`), para o Orca mostrá-la dentro da execução. Cada agente tem
+uma aba do Orca na worktree da trilha. Liste:
 
 ```text
-orca worktree ps
+orca terminal list --json
 ```
 
-Os relatórios das trilhas voltam no chat à medida que os engenheiros terminam.
+Os relatórios das trilhas também chegam no chat conforme os engenheiros terminam.
 
-**Modo simples:** worktrees e logs ficam ao lado do projeto, nunca dentro.
-Os nomes das trilhas são escolha do chefe de equipe; aqui são `greet` e `cli`.
+**Modo em segundo plano** (sem Orca): worktrees e logs ficam ao lado do projeto,
+nunca dentro. Os nomes das trilhas são escolha do chefe de equipe; aqui são
+`greet` e `cli`.
 
 ```bash
 ls ../hello-crew-acc-logs
@@ -203,12 +208,13 @@ git -C ..\hello-crew-acc-greet log --oneline -3
 git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
-O `ls` mostra, por trilha: o brief do engenheiro (`<trilha>-engineer.md`), uma
-spec de job (`<trilha>-<job>.md`), `.log`, `.log.err` e `.pid`. Para jobs de risco alto, e para todo job exceto baixo risco no ritmo `push`,
-você também verá prompts e achados dos fiscais
-(`<trilha>-<job>-scrutineer-<n>-prompt.md`, `<trilha>-<job>-scrutineer-<n>.md`).
-O `claude -p` só escreve o log no fim, então log vazio é normal enquanto ele
-trabalha; commits novos e arquivos alterados é que mostram o progresso.
+O `ls` mostra, por agente: o brief ou spec do job (`<nome>.md`), `.log`,
+`.log.err` e `.pid`, onde `<nome>` é o nome padrão
+`acc-<slug>-<trilha>-<job>-<papel>[-<n>]`. Para jobs de risco alto, e para todo
+job exceto baixo risco no ritmo `push`, você também verá prompts e achados dos
+fiscais. O `claude -p` só escreve o log no fim, então log vazio é normal
+enquanto ele trabalha; commits novos e arquivos alterados é que mostram o
+progresso em todos os modos.
 
 ## 7. Revisão e notas
 
@@ -361,18 +367,20 @@ O que acontece:
    Novo resultado: 27 testes, nota 92.
 5. Os dois fiscais perdem pontos pela falha (`ACC record --kind review`).
 
-Arquivos deixados em `../hello-crew-acc-logs/` para este job (modo simples):
+Arquivos deixados em `../hello-crew-acc-logs/` para este job (modo em segundo plano):
 
 ```text
-<trilha>-<job>.md                    # spec do job
-<trilha>-<job>.log                   # stdout do piloto
-<trilha>-<job>.log.err               # stderr do piloto
-<trilha>-<job>.pid                   # PID do piloto
-<trilha>-<job>-scrutineer-1-prompt.md
-<trilha>-<job>-scrutineer-1.md
-<trilha>-<job>-scrutineer-2-prompt.md
-<trilha>-<job>-scrutineer-2.md
+<nome>.md                            # spec do job
+<nome>.log                           # stdout do piloto
+<nome>.log.err                       # stderr do piloto
+<nome>.pid                           # PID do piloto
+<nome>-prompt.md                     # prompt do fiscal (um por fiscal)
+<nome>.md                            # achados do fiscal (um por fiscal)
 ```
+
+onde `<nome>` é o nome padrão `acc-<slug>-<trilha>-<job>-<papel>[-<n>]`;
+o `<nome>` de cada fiscal já termina em `-scrutineer-1`, `-scrutineer-2`,
+então nenhum sufixo de papel é acrescentado.
 
 Duas regras relacionadas do método Pit Wall:
 

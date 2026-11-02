@@ -18,10 +18,11 @@ tyres, Relay, Scrutineering, risk and pace.
 `ACC` = `python -I .agents/skills/crew-chief/scripts/crew-chief.py` (or
 `.claude/skills/...`). Any CLI can coordinate (Claude Code, Codex, OpenCode).
 
-- **Orca mode** when `orca status --json` shows a running Orca. Run in an Orca
-  terminal; load `orca skills get orchestration` once before the first command.
-- **Plain mode** otherwise, or when asked: steps 3 and 4 become "Without Orca";
-  everything else stays the same.
+Every child of the crew is visible in a terminal, in one of two modes:
+**Orca mode** when `orca status --json` shows a running Orca (an Orca terminal
+each in the lane worktree; load `orca skills get orchestration` once), and
+**background mode** without Orca (e.g. Windows without WSL: a process with log
+and PID).
 
 Do not ask permission between steps except the spec approval in step 0. Ask
 only when the request is unclear; report at the end.
@@ -84,34 +85,50 @@ the first scrutineer.
 
 ## 3. Dispatch a race engineer per lane
 
-Create each lane's worktree first. Orca mode:
+Create each lane's worktree first as a child of the crew chief worktree, so Orca shows it under the run. Orca mode:
 
 ```text
 orca orchestration run-create --objective "<the request>" --json
-orca worktree create --name <slug>-<lane> --base-branch acc/<slug> --branch acc/<slug>-<lane> --setup skip --json
+orca worktree create --name <slug>-<lane> --base-branch acc/<slug> --branch acc/<slug>-<lane> --setup skip --parent-worktree <crew chief worktree selector> --json
 ```
 
-For every lane, fill `templates/race-engineer.md` with the lane name, branch,
-worktree, jobs (title, kind, risk, check, task ids), pace, spec folder and the
-`ACC` command path. Start the engineer with your own subagent mechanism (e.g.
-Claude Code's Agent tool), else as an Orca worker (`worker-start` with the
-brief, in the lane worktree) or a background CLI session (plain mode, below).
-Engineers run in parallel, one per lane; start them all before waiting.
+For every lane, fill `templates/race-engineer.md` with the lane, branch,
+worktree, jobs, pace, spec folder and `ACC` path. In Orca mode the engineer
+always starts as an Orca worker in the lane worktree, never as your own
+subagent in any harness; drivers and scrutineers get Orca terminals there too:
+
+```text
+orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> --json
+orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-<job>-engineer --json
+orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<job>-<role> --command "<driver command>" --json
+```
+
+The rename `<handle>` comes from the `worker-start` receipt, `worker-show`,
+or `orca terminal list --worktree <lane worktree> --json`. Use `worker-start`
+when Orca knows the agent, then rename the terminal to the standard title;
+`orca agent launch` for a lone terminal always passes `--surface terminal`.
+Rename fails for workers without a terminal: fall back to
+`orca terminal create --title <standard name>` or note it in the lane report.
+Names: `acc-<slug>-<lane>-<job>-<role>`, plus `-<n>` for the n-th attempt;
+engineers run in parallel; without Orca, steps 3 and 4 become the
+"Without Orca (background mode)" section below.
 
 ## 4. Monitor
 
-Wait on engineer reports. In Orca mode, use `check --wait` under 2 minutes per
-call; in plain mode, watch process, commits and log growth. Answer questions,
-handle escalations, and wait again until every lane reports back.
+Wait on engineer reports. In Orca mode, `check --wait` under 2 minutes per call;
+in background mode, process, commits and log growth. Answer questions, handle
+escalations, wait again.
 
-## Without Orca (plain mode)
+## Without Orca (background mode)
 
 Replaces steps 3–4. Per lane: `git worktree add ../<repo>-acc-<lane> -b
-acc/<slug>-<lane> acc/<slug>`. Start the engineer in background from inside
-the worktree with prompt "Do the job in <abs path to filled brief>", log to
-`../<repo>-acc-logs/<lane>-engineer.log`, PID in
-`../<repo>-acc-logs/<lane>.pid`. Driver start commands live in `pit-wall.md`.
-Kill a stuck tree: Linux/macOS `kill -- -<pid>`; Windows PS `taskkill /PID <pid> /T /F`.
+acc/<slug>-<lane> acc/<slug>`. Name each child
+`acc-<slug>-<lane>-<job>-<role>`, or `...-<role>-<n>` for the n-th. Write the
+job spec to `../<repo>-acc-logs/<name>.md` and start the driver in the
+background from inside the lane worktree with the prompt "Do the job in <its
+absolute path>". Log `../<repo>-acc-logs/<name>.log`, PID in
+`../<repo>-acc-logs/<name>.pid`, never inside the worktree; kill with
+Linux/macOS `kill -- -<pid>` or Windows PS `taskkill /PID <pid> /T /F`.
 
 ## Working rules (for drivers)
 
@@ -124,10 +141,9 @@ Every driver spec carries this block so workers use the kit:
 
 ## 5. Check lane reports and grade engineers
 
-Race engineers are by default the crew chief's own subagents. Record their
-`coordinate` grades under the crew chief's own `agent:model`; use
-`ACC pick --kind coordinate` only to choose an engineer that is not the crew
-chief itself. On each lane report:
+Race engineers run as Orca workers or background processes. Record their
+`coordinate` grades under the engineer's own `agent:model`
+(`ACC pick --kind coordinate`). On each lane report:
 
 1. Run the lane's checks yourself; read the scrutineer findings of high-risk
    jobs. Do not trust the engineer's summary.
@@ -142,7 +158,7 @@ When every lane passed: in your checkout on `acc/<slug>`, merge each lane
 project's tests, use verification-before-completion, then push and open the
 pull request with `gh pr create`. Release engineers; remove lane worktrees and
 branches: Orca `orca worktree rm --worktree branch:acc/<slug>-<lane>` (deletes
-the branch too); plain `git worktree remove ../<repo>-acc-<lane>`, `git branch
+the branch too); background-mode `git worktree remove ../<repo>-acc-<lane>`, `git branch
 -D acc/<slug>-<lane>` and, once nothing runs, `../<repo>-acc-logs/`. A folder
 "open in another program" is held by a leftover process: leave it, report it.
 Report: PR, each job with risk, pace, model, attempts, scrutineer
@@ -160,6 +176,4 @@ scores, outcome, worker and engineer scores, anything open, and
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.
 - `ACC merge <file>` merges a ledger file copied from another machine.
-- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync`
-  runs it. When set up, run `ACC sync` at the start of a request and after
-  the last grade.
+- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when set up, run it at the start of a request and after the last grade.
