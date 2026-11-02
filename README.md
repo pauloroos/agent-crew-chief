@@ -212,12 +212,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.9.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.9.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.9.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.9.0),
+No git? Download `agent-crew-chief-v0.9.1.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.9.1),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -242,7 +242,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.9.0
+git -C agent-crew-chief checkout v0.9.1
 python agent-crew-chief/install.py /path/to/project
 ```
 
