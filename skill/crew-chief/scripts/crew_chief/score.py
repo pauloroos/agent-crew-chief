@@ -75,13 +75,17 @@ def _tier(row: dict) -> int:
 
 
 def suggest(rows: list[dict], max_cost: str | None = None) -> dict | None:
-    """The cheapest model that is surely good, else the best score so far, else None."""
+    """The cheapest surely-good model, else an untried one of the cheapest tier, else the best so far."""
     if max_cost:
         rows = [r for r in rows if _tier(r) <= COSTS.index(max_cost)]
-    sure = [r for r in rows if r["score"] >= GOOD and r["n"] >= SURE_N]
+    sure = [r for r in rows if r.get("score") is not None and r["score"] >= GOOD and r["n"] >= SURE_N]
     if sure:
         return min(sure, key=lambda r: (_tier(r), -r["score"]))
-    return max(rows, key=lambda r: (r["score"], -_tier(r)), default=None)
+    untried = [r for r in rows if r["n"] == 0]
+    if untried:
+        return min(untried, key=lambda r: (_tier(r), r["executor"]))
+    scored = [r for r in rows if r.get("score") is not None]
+    return max(scored, key=lambda r: (r["score"], -_tier(r)), default=None)
 
 
 def render(rows: list[dict]) -> str:
@@ -100,8 +104,10 @@ def render(rows: list[dict]) -> str:
                 "| --- | --- | --- | --- | --- | --- | --- |",
             ]
         minutes = "-" if row["minutes"] is None else row["minutes"]
+        score = "-" if row["score"] is None else row["score"]
+        passed = "-" if row.get("pass_rate") is None else f"{round(row['pass_rate'] * 100)}%"
         lines.append(
-            f"| {row['executor']} | {row['score']} | {row['n']} | {round(row['pass_rate'] * 100)}% "
+            f"| {row['executor']} | {score} | {row['n']} | {passed} "
             f"| {minutes} | {row['cost'] or '?'} | {row['last']} |"
         )
     return "\n".join(lines) if lines else "No graded jobs yet."
