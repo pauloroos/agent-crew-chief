@@ -139,6 +139,29 @@ on a cold start: after 5 minutes with no commit, look at `orca orchestration
 worker-read --dispatch <id> --source auto --json`. An empty prompt means it
 never started: `worker-stop` it and start the job again, recording nothing.
 
+### Tmux mode
+
+When Orca is not running but `tmux` is on `PATH`, every engineer, driver and
+scrutineer runs in a named tmux session. The name is the standard
+`acc-<slug>-<lane>-<role>[-<n>]` from `terminal_name` — the same name as the log
+file and the Orca tab title. Start the session, pipe its output to the usual
+log, record the PID, then attach to enter the terminal; killing the session
+replaces killing the process group:
+
+```text
+tmux new-session -d -s <name> '<driver command>'
+tmux pipe-pane -o -t <name> 'cat >> ../<repo>-acc-logs/<name>.log'
+tmux display-message -p -t <name> '#{session_pid}'   # write the PID file
+tmux attach -t <name>                                # enter the terminal
+tmux kill-session -t <name>                          # replaces kill -- -<pid>
+```
+
+`tmux ls` lists the crew, and `tmux attach -t <name>` enters a session from any
+IDE, CLI or SSH. The log file is the same path used in Plain mode, filled by
+`pipe-pane`. The command strings are built by `crew_chief.terminals` and unit
+tested without a real tmux in `tests/test_terminals.py`. Without Orca and
+without tmux, use Plain mode.
+
 ### Plain mode
 
 Write the job spec to `../<repo>-acc-logs/<lane>-<job>.md` and start the

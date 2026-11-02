@@ -72,3 +72,81 @@ def test_unknown_role_is_rejected(role: str) -> None:
 def test_bad_attempt_is_rejected(attempt: object) -> None:
     with pytest.raises(ValueError, match="attempt"):
         terminal_name("terminais", "code", "driver", attempt)  # type: ignore[arg-type]
+
+
+# --- T03: tmux command builders -------------------------------------------------
+
+from pathlib import Path
+
+from crew_chief.terminals import (
+    log_file,
+    tmux_attach,
+    tmux_kill_session,
+    tmux_new_session,
+    tmux_pipe_pane,
+    tmux_session_pid,
+    tmux_start,
+)
+
+
+def test_log_file_is_a_path_with_the_name() -> None:
+    path = log_file("../shop-acc-logs", "acc-terminais-code-driver")
+    assert isinstance(path, Path)
+    assert path == Path("../shop-acc-logs/acc-terminais-code-driver.log")
+
+
+def test_new_session_command() -> None:
+    assert (
+        tmux_new_session("acc-x", "opencode run --standalone")
+        == "tmux new-session -d -s acc-x 'opencode run --standalone'"
+    )
+
+
+def test_pipe_pane_command() -> None:
+    assert tmux_pipe_pane("acc-x", "/tmp/acc-x.log") == "tmux pipe-pane -o -t acc-x 'cat >> /tmp/acc-x.log'"
+
+
+def test_pipe_pane_keeps_a_path_with_spaces_quoted_inside() -> None:
+    assert (
+        tmux_pipe_pane("acc-x", "/tmp/my logs/acc-x.log")
+        == "tmux pipe-pane -o -t acc-x 'cat >> \"/tmp/my logs/acc-x.log\"'"
+    )
+
+
+def test_session_pid_command() -> None:
+    assert tmux_session_pid("acc-x") == "tmux display-message -p -t acc-x '#{session_pid}'"
+
+
+def test_attach_command() -> None:
+    assert tmux_attach("acc-x") == "tmux attach -t acc-x"
+
+
+def test_kill_session_command() -> None:
+    assert tmux_kill_session("acc-x") == "tmux kill-session -t acc-x"
+
+
+def test_start_returns_the_three_commands_in_order() -> None:
+    commands = tmux_start("acc-x", Path("/tmp/acc-x.log"), "opencode run")
+    assert isinstance(commands, list)
+    assert len(commands) == 3
+    assert commands == [
+        tmux_new_session("acc-x", "opencode run"),
+        tmux_pipe_pane("acc-x", "/tmp/acc-x.log"),
+        tmux_session_pid("acc-x"),
+    ]
+
+
+def test_terminal_name_flows_into_the_commands() -> None:
+    name = terminal_name("terminais", "code", "driver", 2)
+    assert name == "acc-terminais-code-driver-2"
+    assert log_file("../shop-acc-logs", name).name == "acc-terminais-code-driver-2.log"
+    assert tmux_kill_session(name) == "tmux kill-session -t acc-terminais-code-driver-2"
+    assert tmux_attach(name) == "tmux attach -t acc-terminais-code-driver-2"
+
+
+def test_module_only_builds_strings() -> None:
+    source = Path(__file__).resolve().parent.parent / "skill/crew-chief/scripts/crew_chief/terminals.py"
+    text = source.read_text(encoding="utf-8")
+    assert "subprocess" not in text
+    assert "os.system" not in text
+    assert "os.popen" not in text
