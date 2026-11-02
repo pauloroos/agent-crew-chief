@@ -81,6 +81,10 @@ def _untried(kind: str, entry: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # `python -I` ignores PYTHONUTF8: print UTF-8 so accents stay whole.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     args = _parser().parse_args(argv)
 
     if args.command in ("models", "pick", "score"):
