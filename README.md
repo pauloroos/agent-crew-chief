@@ -26,7 +26,7 @@ Two things, both installed into your project:
 
 - **A skill** (`crew-chief`) for the coding agent you already use: Claude
   Code, Codex, OpenCode, Gemini CLI or Cursor. The agent you talk to becomes
-  the coordinator; other agents, in their own worktrees, are the workers.
+  the crew chief; other agents, in their own worktrees, are the drivers.
 - **A model scoreboard**, a small Python CLI with no dependencies. Every job
   gets a grade from 0 to 100, and the next pick uses those grades.
 
@@ -59,17 +59,26 @@ before they are accepted, and retries start clean.
   moves one cost tier up. After three failures, the coordinator fixes it or
   stops the lane.
 - **Scrutineering** (Vistoria): high-risk jobs (auth, money, data loss,
-  concurrency) get two parallel read-only scrutineers, different models from
-  the worker and preferably from different families. Confirmed findings go
-  back to the same worker model in a fresh session (**pit stop**), at most 2
-  pit stops, then pass or Relay. Each scrutineer is scored as `review` work.
+  concurrency) get two parallel read-only scrutineers. Neither may share the
+  driver's model family (a rule, not a preference). Confirmed findings go
+  back to the same driver model in a fresh session (**pit stop**); each pit
+  stop is its own grade ("(pit stop n)" in the job title). At most 2 pit
+  stops, then pass or Relay. The race engineer does its own pass over the
+  risky path: a pass with no findings is not proof. Scrutineers who miss a
+  real problem are scored down; each scrutineer is scored as `review` work.
 - **Risk** (`low`/`normal`/`high`) is set per job in the plan. Only `high`
   adds Scrutineering by default.
 - **Pace** is set per request: `eco` (free only), `race` (default, cheapest
   good), `push` (may start at included, scrutineering on every non-low job).
   Paid models are used only when you say so. Example: "ACC, do X, pace push".
 
-See `skill/crew-chief/pit-wall.md` for the full rules and the pace table.
+| Pace | Drivers | Scrutineering | Scrutineers | Implied `--max-cost` |
+| --- | --- | --- | --- | --- |
+| `eco` | free only | high risk | free only | `free` |
+| `race` | cheapest good (`ACC pick`) | high risk | free + included | `included` |
+| `push` | may start at included | every job except low risk | free + included | `included` |
+
+See `skill/crew-chief/pit-wall.md` for the full rules.
 
 ## How it works
 
@@ -134,9 +143,32 @@ The coordinator chooses at the start of every run:
 | Workers | `orca orchestration worker-start` | `claude -p`, `codex exec` or `opencode run` in the background |
 | Watching | Orca panel, `check --wait`, worker questions | process alive, new commits, changed files, `../<repo>-acc-logs/*.log` |
 
-Plain mode has no question channel: a worker that needs an answer stops or
+Plain mode has no question channel: a driver that needs an answer stops or
 guesses, so specs must be self-contained. A job with 30 minutes of no commit,
 no file change and no log growth is killed and counts as a failed attempt.
+
+## Following a run
+
+How you watch progress and where the artifacts land depends on the mode:
+
+- **With a subagent race engineer** (e.g. Claude Code): lane reports arrive in
+  the chat. In Orca mode, use the Orca panel and `worker-read`.
+- **Plain mode:** the folder `../<repo>-acc-logs/` next to the repo holds the
+  artifacts for each lane. Files per job: `<lane>-engineer.md` (the engineer's
+  brief) and `<lane>-engineer.log` when the engineer is a CLI session;
+  `<lane>-<job>.md` (job spec), `.log` and `.log.err` (opencode writes its
+  progress to `.err`; `claude -p` prints only at the end), `.pid`;
+  `<lane>-<job>-scrutineer-<n>-prompt.md` and
+  `<lane>-<job>-scrutineer-<n>.md` (findings, last line `VERDICT:`); pit-stop
+  specs follow the same pattern. The folder is deleted at delivery, once
+  nothing runs.
+- **Progress in git:** `git -C ../<repo>-acc-<lane> log --oneline acc/<slug>..`.
+- **Grades:** `~/.crew-chief/ledger.jsonl`; read them with `ACC score`
+  (untried listed models collapse into `not tried yet (N): ...`), one kind
+  with `--kind`; `ACC models` shows your list with scores and
+  `graded but not listed`.
+- **The final report:** the pull request lists each job with risk, pace,
+  models, attempts, scrutineer scores, outcome, and driver and engineer scores.
 
 ## The skills kit
 
@@ -276,12 +308,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.11.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.11.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.0),
+No git? Download `agent-crew-chief-v0.11.1.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.1),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -306,7 +338,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.11.0
+git -C agent-crew-chief checkout v0.11.1
 python agent-crew-chief/install.py /path/to/project
 ```
 
