@@ -214,3 +214,13 @@ def test_project_name_is_the_repository_seen_from_a_worktree(tmp_path: Path, mon
     assert _project_name() == "shop"
     monkeypatch.chdir(tmp_path)
     assert _project_name() == tmp_path.name
+
+
+def test_coordinate_is_a_kind(capsys):
+    """Race engineers are graded as coordinate work."""
+    from crew_chief.cli import main
+
+    assert main(["record", "--kind", "coordinate", "--agent", "claude", "--model", "m",
+                 "--outcome", "pass", "--score", "80", "--project", "p"]) == 0
+    assert main(["pick", "--kind", "coordinate"]) == 0
+    assert "claude:m" in capsys.readouterr().out
