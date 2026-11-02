@@ -172,43 +172,26 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "pick":
-        if not declared:
-            rows = score.table(ledger.read(), args.kind)
-            best = score.suggest(rows, args.max_cost)
-            if args.json:
-                print(json.dumps({"pick": best, "rows": rows[:5]}, indent=2))
-            elif best is None:
-                print(f"no graded {args.kind} jobs yet: use a model you trust and record its score")
-            else:
-                sure = best["score"] >= score.GOOD and best["n"] >= score.SURE_N
-                print(
-                    f"pick {args.kind}: {best['executor']} (score {best['score']}, n {best['n']}, "
-                    f"{best['cost'] or 'cost ?'}){'' if sure else ' - not proven yet, try another too'}"
-                )
-                print()
-                print(score.render(rows[:5]))
-            return 0
         rows = score.table(ledger.read(), args.kind)
-        candidates = []
-        for m in declared:
-            if m.get("kinds") is not None and args.kind not in m["kinds"]:
-                continue
-            matched = _match(rows, m)
-            if matched:
-                candidates.extend({**row, "cost": m["cost"]} for row in matched)
-            else:
-                candidates.append(_untried(args.kind, m))
-        candidates.sort(key=lambda r: (
-            ledger.COSTS.index(r["cost"]) if r.get("cost") in ledger.COSTS else len(ledger.COSTS),
-            -r["score"] if r["score"] is not None else float("inf"),
-            -r["n"], r["executor"]))
-        best = score.suggest(candidates, args.max_cost)
+        if declared:
+            candidates = []
+            for m in declared:
+                if m.get("kinds") is not None and args.kind not in m["kinds"]:
+                    continue
+                matched = _match(rows, m)
+                candidates += [{**r, "cost": m["cost"]} for r in matched] or [_untried(args.kind, m)]
+            rows = sorted(candidates, key=lambda r: (
+                score._tier(r), -r["score"] if r["score"] is not None else float("inf"),
+                -r["n"], r["executor"]))
+        best = score.suggest(rows, args.max_cost)
         if args.json:
-            print(json.dumps({"pick": best, "rows": candidates[:5]}, indent=2))
-        elif best is None:
+            print(json.dumps({"pick": best, "rows": rows[:5]}, indent=2))
+        elif best is None and declared:
             within = f" within {args.max_cost}" if args.max_cost else ""
             print(f"no model in your models.toml takes {args.kind} work{within}: "
                   "add one or widen --max-cost")
+        elif best is None:
+            print(f"no graded {args.kind} jobs yet: use a model you trust and record its score")
         else:
             if best["n"] == 0:
                 print(f"pick {args.kind}: {best['executor']} (not tried yet, "
@@ -220,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"{best['cost'] or 'cost ?'}){'' if sure else ' - not proven yet, try another too'}"
                 )
             print()
-            print(score.render(candidates[:5]))
+            print(score.render(rows[:5]))
         return 0
 
     project = args.project.expanduser().resolve()
