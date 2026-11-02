@@ -148,6 +148,57 @@ def test_cli_import(tmp_path: Path, capsys):
     assert main(["import", str(tmp_path / "nothing")]) == 2
 
 
+def _grade_code(model: str, value: int, n: int = 2, **extra) -> None:
+    for _ in range(n):
+        ledger.append({"kind": "code", "agent": "opencode", "model": model,
+                       "cost": "free", "outcome": "pass" if value >= 60 else "fail",
+                       "score": value, "project": "shop", **extra})
+
+
+def test_pick_exclude_best_gets_next(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _grade_code("provider/best", 90)
+    _grade_code("provider/next", 80)
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/best"]) == 0
+    out = capsys.readouterr().out
+    assert "opencode:provider/next" in out.splitlines()[0]
+    assert "opencode:provider/best" not in out
+
+
+def test_pick_exclude_twice(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _grade_code("provider/a", 90)
+    _grade_code("provider/b", 80)
+    _grade_code("provider/c", 70)
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/a",
+                 "--exclude", "opencode:provider/b"]) == 0
+    out = capsys.readouterr().out
+    assert "opencode:provider/c" in out.splitlines()[0]
+    assert "opencode:provider/a" not in out
+    assert "opencode:provider/b" not in out
+
+
+def test_pick_exclude_effort(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _grade_code("provider/m", 90, effort="high")
+    _grade_code("provider/m", 80)
+    # spelled with effort drops only that row
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/m (high)"]) == 0
+    out = capsys.readouterr().out
+    assert "pick code: opencode:provider/m (score" in out
+    assert "(high)" not in out
+    # bare agent:model drops every effort of it
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/m"]) == 0
+    assert "no graded code jobs yet" in capsys.readouterr().out
+
+
+def test_pick_exclude_everything_says_nothing(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _grade_code("provider/a", 90)
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/a"]) == 0
+    assert "no graded code jobs yet" in capsys.readouterr().out
+
+
 def test_project_name_is_the_repository_seen_from_a_worktree(tmp_path: Path, monkeypatch):
     import subprocess
 
@@ -163,3 +214,13 @@ def test_project_name_is_the_repository_seen_from_a_worktree(tmp_path: Path, mon
     assert _project_name() == "shop"
     monkeypatch.chdir(tmp_path)
     assert _project_name() == tmp_path.name
+
+
+def test_coordinate_is_a_kind(capsys):
+    """Race engineers are graded as coordinate work."""
+    from crew_chief.cli import main
+
+    assert main(["record", "--kind", "coordinate", "--agent", "claude", "--model", "m",
+                 "--outcome", "pass", "--score", "80", "--project", "p"]) == 0
+    assert main(["pick", "--kind", "coordinate"]) == 0
+    assert "claude:m" in capsys.readouterr().out

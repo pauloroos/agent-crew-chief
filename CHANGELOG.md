@@ -8,6 +8,28 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.10.0] - 2026-11-01
+
+### Added
+- **The Pit Wall method** (`skill/crew-chief/pit-wall.md`): Stint, Fresh tyres,
+  Relay, Scrutineering and pit stop patterns; risk per job (`low`/`normal`/high`);
+  pace per request (`eco`/`race`/`push`) with implied `--max-cost`.
+- **The team**: crew chief dispatches a race engineer per lane; new ledger kind
+  `coordinate` grades engineers. Brief: `templates/race-engineer.md`.
+- **Scrutineer template** (`skill/crew-chief/templates/scrutineer.md`): read-only
+  prompt for independent review of high-risk jobs, findings as
+  `severity | file:line | failing scenario`, ending in `VERDICT: pass|fail`.
+- **`ACC pick --exclude <agent:model>`** (repeatable): drops those executors
+  from the candidates, both with and without `models.toml`.
+
+### Changed
+- Retries now start on Fresh tyres: the lane worktree is reset to the job's
+  start commit (`git reset --hard <start>` + `git clean -fd`) before every
+  new attempt, so the next worker never inherits a failed one's edits.
+- SKILL.md steps 1, 2 and 5 point to `pit-wall.md` for risk, pace, Relay,
+  Fresh tyres and Scrutineering; step 0.5 and the report show risk, pace,
+  attempts and scrutineer scores.
+
 ## [0.9.1] - 2026-11-01
 
 ### Fixed

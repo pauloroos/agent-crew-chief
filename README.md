@@ -33,6 +33,44 @@ Two things, both installed into your project:
 New here? Run the [tutorial](docs/tutorial.md) on a tiny example project
 that ships with ACC.
 
+## The Pit Wall method
+
+ACC runs every job as a **Stint**: one driver in its lane worktree, checked by
+a race engineer and then by the crew chief. Risky changes get independent eyes
+before they are accepted, and retries start clean.
+
+### The team
+
+- **Crew chief** — the agent you chat with. Specs, plans, picks models, holds
+  the approval stop, dispatches a race engineer per lane, checks lane reports,
+  grades engineers, merges and delivers.
+- **Race engineer** (engenheiro de corrida) — one per lane. Coordinates that
+  lane only: starts drivers, runs Stint / Relay / Fresh tyres / Scrutineering,
+  records grades, sends a lane report. Brief: `templates/race-engineer.md`.
+- **Driver** (piloto) — the worker agent that does one job in the lane worktree.
+- **Scrutineer** (fiscal) — read-only reviewer of high-risk jobs (per pace).
+  Scored as `review` work.
+
+- **Fresh tyres** (Pneus novos): before every new attempt, the lane worktree is
+  reset to the commit it had before the job (`git reset --hard <start>` +
+  `git clean -fd`). The next worker never inherits a failed attempt's edits.
+- **Relay**: a failed stint hands the job over. Attempt 2 uses another model
+  (`ACC pick --kind <k> --exclude <failed>`), same tier allowed; attempt 3
+  moves one cost tier up. After three failures, the coordinator fixes it or
+  stops the lane.
+- **Scrutineering** (Vistoria): high-risk jobs (auth, money, data loss,
+  concurrency) get two parallel read-only scrutineers, different models from
+  the worker and preferably from different families. Confirmed findings go
+  back to the same worker model in a fresh session (**pit stop**), at most 2
+  pit stops, then pass or Relay. Each scrutineer is scored as `review` work.
+- **Risk** (`low`/`normal`/`high`) is set per job in the plan. Only `high`
+  adds Scrutineering by default.
+- **Pace** is set per request: `eco` (free only), `race` (default, cheapest
+  good), `push` (may start at included, scrutineering on every non-low job).
+  Paid models are used only when you say so. Example: "ACC, do X, pace push".
+
+See `skill/crew-chief/pit-wall.md` for the full rules and the pace table.
+
 ## How it works
 
 ```text
@@ -49,16 +87,19 @@ lanes: one branch each, acc/<slug>-<lane>
 pick a model per job (ACC pick) ── your approval (only with a spec)
   │
   ▼
-run lanes in parallel ── watch: Orca, or logs + git
+crew chief dispatches a race engineer per lane
   │
   ▼
-review every commit, run the check, ACC record a score
-  │   fail → retry with another model
+engineers run drivers in parallel ── watch: Orca, or logs + git
+  │
+  ▼
+engineer reviews, records grades; crew chief checks lane reports
+  │   fail → relay with another model
   ▼
 merge lanes into acc/<slug> → tests → push → pull request (you merge)
 ```
 
-1. **Spec first.** For a request that is not small, the coordinator asks the
+1. **Spec first.** For a request that is not small, the crew chief asks the
    questions whose answer changes what gets built (at most 5, in one message),
    then writes `specs/<NNN>-<slug>/spec.md` and `tasks.md` (and `plan.md` when
    the design is not obvious) and commits them on the feature branch. Small =
@@ -67,17 +108,19 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
    lane and run in order; tasks marked `[P]` with no shared files get their own
    lanes and run in parallel. At most 4 lanes.
 3. **Pick.** `ACC pick --kind <kind>` per job (see [the scoreboard](#the-scoreboard)); if you declared [your models](#your-models), only those are candidates.
-4. **One stop.** With a spec, the coordinator shows the spec summary, the
+4. **One stop.** With a spec, the crew chief shows the spec summary, the
    lanes and the models, and waits for your approval. That is the only stop;
    after it, it runs to the end.
-5. **Run and watch.** Workers start in their worktrees; the coordinator waits
-   in short checks (under 2 minutes each) until every lane is done.
-6. **Review and score.** It reads every commit, runs the job's check itself
-   and records a grade with `ACC record`, pass or fail. A failed job goes to
-   another model with the findings.
+5. **Dispatch and run.** The crew chief dispatches a race engineer per lane.
+   Engineers start drivers in their worktrees and wait in short checks (under
+   2 minutes each) until every driver is done.
+6. **Review and score.** Each engineer reads every commit, runs the job's
+   check and records driver and scrutineer grades with `ACC record`. The crew
+   chief checks each lane report, runs the lane's checks and grades the
+   engineer as `coordinate` work. A failed job goes to Relay.
 7. **Deliver.** Lanes are merged into `acc/<slug>`, the project's tests run,
-   the branch is pushed and one pull request is opened. You merge it. Workers
-   never push, merge or open pull requests.
+   the branch is pushed and one pull request is opened. You merge it. Engineers
+   and drivers never push, merge or open pull requests.
 
 ## Two modes
 
@@ -204,7 +247,7 @@ ACC import /path/to/project     # grades kept by ACC 0.6 in docs/crew-chief/jobs
 ```
 
 Kinds: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
-`diagnosis`, `data`, `review`.
+`diagnosis`, `data`, `review`, `coordinate`.
 
 ## Install
 
@@ -212,12 +255,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.9.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.10.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.9.1.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.9.1),
+No git? Download `agent-crew-chief-v0.10.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.10.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -242,7 +285,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.9.1
+git -C agent-crew-chief checkout v0.10.0
 python agent-crew-chief/install.py /path/to/project
 ```
 
