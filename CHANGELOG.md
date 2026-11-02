@@ -29,6 +29,8 @@ alone.
   grade. A broken file stops these commands with `<path>: <problem>`.
   Without a file nothing changes.
 - SKILL.md step 2: run `ACC models` first and pick among the listed models.
+- SKILL.md step 6: plain mode also deletes `../<repo>-acc-logs/` once no
+  worker runs.
 
 ## [0.8.0] - 2026-10-31
 

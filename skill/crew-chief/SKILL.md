@@ -162,9 +162,9 @@ On each `worker_done` (plain mode: when the worker's process ends):
   and open the pull request with `gh pr create`.
 - Release every worker; remove lane worktrees and branches: Orca mode `orca
   worktree rm --worktree branch:acc/<slug>-<lane>` (deletes the branch too),
-  plain mode `git worktree remove ../<repo>-acc-<lane>` and `git branch -D
-  acc/<slug>-<lane>`. A folder "open in another program" is held by a
-  worker's leftover process: leave it and say so in the report.
+  plain mode `git worktree remove ../<repo>-acc-<lane>`, `git branch -D
+  acc/<slug>-<lane>` and, once no worker runs, `../<repo>-acc-logs/`. A folder
+  "open in another program" is held by a leftover process: leave it, report it.
 - Report to the user: the pull request, each job with its model, outcome and
   score, anything left open, and `ACC score --kind <kinds used>`.
 
