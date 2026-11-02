@@ -18,12 +18,11 @@ tyres, Relay, Scrutineering, risk and pace.
 `ACC` = `python -I .agents/skills/crew-chief/scripts/crew-chief.py` (or
 `.claude/skills/...`). Any CLI can coordinate (Claude Code, Codex, OpenCode).
 
-Every child of the crew is visible in a terminal, in one of three modes:
+Every child of the crew is visible in a terminal, in one of two modes:
 **Orca mode** when `orca status --json` shows a running Orca (an Orca terminal
-each in the lane worktree; load `orca skills get orchestration` once), **tmux
-mode** without Orca when `tmux` is on PATH (a named session each; `tmux ls`
-lists the crew, `tmux attach -t <name>` opens any), and **background mode**
-without either (e.g. Windows without WSL: a process with log and PID).
+each in the lane worktree; load `orca skills get orchestration` once), and
+**background mode** without Orca (e.g. Windows without WSL: a process with log
+and PID).
 
 Do not ask permission between steps except the spec approval in step 0. Ask
 only when the request is unclear; report at the end.
@@ -99,35 +98,35 @@ always starts as an Orca worker in the lane worktree, never as your own
 subagent in any harness; drivers and scrutineers get Orca terminals there too:
 
 ```text
-orca orchestration worker-start --spec "<job spec>" --worktree branch:<lane branch> --agent <agent> --model <model> --name acc-<slug>-<lane>-engineer --json
-orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<role> --command "<driver command>" --json
+orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> --json
+orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-<job>-engineer --json
+orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<job>-<role> --command "<driver command>" --json
 ```
 
-Use `worker-start` when Orca knows the agent, else `orca terminal create`
-(`orca agent launch` for a lone terminal). Names: `acc-<slug>-<lane>-<role>`,
-plus `-<n>` for the n-th attempt; engineers run in parallel. Without Orca,
-steps 3 and 4 become the "Without Orca (plain mode)" section below.
+Use `worker-start` when Orca knows the agent, then rename the terminal to the
+standard title (the Chat UI may not expose a handle; in that case skip the
+rename and rely on `worker-read`). Otherwise use `orca terminal create`
+(`orca agent launch` for a lone terminal). Names:
+`acc-<slug>-<lane>-<job>-<role>`, plus `-<n>` for the n-th attempt; engineers
+run in parallel. Without Orca, steps 3 and 4 become the "Without Orca (plain
+mode)" section below.
 
 ## 4. Monitor
 
 Wait on engineer reports. In Orca mode, `check --wait` under 2 minutes per call;
-with tmux, `tmux capture-pane` and log growth; in background mode, process,
-commits and log growth. Answer questions, handle escalations, wait again.
+in background mode, process, commits and log growth. Answer questions, handle
+escalations, wait again.
 
-## Without Orca (plain mode)
+## Without Orca (background mode)
 
 Replaces steps 3–4. Per lane: `git worktree add ../<repo>-acc-<lane> -b
-acc/<slug>-<lane> acc/<slug>`. Name each child `acc-<slug>-<lane>-<role>`, or
-`...-<role>-<n>` for the n-th, and use the mode this machine has:
-
-- **tmux mode**, with `tmux` on PATH: `tmux new-session -d -s <name> -c
-  <worktree> "<command>"`; log `tmux pipe-pane -t <name> -o "cat >>
-  ../<repo>-acc-logs/<name>.log"`; `tmux ls` lists the crew, `tmux attach -t
-  <name>` opens any; pid `tmux display-message -p -t <name> '#{session_pid}'`;
-  `tmux kill-session -t <name>` replaces the PID kill.
-- **Background mode**, without tmux: "Do the job in <abs path to filled brief>"
-  from the worktree; log `../<repo>-acc-logs/<name>.log`, PID beside it; kill
-  with Linux/macOS `kill -- -<pid>` or Windows PS `taskkill /PID <pid> /T /F`.
+acc/<slug>-<lane> acc/<slug>`. Name each child
+`acc-<slug>-<lane>-<job>-<role>`, or `...-<role>-<n>` for the n-th. Write the
+job spec to `../<repo>-acc-logs/<name>.md` and start the driver in the
+background from inside the lane worktree with the prompt "Do the job in <its
+absolute path>". Log `../<repo>-acc-logs/<name>.log`, PID in
+`../<repo>-acc-logs/<name>.pid`, never inside the worktree; kill with
+Linux/macOS `kill -- -<pid>` or Windows PS `taskkill /PID <pid> /T /F`.
 
 ## Working rules (for drivers)
 
@@ -140,8 +139,8 @@ Every driver spec carries this block so workers use the kit:
 
 ## 5. Check lane reports and grade engineers
 
-Race engineers run as Orca workers, tmux sessions or background processes.
-Record their `coordinate` grades under the engineer's own `agent:model`
+Race engineers run as Orca workers or background processes. Record their
+`coordinate` grades under the engineer's own `agent:model`
 (`ACC pick --kind coordinate`). On each lane report:
 
 1. Run the lane's checks yourself; read the scrutineer findings of high-risk

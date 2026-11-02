@@ -92,10 +92,11 @@ servem.
 
 O **chefe de equipe** é o seu CLI coordenador. Ele escreve a spec, planeja as
 trilhas, escolhe os modelos, faz a parada de aprovação, despacha um
-**engenheiro de corrida** por trilha (seu próprio subagente ou uma sessão CLI
-em background), confere os relatórios deles, dá nota, faz o merge e entrega.
-Engenheiros rodam **pilotos** (workers) e **fiscais**; o chefe de equipe nunca
-roda pilotos ele mesmo, exceto num pedido pequeno sem spec.
+**engenheiro de corrida** por trilha (um worker do Orca no modo Orca, ou uma
+sessão CLI em segundo plano caso contrário), confere os relatórios deles, dá
+nota, faz o merge e entrega. Engenheiros rodam **pilotos** (workers) e
+**fiscais**; o chefe de equipe nunca roda pilotos ele mesmo, exceto num pedido
+pequeno sem spec.
 
 - **Modo Orca:** adicione `~/scratch/hello-crew` ao Orca e abra um terminal do
   projeto no Orca. Ali, `orca status --json` deve mostrar o Orca rodando.
@@ -184,21 +185,11 @@ padrão `acc-<slug>-<trilha>-<papel>` (ou `-<n>` nas repetições).
 orca terminal list --json
 ```
 
-Troque para qualquer terminal pelo handle ou título; os relatórios das trilhas
-também chegam no chat conforme os engenheiros terminam.
+Os relatórios das trilhas também chegam no chat conforme os engenheiros terminam.
 
-**Modo tmux** (sem Orca, `tmux` no PATH): cada agente é uma sessão tmux
-nomeada.
-
-```bash
-tmux ls
-tmux attach -t acc-greet-lang-and-shout-greet-driver
-tail -f ../hello-crew-acc-logs/acc-greet-lang-and-shout-greet-driver.log
-```
-
-**Modo segundo plano** (sem Orca, sem tmux): worktrees e logs ficam ao lado do
-projeto, nunca dentro. Os nomes das trilhas são escolha do chefe de equipe;
-aqui são `greet` e `cli`.
+**Modo segundo plano** (sem Orca): worktrees e logs ficam ao lado do projeto,
+nunca dentro. Os nomes das trilhas são escolha do chefe de equipe; aqui são
+`greet` e `cli`.
 
 ```bash
 ls ../hello-crew-acc-logs
@@ -214,12 +205,13 @@ git -C ..\hello-crew-acc-greet log --oneline -3
 git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
-No modo segundo plano, o `ls` mostra por agente: o brief ou spec de job
-(`<nome>.md`), `.log`, `.log.err` e `.pid`. Para jobs de risco alto, e para
-todo job exceto baixo risco no ritmo `push`, você também verá prompts e
-achados dos fiscais. O `claude -p` só escreve o log no fim, então log vazio é
-normal enquanto ele trabalha; commits novos e arquivos alterados é que mostram
-o progresso em todos os modos.
+O `ls` mostra, por agente: o brief ou spec do job (`<nome>.md`), `.log`,
+`.log.err` e `.pid`, onde `<nome>` é o nome padrão
+`acc-<slug>-<trilha>-<job>-<papel>[-<n>]`. Para jobs de risco alto, e para todo
+job exceto baixo risco no ritmo `push`, você também verá prompts e achados dos
+fiscais. O `claude -p` só escreve o log no fim, então log vazio é normal
+enquanto ele trabalha; commits novos e arquivos alterados é que mostram o
+progresso em todos os modos.
 
 ## 7. Revisão e notas
 
@@ -372,18 +364,20 @@ O que acontece:
    Novo resultado: 27 testes, nota 92.
 5. Os dois fiscais perdem pontos pela falha (`ACC record --kind review`).
 
-Arquivos deixados em `../hello-crew-acc-logs/` para este job (modo simples):
+Arquivos deixados em `../hello-crew-acc-logs/` para este job (modo segundo plano):
 
 ```text
-<trilha>-<job>.md                    # spec do job
-<trilha>-<job>.log                   # stdout do piloto
-<trilha>-<job>.log.err               # stderr do piloto
-<trilha>-<job>.pid                   # PID do piloto
-<trilha>-<job>-scrutineer-1-prompt.md
-<trilha>-<job>-scrutineer-1.md
-<trilha>-<job>-scrutineer-2-prompt.md
-<trilha>-<job>-scrutineer-2.md
+<nome>.md                            # spec do job
+<nome>.log                           # stdout do piloto
+<nome>.log.err                       # stderr do piloto
+<nome>.pid                           # PID do piloto
+<nome>-scrutineer-1-prompt.md
+<nome>-scrutineer-1.md
+<nome>-scrutineer-2-prompt.md
+<nome>-scrutineer-2.md
 ```
+
+onde `<nome>` é o nome padrão `acc-<slug>-<trilha>-<job>-<papel>[-<n>]`.
 
 Duas regras relacionadas do método Pit Wall:
 

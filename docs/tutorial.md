@@ -89,10 +89,10 @@ Without a remote, the run stops at the merged local branch. Both are fine.
 
 The **crew chief** is your coordinator CLI. It writes the spec, plans lanes,
 picks models, holds the approval stop, dispatches one **race engineer** per
-lane (its own subagent, or a background CLI session), checks their reports,
-grades them, merges and delivers. Engineers run **drivers** (workers) and
-**scrutineers**; the crew chief never runs drivers itself except on a small
-request without a spec.
+lane (an Orca worker in Orca mode, or a background CLI session otherwise),
+checks their reports, grades them, merges and delivers. Engineers run
+**drivers** (workers) and **scrutineers**; the crew chief never runs drivers
+itself except on a small request without a spec.
 
 - **Orca mode:** add `~/scratch/hello-crew` to Orca and open a terminal of the
   project in Orca. `orca status --json` there should show Orca running.
@@ -174,16 +174,15 @@ The crew chief dispatches one race engineer per lane. Each engineer starts
 drivers in its lane worktree and coordinates Stint / Relay / Fresh tyres /
 Scrutineering for that lane.
 
-**Orca mode:** the Orca panel shows workers, one per lane worktree. From
-another terminal:
+**Orca mode:** each agent has an Orca tab in the lane worktree. List them:
 
 ```text
-orca worktree ps
+orca terminal list --json
 ```
 
 Lane reports come back in the chat as the engineers finish.
 
-**Plain mode:** worktrees and logs sit next to the project, never inside.
+**Background mode:** worktrees and logs sit next to the project, never inside.
 Lane names are the crew chief's choice; these use `greet` and `cli`.
 
 ```bash
@@ -200,12 +199,12 @@ git -C ..\hello-crew-acc-greet log --oneline -3
 git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
-`ls` shows, per lane: the engineer brief (`<lane>-engineer.md`), a job spec
-(`<lane>-<job>.md`), `.log`, `.log.err` and `.pid`. For high-risk jobs, and for every job except low risk at pace `push`, you
-will also see scrutineer prompts and findings
-(`<lane>-<job>-scrutineer-<n>-prompt.md`, `<lane>-<job>-scrutineer-<n>.md`).
-`claude -p` writes its log only at the end, so an empty log is normal while
-it works; new commits and changed files are the progress signal.
+`ls` shows, per agent: the brief or job spec (`<name>.md`), `.log`, `.log.err`
+and `.pid`, where `<name>` is the standard name
+`acc-<slug>-<lane>-<job>-<role>[-<n>]`. For high-risk jobs, and for every job
+except low risk at pace `push`, you will also see scrutineer prompts and
+findings. `claude -p` writes its log only at the end, so an empty log is normal
+while it works; new commits and changed files are the progress signal.
 
 ## 7. Review and scores
 
@@ -355,18 +354,20 @@ What happens:
    tests, score 92.
 5. Both scrutineers are scored down for the miss (`ACC record --kind review`).
 
-Files left in `../hello-crew-acc-logs/` for this job (plain mode):
+Files left in `../hello-crew-acc-logs/` for this job (background mode):
 
 ```text
-<lane>-<job>.md                # job spec
-<lane>-<job>.log               # driver stdout
-<lane>-<job>.log.err           # driver stderr
-<lane>-<job>.pid               # driver PID
-<lane>-<job>-scrutineer-1-prompt.md
-<lane>-<job>-scrutineer-1.md
-<lane>-<job>-scrutineer-2-prompt.md
-<lane>-<job>-scrutineer-2.md
+<name>.md                      # job spec
+<name>.log                     # driver stdout
+<name>.log.err                 # driver stderr
+<name>.pid                     # driver PID
+<name>-scrutineer-1-prompt.md
+<name>-scrutineer-1.md
+<name>-scrutineer-2-prompt.md
+<name>-scrutineer-2.md
 ```
+
+where `<name>` is the standard name `acc-<slug>-<lane>-<job>-<role>[-<n>]`.
 
 Two related rules from the Pit Wall method:
 

@@ -30,15 +30,14 @@ to drop failed workers or the first scrutineer.
 
 ## Starting drivers
 
-Use the three modes in `pit-wall.md` ("Starting and watching drivers"): **Orca
+Use the two modes in `pit-wall.md` ("Starting and watching drivers"): **Orca
 mode** starts you and each driver and scrutineer as an Orca worker or terminal,
-**tmux mode** as a named tmux session, **background mode** as a process with log
-and PID. You run in the lane worktree on the lane branch — as an Orca worker, a
-tmux session or a background process — named by the default name
-`acc-<slug>-<lane>-<role>` for the first attempt and
-`acc-<slug>-<lane>-<role>-<n>` for the n-th. A driver's prompt is the job spec
-(self-contained, with target, change, constraints, acceptance, working rules and
-finish block).
+**background mode** as a process with log and PID. You run in the lane worktree
+on the lane branch — as an Orca worker or a background process — named by the
+standard name `acc-<slug>-<lane>-<job>-<role>` for the first attempt and
+`acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th. A driver's prompt is the job
+spec (self-contained, with target, change, constraints, acceptance, working
+rules and finish block).
 
 ## Recording grades
 
