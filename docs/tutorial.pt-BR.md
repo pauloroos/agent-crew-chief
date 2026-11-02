@@ -2,7 +2,7 @@
 
 [English](tutorial.md) · **Português**
 
-Este passo a passo roda o ACC v0.8.0 de ponta a ponta no `examples/hello-crew`,
+Este passo a passo roda o ACC v0.9.0 de ponta a ponta no `examples/hello-crew`,
 um projeto Python minúsculo que vem com o ACC. Ele tem dois módulos
 independentes, cada um com o seu teste:
 
@@ -34,7 +34,7 @@ Copie o exemplo para **fora** do checkout do ACC. Dentro dele, as trilhas e as
 branches `acc/*` cairiam no próprio repositório do ACC.
 
 ```bash
-git clone --branch v0.8.0 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.9.0 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -43,7 +43,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.8.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.9.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -61,14 +61,14 @@ ter as skills também.
 
 ```bash
 python ~/acc/install.py .
-git add . && git commit -m "Install ACC 0.8.0"
+git add . && git commit -m "Install ACC 0.9.0"
 alias ACC='python -I .agents/skills/crew-chief/scripts/crew-chief.py'
 ACC score --kind code
 ```
 
 ```powershell
 python $HOME\acc\install.py .
-git add .; git commit -m "Install ACC 0.8.0"
+git add .; git commit -m "Install ACC 0.9.0"
 function ACC { python -I .agents/skills/crew-chief/scripts/crew-chief.py @args }
 ACC score --kind code
 ```
@@ -207,6 +207,10 @@ ACC pick --kind code
 Depois da primeira execução cada modelo tem `n` 1, então o `pick` acrescenta
 `- not proven yet, try another too`: um modelo precisa de score 70 ou mais em
 2 jobs para ficar "provado".
+
+Opcional: declare os modelos que você tem em `~/.crew-chief/models.toml` (veja
+`examples/models.toml`) e rode `ACC models`. Daí em diante o `pick` escolhe só
+entre eles.
 
 ## 8. Entrega
 

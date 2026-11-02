@@ -60,12 +60,13 @@ or when the user says "run directly" / "sem spec".
 
 ## 2. Pick a model per job
 
-`ACC pick --kind <kind>` names the cheapest model that scored well at least
-twice, then the scoreboard. "Not proven yet" means little data: use it, or
-try a model with no score yet, and the score you record settles it. Prefer
-free models for plain work; use a stronger one for risky or subtle jobs, or
-with `--max-cost` when the user sets a limit. The agent is the Orca agent id
-or CLI (`codex`, `claude`, `opencode`, ...) and the model its `--model` value.
+Run `ACC models` first. If it lists models, pick only among them (`ACC pick`);
+the notes say when to use each. `ACC pick --kind <kind>` names the cheapest
+model that scored well at least twice, then the scoreboard. "Not proven yet"
+means little data: use it, or try a model with no score yet; the score you
+record settles it. Prefer free models for plain work, a stronger one for risky
+or subtle jobs, `--max-cost` when the user sets a limit. Agent = Orca agent id
+or CLI (`codex`, `claude`, `opencode`, ...); model = its `--model` value.
 
 ## 3. Start the lanes
 

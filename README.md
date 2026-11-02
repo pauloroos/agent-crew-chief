@@ -66,7 +66,7 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
 2. **Lanes.** Jobs that touch the same files or depend on each other share a
    lane and run in order; tasks marked `[P]` with no shared files get their own
    lanes and run in parallel. At most 4 lanes.
-3. **Pick.** `ACC pick --kind <kind>` per job (see [the scoreboard](#the-scoreboard)).
+3. **Pick.** `ACC pick --kind <kind>` per job (see [the scoreboard](#the-scoreboard)); if you declared [your models](#your-models), only those are candidates.
 4. **One stop.** With a spec, the coordinator shows the spec summary, the
    lanes and the models, and waits for your approval. That is the only stop;
    after it, it runs to the end.
@@ -141,6 +141,38 @@ cheapest tier wins (the higher score inside a tier). If none qualifies yet, it
 names the best score so far (a tie goes to the cheaper) and says "not proven
 yet". `--max-cost` drops every model above that tier first.
 
+## Your models
+
+Tell ACC which models you have. Two optional files, read with Python's
+`tomllib`:
+
+- **global:** `~/.crew-chief/models.toml` (or `$CREW_CHIEF_HOME/models.toml`);
+- **project:** `.crew-chief/models.toml` at the repository root. Every worktree
+  reads the main checkout's file. Commit it to share it with the team, or put
+  it in `.gitignore`.
+
+```toml
+[[model]]
+agent  = "opencode"          # CLI / Orca agent: opencode, claude, codex, gemini, cursor, ...
+model  = "provider/model-a"  # the exact --model value
+cost   = "free"              # free | included | cheap | paid
+kinds  = ["code", "tests"]   # optional; absent = every kind
+note   = "everyday work"     # optional; shown to the coordinator
+```
+
+Global and project lists merge. A project entry with the same `agent` and
+`model` changes only the fields it sets (`enabled = false` switches that model
+off here); `inherit = false` in the project file ignores the global list.
+`ACC models` prints the effective list: where each model came from, its
+scores and notes. With a list, `ACC pick` and the coordinator choose only
+among those models; a model with no score yet gets tried, and the score you
+record settles it. Without any file, nothing changes. A broken file stops the
+command with `<path>: <problem>`. A copyable example is in
+[`examples/models.toml`](examples/models.toml).
+
+The file holds names only. Never put keys or tokens in it; ACC reads no
+secret field.
+
 ## Using it
 
 Talk to your agent; start with "ACC". Example prompts:
@@ -160,10 +192,11 @@ Steering a run:
 - **Limit cost:** say "free models only" or "nothing above included"; the
   coordinator passes `--max-cost free|included|cheap|paid` to `ACC pick`.
 
-The four commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+The five commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (or `.claude/skills/...`) in a project where the skill is installed:
 
 ```text
+ACC models [--json]            # your declared models, with their scores
 ACC pick --kind code [--max-cost free|included|cheap|paid] [--json]
 ACC record --kind code --agent opencode --model <model> --cost free --outcome pass --score 85 --minutes 12 [--effort <e>] [--lane <lane>] [--job "<title>"] [--note "<why>"]
 ACC score [--kind code] [--project <name>] [--json]
@@ -179,12 +212,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.8.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.9.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.8.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.8.0),
+No git? Download `agent-crew-chief-v0.9.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.9.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -209,7 +242,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.8.0
+git -C agent-crew-chief checkout v0.9.0
 python agent-crew-chief/install.py /path/to/project
 ```
 
