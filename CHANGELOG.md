@@ -8,6 +8,43 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.12.1] - 2026-11-02
+
+### Changed
+- **The race engineer's terminal has no job segment.** One engineer covers a
+  whole lane, so its name is `acc-<slug>-<lane>-engineer[-<n>]`; drivers and
+  scrutineers keep `acc-<slug>-<lane>-<job>-<role>[-<n>]`.
+  `terminal_name(slug, lane, None, "engineer")` builds it; passing a job for
+  the engineer, or no job for a driver or scrutineer, raises `ValueError`.
+  Spec 0120 carries the amendment.
+- **Race engineers' `coordinate` grades are recorded under the engineer's own
+  `agent:model`** (`ACC pick --kind coordinate`). Since 0.12.0 the engineer
+  is a separate Orca worker, not the crew chief, so the 0.11.0 rule of
+  recording it as the crew chief no longer applies.
+- **Scrutineers started with `orca terminal create`** send no `worker_done`:
+  `pit-wall.md` now says the engineer waits for
+  `../<repo>-acc-logs/<name>.md` to end with its `VERDICT:` line, as in
+  background mode.
+- SKILL.md step 3 now names the Chat UI case (no terminal handle: skip the
+  rename), as 0.12.0 already described.
+- `templates/race-engineer.md` points engineers at `crew_chief.terminals`
+  for driver and scrutineer names.
+
+### Fixed
+- Tutorial: the race engineer, not the crew chief, makes its own pass over
+  the risky path and runs the pit stop.
+- Tutorial PT brought back in step with EN (naming convention, extra
+  sentences).
+- READMEs and tutorials: lane reports come back through `worker_done` in Orca
+  mode or the engineer's own log in background mode; the race engineer's
+  name is now given in "Following a run"; "plain mode" is now
+  "background mode" in the "Coming from 0.7" section.
+- Tutorial: "Two related rules" listed three; it now says three.
+
+### Notes
+- tmux was dropped before the 0.12.0 merge; the PR #15 description now says
+  so.
+
 ## [0.12.0] - 2026-11-02
 
 ### Added

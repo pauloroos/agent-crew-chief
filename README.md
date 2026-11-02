@@ -152,16 +152,20 @@ no file change and no log growth is killed and counts as a failed attempt.
 
 How you watch progress and where the artifacts land depends on the mode:
 
-- **Orca mode:** the race engineer is an Orca worker in the lane worktree. Lane
-  reports arrive in the chat; use the Orca panel and `worker-read`. List
-  terminals with `orca terminal list --json`.
+- **Names:** every agent has a standard name, used as its Orca tab title and
+  its log file name: the race engineer `acc-<slug>-<lane>-engineer[-<n>]`,
+  drivers and scrutineers `acc-<slug>-<lane>-<job>-<role>[-<n>]`.
+- **Orca mode:** the race engineer is an Orca worker in the lane worktree. Its
+  lane report reaches the crew chief in the `worker_done` message
+  (`orca orchestration check --wait`); use the Orca panel and `worker-read`.
+  List terminals with `orca terminal list --json`.
 - **Background mode:** the folder `../<repo>-acc-logs/` next to the repo holds
   the artifacts for each lane. Files per agent: `<name>.md` (brief or job
   spec), `<name>.log` and `<name>.log.err` (opencode writes its progress to
   `.err`; `claude -p` prints only at the end), `<name>.pid`, where `<name>`
-  is the standard name `acc-<slug>-<lane>-<job>-<role>[-<n>]`. Scrutineer
-  prompts and findings follow the same pattern. The folder is deleted at
-  delivery, once nothing runs.
+  is the standard name. The race engineer's lane report ends up in its own
+  log. Scrutineer prompts and findings follow the same pattern. The folder is
+  deleted at delivery, once nothing runs.
 - **Progress in git:** `git -C ../<repo>-acc-<lane> log --oneline acc/<slug>..`.
 - **Grades:** `~/.crew-chief/ledger.jsonl`; read them with `ACC score`
   (untried listed models collapse into `not tried yet (N): ...`), one kind
@@ -309,12 +313,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.12.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.0),
+No git? Download `agent-crew-chief-v0.12.1.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.1),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -339,7 +343,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.12.0
+git -C agent-crew-chief checkout v0.12.1
 python agent-crew-chief/install.py /path/to/project
 ```
 
@@ -349,7 +353,7 @@ in line endings are kept. The ledger in `~/.crew-chief/` is never touched.
 ## Coming from 0.6 or 0.7
 
 - **From 0.7:** run the installer again. You get the spec stage, the kit and
-  plain mode; the scoreboard is the same file.
+  background mode; the scoreboard is the same file.
 - **From 0.6:** the maestro, dispatch engine, slots and per-project
   preferences are gone for good. Kit copies 0.6 installed carry the same
   marker and are updated in place. Bring the old grades into the scoreboard

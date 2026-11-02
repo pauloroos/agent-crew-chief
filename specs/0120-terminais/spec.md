@@ -31,6 +31,10 @@ worker-start`; a regra precisa garantir isso.
    branch da feature (`acc/<slug>` → `<slug>`) e `<job>` é um slug curto do
    título do job. Fiscais paralelos usam `-1`/`-2` (ou números de tentativa
    maiores) para garantir unicidade. Curto e legível.
+   *Emenda 2026-11-02 (ACC 0.12.1):* o race engineer é um por lane e cobre
+   vários jobs, então omite `<job>`: `acc-<slug>-<lane>-engineer` e
+   `acc-<slug>-<lane>-engineer-<n>`. Drivers e scrutineers mantêm o formato
+   acima.
 4. **Docs (regra do AGENTS.md):** `README.md` e `README.pt-BR.md`,
    `docs/tutorial.md` e `docs/tutorial.pt-BR.md` (como acompanhar: aba no Orca,
    logs), `skill/crew-chief/SKILL.md`, `skill/crew-chief/pit-wall.md`,
@@ -49,7 +53,8 @@ Fora do escopo: mexer no ledger, no pick, no sync ou nos models.
 - O pedido diz "ritmo race" e "aprovação já está dada": este spec e o plano são
   escritos e executados sem parada de aprovação.
 - O nome padrão usa o formato `acc-<slug>-<lane>-<job>-<papel>` para a primeira
-  tentativa e `acc-<slug>-<lane>-<job>-<papel>-<n>` para a n-ésima, onde
+  tentativa e `acc-<slug>-<lane>-<job>-<papel>-<n>` para a n-ésima (o engineer
+  não tem `<job>`, ver a emenda no item 3), onde
   `<slug>` vem do nome da branch da feature (`acc/<slug>` → `<slug>`) e `<job>`
   é um slug curto do título do job. Exemplo:
   `acc-terminais-lane1-greet-driver`, `acc-terminais-lane1-cli-driver-2`.

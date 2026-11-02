@@ -83,8 +83,12 @@ check is not yet accepted.
    - Without Orca: prompt file `../<repo>-acc-logs/<name>-prompt.md`, started
      like a driver, as a background process, with "Do the review in <its
      absolute path>"; output `../<repo>-acc-logs/<name>.md`.
-   - Orca mode: the filled prompt is the `worker-start` spec; findings come
-     back in the `worker_done` message.
+   - Orca mode with `worker-start`: the filled prompt is the spec; findings
+     come back in the `worker_done` message.
+   - Orca mode with `orca terminal create` (an agent Orca does not know): no
+     `worker_done` comes. Prompt file and output file as without Orca; wait as
+     in background mode (each wait under 2 minutes) until
+     `../<repo>-acc-logs/<name>.md` ends with its `VERDICT:` line.
 3. Merge findings, drop duplicates and any you cannot confirm. Then do your
    own pass over the risky path: a "pass" with no findings is not proof.
 4. Confirmed findings go back to the **same driver model** in a fresh session
@@ -128,12 +132,13 @@ A driver runs in the lane worktree on the lane branch. Its prompt is the job
 spec. Lane worktrees are created as children of the crew chief worktree
 (`orca worktree create ... --parent-worktree <crew chief worktree selector>`,
 e.g. `active`, `branch:<crew chief branch>` or `path:<path>`), so Orca shows
-them under the run. Every engineer, driver and scrutineer is named with the standard name,
+them under the run. Every driver and scrutineer is named with the standard name,
 `acc-<slug>-<lane>-<job>-<role>` for the first attempt and
 `acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th, where `<slug>` comes from
 the feature branch `acc/<slug>`, `<job>` is a short slug of the job title, and
-`<role>` is `engineer`, `driver` or `scrutineer`: the Orca tab title and the
-log file name are the same. Scrutineers running in parallel use `-1` and `-2`
+`<role>` is `driver` or `scrutineer`. The engineer covers the whole lane, so
+it has no `<job>`: `acc-<slug>-<lane>-engineer[-<n>]`. The Orca tab title and
+the log file name are the same. Scrutineers running in parallel use `-1` and `-2`
 (or higher attempt numbers) to stay unique.
 
 ### Orca mode
@@ -147,7 +152,7 @@ receipt, `worker-show`, or `orca terminal list --worktree <lane worktree>
 
 ```text
 orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --json
-orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-<job>-engineer --json
+orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-engineer --json
 orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<job>-<role> --command "<driver command>" --json
 orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 100000 --json
 ```

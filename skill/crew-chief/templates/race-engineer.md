@@ -33,9 +33,12 @@ to drop failed workers or the first scrutineer.
 Use the two modes in `pit-wall.md` ("Starting and watching drivers"): **Orca
 mode** starts you and each driver and scrutineer as an Orca worker or terminal,
 **background mode** as a process with log and PID. You run in the lane worktree
-on the lane branch — as an Orca worker or a background process — named by the
-standard name `acc-<slug>-<lane>-<job>-<role>` for the first attempt and
-`acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th. A driver's prompt is the job
+on the lane branch — as an Orca worker or a background process — named
+`acc-<slug>-<lane>-engineer[-<n>]`. Name each driver and scrutineer by the standard
+name `acc-<slug>-<lane>-<job>-<role>` for the first attempt and
+`acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th; build it with
+`crew_chief.terminals.terminal_name(slug, lane, job, role, attempt)`
+(`scripts/crew_chief/terminals.py`). A driver's prompt is the job
 spec (self-contained, with target, change, constraints, acceptance, working
 rules and finish block).
 
