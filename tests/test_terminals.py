@@ -79,6 +79,7 @@ def test_bad_attempt_is_rejected(attempt: object) -> None:
 from pathlib import Path
 
 from crew_chief.terminals import (
+    _quoted_path,
     log_file,
     tmux_attach,
     tmux_kill_session,
@@ -134,6 +135,12 @@ def test_start_returns_the_three_commands_in_order() -> None:
         tmux_pipe_pane("acc-x", "/tmp/acc-x.log"),
         tmux_session_pid("acc-x"),
     ]
+
+
+def test_quoted_path_renders_windows_path_as_posix() -> None:
+    from pathlib import PureWindowsPath
+
+    assert _quoted_path(PureWindowsPath("C:\\tmp\\acc-x.log")) == "C:/tmp/acc-x.log"
 
 
 def test_terminal_name_flows_into_the_commands() -> None:

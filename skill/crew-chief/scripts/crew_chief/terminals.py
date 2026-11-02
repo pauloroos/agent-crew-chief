@@ -41,7 +41,7 @@ def log_file(logs_dir, name: str) -> pathlib.Path:
 
 
 def _quoted_path(path) -> str:
-    text = str(path)
+    text = pathlib.PurePath(path).as_posix()
     return f'"{text}"' if any(char.isspace() for char in text) else text
 
 
