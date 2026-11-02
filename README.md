@@ -47,16 +47,16 @@ before they are accepted, and retries start clean.
 - **Race engineer** (engenheiro de corrida) — one per lane. Coordinates that
   lane only: starts drivers, runs Stint / Relay / Fresh tyres / Scrutineering,
   records grades, sends a lane report. Brief: `templates/race-engineer.md`.
-- **Driver** (piloto) — the worker agent that does one job in the lane worktree.
+- **Driver** (piloto) — the agent that does one job in the lane worktree.
 - **Scrutineer** (fiscal) — read-only reviewer of high-risk jobs (per pace).
   Scored as `review` work.
 
 - **Fresh tyres** (Pneus novos): before every new attempt, the lane worktree is
   reset to the commit it had before the job (`git reset --hard <start>` +
-  `git clean -fd`). The next worker never inherits a failed attempt's edits.
+  `git clean -fd`). The next driver never inherits a failed attempt's edits.
 - **Relay**: a failed stint hands the job over. Attempt 2 uses another model
   (`ACC pick --kind <k> --exclude <failed>`), same tier allowed; attempt 3
-  moves one cost tier up. After three failures, the coordinator fixes it or
+  moves one cost tier up. After three failures, the race engineer fixes it or
   stops the lane.
 - **Scrutineering** (Vistoria): high-risk jobs (auth, money, data loss,
   concurrency) get two parallel read-only scrutineers. Neither may share the
@@ -133,15 +133,15 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
 
 ## Two modes
 
-The coordinator chooses at the start of every run:
+The crew chief chooses at the start of every run:
 
 | | Orca mode | Plain mode |
 | --- | --- | --- |
 | When | `orca status --json` shows a running Orca | otherwise, or when you ask for it |
-| Where you run the coordinator | an Orca terminal of the project | any terminal, VS Code, any CLI |
+| Where you run the crew chief | an Orca terminal of the project | any terminal, VS Code, any CLI |
 | Lanes | Orca worktrees | `git worktree add ../<repo>-acc-<lane>` |
-| Workers | `orca orchestration worker-start` | `claude -p`, `codex exec` or `opencode run` in the background |
-| Watching | Orca panel, `check --wait`, worker questions | process alive, new commits, changed files, `../<repo>-acc-logs/*.log` |
+| Drivers | `orca orchestration worker-start` | `claude -p`, `codex exec` or `opencode run` in the background |
+| Watching | Orca panel, `check --wait`, driver questions | process alive, new commits, changed files, `../<repo>-acc-logs/*.log` |
 
 Plain mode has no question channel: a driver that needs an answer stops or
 guesses, so specs must be self-contained. A job with 30 minutes of no commit,
@@ -167,26 +167,27 @@ How you watch progress and where the artifacts land depends on the mode:
   (untried listed models collapse into `not tried yet (N): ...`), one kind
   with `--kind`; `ACC models` shows your list with scores and
   `graded but not listed`.
-- **The final report:** the pull request lists each job with risk, pace,
-  models, attempts, scrutineer scores, outcome, and driver and engineer scores.
+- **The final report:** the crew chief's final report to you gives the PR link
+  and each job with risk, pace, models, attempts, scrutineer scores, outcome,
+  driver and engineer scores, anything open, and `ACC score --kind <kinds used>`.
 
 ## The skills kit
 
 The installer also copies five skills next to `crew-chief`, and every job spec
-tells workers to use them:
+tells drivers to use them:
 
 | Skill | From | Used for |
 | --- | --- | --- |
 | `test-driven-development` | superpowers | code changes: test first |
 | `systematic-debugging` | superpowers | bugs: find the cause before fixing |
-| `verification-before-completion` | superpowers | run the check before saying "done" (the coordinator too, before the PR) |
+| `verification-before-completion` | superpowers | run the check before saying "done" (the crew chief too, before the PR) |
 | `ponytail` | ponytail | the smallest complete change |
 | `ponytail-review` | ponytail | a quality review of a change |
 
 Each copy carries an `.installed-by-agent-crew-chief` marker file. A folder
 with the same name but no marker is yours and is never touched. Skip a kit with
 `--no-superpowers` or `--no-ponytail` (copies already there are left as they
-are). A worker without the skills reads the rule as plain guidance.
+are). A driver without the skills reads the rule as plain guidance.
 
 ## The scoreboard
 
@@ -248,7 +249,7 @@ agent  = "opencode"          # CLI / Orca agent: opencode, claude, codex, gemini
 model  = "provider/model-a"  # the exact --model value
 cost   = "free"              # free | included | cheap | paid
 kinds  = ["code", "tests"]   # optional; absent = every kind
-note   = "everyday work"     # optional; shown to the coordinator
+note   = "everyday work"     # optional; shown to the crew chief
 ```
 
 Global and project lists merge. A project entry with the same `agent` and
@@ -258,7 +259,7 @@ off here); `inherit = false` in the project file ignores the global list.
 scores and notes. After the table it prints
 `graded but not listed: <agent:model> (<kind> <score>, n <n>)` for executors
 that have grades but are not in `models.toml`, so you can add them. With a
-list, `ACC pick` and the coordinator choose only among those models; a model
+list, `ACC pick` and the crew chief choose only among those models; a model
 with no score yet gets tried, and the score you record settles it. Without
 any file, nothing changes. A broken file stops the command with
 `<path>: <problem>`. A copyable example is in
@@ -284,7 +285,7 @@ Steering a run:
 - **Skip the spec:** say "run directly" (or "sem spec").
 - **Force plain mode:** say "without Orca" (or "plain mode").
 - **Limit cost:** say "free models only" or "nothing above included"; the
-  coordinator passes `--max-cost free|included|cheap|paid` to `ACC pick`.
+  crew chief passes `--max-cost free|included|cheap|paid` to `ACC pick`.
 
 The five commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (or `.claude/skills/...`) in a project where the skill is installed:

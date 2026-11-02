@@ -49,16 +49,16 @@ tentativas repetidas começam limpas.
 - **Engenheiro de corrida** (race engineer) — um por trilha. Coordena só aquela
  trilha: larga os pilotos, roda Stint / Relay / Pneus novos / Vistoria,
  registra notas, manda o relatório da trilha. Brief: `templates/race-engineer.md`.
-- **Piloto** (driver) — o agente worker que faz um job no worktree da trilha.
+- **Piloto** (driver) — o agente que faz um job no worktree da trilha.
 - **Fiscal** (scrutineer) — revisor só leitura de jobs de risco alto (por ritmo).
  Avaliado como trabalho de `review`.
 
 - **Pneus novos** (Fresh tyres): antes de cada nova tentativa, o worktree da
  trilha volta ao commit que tinha antes do job (`git reset --hard <start>` +
- `git clean -fd`). O próximo worker nunca herda edições de uma tentativa falha.
+ `git clean -fd`). O próximo piloto nunca herda edições de uma tentativa falha.
 - **Relay**: um stint reprovado passa o job adiante. A tentativa 2 usa outro
  modelo (`ACC pick --kind <k> --exclude <falhou>`), mesma faixa permitida; a
- tentativa 3 sobe uma faixa de custo. Depois de três falhas, o coordenador
+ tentativa 3 sobe uma faixa de custo. Depois de três falhas, o engenheiro de corrida
  conserta ou para a trilha.
 - **Vistoria** (Scrutineering): jobs de risco alto (auth, dinheiro, perda de
  dados, concorrência) ganham dois fiscais paralelos, só leitura. Nenhum pode
@@ -137,15 +137,15 @@ merge das trilhas em acc/<slug> → testes → push → pull request (você faz 
 
 ## Dois modos
 
-O coordenador escolhe no começo de cada execução:
+O chefe de equipe escolhe no começo de cada execução:
 
 | | Modo Orca | Modo simples |
 | --- | --- | --- |
 | Quando | `orca status --json` mostra um Orca rodando | nos outros casos, ou quando você pede |
-| Onde você roda o coordenador | num terminal do Orca no projeto | qualquer terminal, VS Code, qualquer CLI |
+| Onde você roda o chefe de equipe | num terminal do Orca no projeto | qualquer terminal, VS Code, qualquer CLI |
 | Trilhas | worktrees do Orca | `git worktree add ../<repo>-acc-<trilha>` |
-| Workers | `orca orchestration worker-start` | `claude -p`, `codex exec` ou `opencode run` em segundo plano |
-| Acompanhamento | painel do Orca, `check --wait`, perguntas dos workers | processo vivo, commits novos, arquivos alterados, `../<repo>-acc-logs/*.log` |
+| Pilotos | `orca orchestration worker-start` | `claude -p`, `codex exec` ou `opencode run` em segundo plano |
+| Acompanhamento | painel do Orca, `check --wait`, perguntas dos pilotos | processo vivo, commits novos, arquivos alterados, `../<repo>-acc-logs/*.log` |
 
 No modo simples não há canal de perguntas: um piloto que precisa de uma
 resposta para ou chuta, então a spec tem que se bastar. Um job com 30 minutos
@@ -173,27 +173,28 @@ Como você acompanha o progresso e onde os artefatos ficam depende do modo:
   listados não testados viram `not tried yet (N): ...`), um tipo com
   `--kind`; `ACC models` mostra sua lista com notas e
   `graded but not listed`.
-- **O relatório final:** o pull request lista cada job com risco, ritmo,
-  modelos, tentativas, notas dos fiscais, resultado e notas do piloto e do
-  engenheiro.
+- **O relatório final:** o relatório final do chefe de equipe para você dá o
+  link do PR e cada job com risco, ritmo, modelos, tentativas, notas dos
+  fiscais, resultado, notas do piloto e do engenheiro, qualquer pendência e
+  `ACC score --kind <tipos usados>`.
 
 ## O kit de skills
 
 O instalador também copia cinco skills ao lado da `crew-chief`, e toda spec de
-job manda os workers usarem:
+job manda os pilotos usarem:
 
 | Skill | De | Para quê |
 | --- | --- | --- |
 | `test-driven-development` | superpowers | mudanças de código: teste primeiro |
 | `systematic-debugging` | superpowers | bugs: achar a causa antes de corrigir |
-| `verification-before-completion` | superpowers | rodar a verificação antes de dizer "pronto" (o coordenador também, antes do PR) |
+| `verification-before-completion` | superpowers | rodar a verificação antes de dizer "pronto" (o chefe de equipe também, antes do PR) |
 | `ponytail` | ponytail | a menor mudança completa |
 | `ponytail-review` | ponytail | uma revisão de qualidade de uma mudança |
 
 Cada cópia leva um arquivo marcador `.installed-by-agent-crew-chief`. Uma pasta
 com o mesmo nome mas sem marcador é sua e nunca é tocada. Pule um kit com
 `--no-superpowers` ou `--no-ponytail` (cópias que já estão lá ficam como
-estão). Um worker sem as skills lê a regra como orientação simples.
+estão). Um piloto sem as skills lê a regra como orientação simples.
 
 ## O placar
 
@@ -256,7 +257,7 @@ agent  = "opencode"          # CLI / agente do Orca: opencode, claude, codex, ge
 model  = "provider/model-a"  # o valor exato do --model
 cost   = "free"              # free | included | cheap | paid
 kinds  = ["code", "tests"]   # opcional; ausente = todos os tipos
-note   = "dia a dia"         # opcional; mostrado ao coordenador
+note   = "dia a dia"         # opcional; mostrado ao chefe de equipe
 ```
 
 A lista global e a do projeto se juntam. Uma entrada do projeto com o mesmo
@@ -266,7 +267,7 @@ global. `ACC models` mostra a lista efetiva: de onde veio cada modelo, as
 notas e as observações. Depois da tabela ele imprime
 `graded but not listed: <agent:model> (<kind> <score>, n <n>)` para executores
 que têm notas mas não estão no `models.toml`, para você poder adicioná-los.
-Com uma lista, o `ACC pick` e o coordenador escolhem só entre esses modelos;
+Com uma lista, o `ACC pick` e o chefe de equipe escolhem só entre esses modelos;
 um modelo sem nota ainda é testado, e a nota que você registrar decide. Sem
 nenhum arquivo, nada muda. Um arquivo quebrado para o comando com
 `<caminho>: <problema>`. Um exemplo para copiar está em
@@ -292,7 +293,7 @@ Conduzindo uma execução:
 - **Pular a spec:** diga "sem spec" (ou "run directly").
 - **Forçar o modo simples:** diga "sem Orca" (ou "modo simples").
 - **Limitar custo:** diga "só modelos grátis" ou "nada acima de included"; o
-  coordenador passa `--max-cost free|included|cheap|paid` para o `ACC pick`.
+  chefe de equipe passa `--max-cost free|included|cheap|paid` para o `ACC pick`.
 
 Os cinco comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (ou `.claude/skills/...`) num projeto com a skill instalada:
