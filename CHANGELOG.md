@@ -8,6 +8,33 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.12.0] - 2026-11-02
+
+### Added
+- **Visible terminals for every crew member.** In Orca mode, race engineers,
+  drivers and scrutineers start as Orca workers or terminals with a standard
+  title (`acc-<slug>-<lane>-<role>[-<n>]`), so every agent is reachable from
+  the Orca UI or CLI. Without Orca and with tmux on PATH, each agent runs in
+  a named tmux session with `pipe-pane` logging to the same log path as
+  before; `tmux ls` lists the crew and `tmux attach -t <name>` enters any
+  terminal. Without tmux, behaviour falls back to background process with
+  log and PID, unchanged from 0.11.x.
+- **`crew_chief.terminals` module.** `terminal_name(slug, lane, role, attempt)`
+  builds the standard name; `tmux_session_commands(...)` returns the start,
+  kill and log paths for a tmux session. Both covered by unit tests.
+
+### Changed
+- **SKILL.md step 3** now requires starting the race engineer as an Orca
+  worker (`orca orchestration worker-start`) in the lane worktree, never as
+  a subagent of the crew chief, regardless of harness. Drivers and
+  scrutineers follow the same rule: supervised worker when Orca knows the
+  agent, otherwise `orca terminal create` with the standard title.
+- **pit-wall.md "Starting and watching drivers"** documents all three modes
+  (Orca worker/terminal, tmux, plain background) with real commands and the
+  standard naming convention.
+- **templates/race-engineer.md** points engineers at the new pit-wall
+  section and the `terminals` helper for consistent naming.
+
 ## [0.11.1] - 2026-11-01
 
 ### Changed
