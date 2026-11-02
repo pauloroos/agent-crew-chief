@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -36,8 +37,12 @@ def _write_project(repo: Path, text: str) -> Path:
 
 def _grade(model: str, value: int, kind: str = "code", cost: str = "free", n: int = 1,
            agent: str = "opencode", **extra) -> None:
-    for _ in range(n):
-        ledger.append({"kind": kind, "agent": agent, "model": model, "cost": cost,
+    now = datetime.now(timezone.utc)
+    for i in range(n):
+        # FR-003: read() dedupes byte-identical entries, so each simulated
+        # grade needs its own timestamp to count as its own grading event.
+        at = (now + timedelta(seconds=i)).isoformat(timespec="seconds")
+        ledger.append({"at": at, "kind": kind, "agent": agent, "model": model, "cost": cost,
                        "outcome": "pass" if value >= 60 else "fail",
                        "score": value, "project": "shop", **extra})
 
