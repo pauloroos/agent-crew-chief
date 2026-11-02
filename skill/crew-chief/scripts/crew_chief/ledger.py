@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-KINDS = ("code", "tests", "refactor", "design", "docs", "research", "diagnosis", "data", "review")
+KINDS = ("code", "tests", "refactor", "design", "docs", "research", "diagnosis", "data", "review", "coordinate")
 COSTS = ("free", "included", "cheap", "paid")
 OUTCOMES = ("pass", "fail")
 

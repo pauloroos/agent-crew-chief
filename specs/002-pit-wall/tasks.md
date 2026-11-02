@@ -7,6 +7,9 @@
   without models.toml; tests in `tests/test_acc.py` / `tests/test_models.py`
   written first.
 
+- [ ] T007 New ledger kind `coordinate` in `ledger.KINDS` (record, score,
+  pick, models.toml kinds accept it); tests. Depends on T001 (same lane).
+
 ## Phase 2: Method and docs (lane `docs`, kind docs) [P]
 
 - [ ] T002 [P] `skill/crew-chief/pit-wall.md`: the whole method (spec "The
@@ -23,8 +26,15 @@
   [0.10.0]; `__version__ = "0.10.0"`, version pins and `tests/test_docs.py`
   (version + new term checks, SC-001). Depends on T002.
 
+- [ ] T008 The team (spec "The team"): `templates/race-engineer.md` (the
+  engineer brief: lane, jobs, pace, rules, report format); SKILL.md becomes
+  the crew chief's guide (dispatch one race engineer per lane, check and
+  grade it as `coordinate`); `pit-wall.md` is written for the race engineer;
+  README/pt-BR name crew chief / race engineer (engenheiro de corrida) /
+  driver (piloto) / scrutineer (fiscal); CHANGELOG. Depends on T002-T005.
+
 ## Phase 3: Validate and deliver (coordinator)
 
-- [ ] T006 Merge both lanes, full tests, then the SC-002 dry run on a copy of
+- [ ] T006 Merge both lanes, full tests, then the SC-002 dry run (crew chief dispatching a race engineer) on a copy of
   `examples/hello-crew` (a `high` job, two scrutineers, a pit stop), record
   the grades, push, PR, CI.

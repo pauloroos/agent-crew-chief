@@ -53,6 +53,8 @@ def _parser() -> argparse.ArgumentParser:
     pick = commands.add_parser("pick", help="the model to use for a kind of work")
     pick.add_argument("--kind", required=True, choices=ledger.KINDS)
     pick.add_argument("--max-cost", choices=ledger.COSTS)
+    pick.add_argument("--exclude", action="append", default=[],
+                      help="an executor to skip, e.g. codex:m (repeatable)")
     pick.add_argument("--json", action="store_true")
 
     old = commands.add_parser("import", help="copy the grades of an ACC 0.6 project")
@@ -78,6 +80,13 @@ def _untried(kind: str, entry: dict) -> dict:
         "model": entry["model"], "effort": entry.get("effort"), "cost": entry["cost"],
         "score": None, "n": 0, "pass_rate": None, "minutes": None, "last": "",
     }
+
+
+def _is_excluded(entry: dict, excludes: list[str]) -> bool:
+    """An --exclude value matches score.executor or bare agent:model (every effort)."""
+    if score.executor(entry) in excludes:
+        return True
+    return f"{entry.get('agent')}:{entry.get('model')}" in excludes
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -187,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
             rows = sorted(candidates, key=lambda r: (
                 score._tier(r), -r["score"] if r["score"] is not None else float("inf"),
                 -r["n"], r["executor"]))
+        rows = [r for r in rows if not _is_excluded(r, args.exclude)]
         best = score.suggest(rows, args.max_cost)
         if args.json:
             print(json.dumps({"pick": best, "rows": rows[:5]}, indent=2))

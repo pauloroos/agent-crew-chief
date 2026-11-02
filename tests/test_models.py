@@ -286,3 +286,64 @@ def test_worktree_reads_the_main_repo_file(tmp_path: Path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert out.splitlines()[0] == f"models from: {project_path}"
     assert "| opencode:provider/model-a | project |" in out
+
+
+def test_pick_exclude_best_gets_next(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A + PAID_B)
+    _grade("provider/model-a", 80, n=2)
+    _grade("provider/model-b", 90, cost="paid", n=2)
+    monkeypatch.chdir(tmp_path)
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/model-b"]) == 0
+    out = capsys.readouterr().out
+    assert "opencode:provider/model-a" in out.splitlines()[0]
+    assert "opencode:provider/model-b" not in out
+
+
+def test_pick_exclude_twice(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A + PAID_B + """\
+[[model]]
+agent = "opencode"
+model = "provider/model-c"
+cost = "free"
+""")
+    monkeypatch.chdir(tmp_path)
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/model-a",
+                 "--exclude", "opencode:provider/model-b"]) == 0
+    out = capsys.readouterr().out
+    assert "opencode:provider/model-c" in out.splitlines()[0]
+    assert "opencode:provider/model-a" not in out
+    assert "opencode:provider/model-b" not in out
+
+
+def test_pick_exclude_effort(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    _write_global(ledger_home, """\
+[[model]]
+agent = "opencode"
+model = "provider/model-a"
+cost = "free"
+effort = "high"
+[[model]]
+agent = "opencode"
+model = "provider/model-b"
+cost = "free"
+""")
+    _grade("provider/model-a", 90, n=2, effort="high")
+    monkeypatch.chdir(tmp_path)
+    # spelled with effort drops only that row
+    assert main(["pick", "--kind", "code",
+                 "--exclude", "opencode:provider/model-a (high)"]) == 0
+    out = capsys.readouterr().out
+    assert "opencode:provider/model-b" in out.splitlines()[0]
+    assert "opencode:provider/model-a (high)" not in out
+    # bare agent:model drops every effort of it
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/model-a",
+                 "--exclude", "opencode:provider/model-b"]) == 0
+    assert "no model in your models.toml takes code work" in capsys.readouterr().out
+
+
+def test_pick_exclude_everything_says_nothing(ledger_home: Path, tmp_path: Path,
+                                              monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A)
+    monkeypatch.chdir(tmp_path)
+    assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/model-a"]) == 0
+    assert "no model in your models.toml takes code work" in capsys.readouterr().out
