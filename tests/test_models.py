@@ -198,16 +198,73 @@ def test_graded_model_outside_the_list_is_never_picked(ledger_home: Path, tmp_pa
     assert all(r["model"] != "provider/outsider" for r in payload["rows"])
 
 
+def test_score_kind_collapses_untried_rows(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A + PAID_B + """\
+[[model]]
+agent = "opencode"
+model = "provider/model-c"
+cost = "free"
+""")
+    _grade("provider/model-a", 90, n=2)
+    monkeypatch.chdir(tmp_path)
+    assert main(["score", "--kind", "code"]) == 0
+    out = capsys.readouterr().out
+    assert "| opencode:provider/model-a |" in out
+    assert "| - | 0 |" not in out
+    assert "not tried yet (2): opencode:provider/model-b, opencode:provider/model-c" in out
+
+
 def test_score_kind_adds_n0_rows(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
     _write_global(ledger_home, FREE_A + PAID_B)
     _grade("provider/model-a", 90, n=2)
     monkeypatch.chdir(tmp_path)
     assert main(["score", "--kind", "code"]) == 0
     out = capsys.readouterr().out
-    assert "| opencode:provider/model-b | - | 0 | - |" in out
+    assert "| opencode:provider/model-b |" not in out
+    assert "not tried yet (1): opencode:provider/model-b" in out
     assert main(["score", "--kind", "code", "--json"]) == 0
     rows = json.loads(capsys.readouterr().out)
     assert [(r["model"], r["n"]) for r in rows] == [("provider/model-a", 2), ("provider/model-b", 0)]
+
+
+def test_pick_text_keeps_untried_rows(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A + PAID_B)
+    _grade("provider/model-a", 90, n=2)
+    monkeypatch.chdir(tmp_path)
+    assert main(["pick", "--kind", "code"]) == 0
+    out = capsys.readouterr().out
+    assert "| opencode:provider/model-b | - | 0 | - |" in out
+
+
+def test_models_graded_but_not_listed(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A)
+    _grade("model-x", 80, kind="coordinate", agent="claude")
+    monkeypatch.chdir(tmp_path)
+    assert main(["models"]) == 0
+    out = capsys.readouterr().out
+    assert "graded but not listed: claude:model-x (coordinate 65.0, n 1)" in out
+    assert main(["models", "--json"]) == 0
+    assert "graded but not listed" not in capsys.readouterr().out
+
+
+def test_models_graded_but_not_listed_several_kinds(ledger_home: Path, tmp_path: Path,
+                                                    monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A)
+    _grade("model-x", 90, kind="code", agent="claude", n=2)
+    _grade("model-x", 60, kind="review", agent="claude")
+    monkeypatch.chdir(tmp_path)
+    assert main(["models"]) == 0
+    out = capsys.readouterr().out
+    assert "graded but not listed: claude:model-x (code 76.7, n 2; review 55.0, n 1)" in out
+
+
+def test_models_no_hint_when_all_graded_are_listed(ledger_home: Path, tmp_path: Path,
+                                                   monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A)
+    _grade("provider/model-a", 90, n=2)
+    monkeypatch.chdir(tmp_path)
+    assert main(["models"]) == 0
+    assert "graded but not listed" not in capsys.readouterr().out
 
 
 def test_score_without_kind_lists_not_tried_yet(ledger_home: Path, tmp_path: Path,

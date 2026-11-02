@@ -130,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             rows = [*rows, *(_untried(args.kind, m) for m in declared
                              if (m.get("kinds") is None or args.kind in m["kinds"])
                              and not _match(rows, m))]
-            print(json.dumps(rows, indent=2) if args.json else score.render(rows))
+            print(json.dumps(rows, indent=2) if args.json else score.render(rows, collapse_untried=True))
             return 0
         missing = [m for m in declared if not _match(rows, m)]
         if not missing:
@@ -182,6 +182,19 @@ def main(argv: list[str] | None = None) -> int:
             lines.append(f"| {name} | {m['source']} | {m['cost']} | {kinds} "
                          f"| {scores or 'not tried yet'} | {m.get('note') or ''} |")
         print("\n".join(lines))
+        unlisted: dict[str, list[dict]] = {}
+        for row in rows:
+            if not any(_match([row], m) for m in declared):
+                unlisted.setdefault(row["executor"], []).append(row)
+        if unlisted:
+            print()
+            hints = []
+            for name, group in sorted(unlisted.items()):
+                kinds = "; ".join(
+                    f"{r['kind']} {r['score']}, n {r['n']}"
+                    for r in sorted(group, key=lambda r: r["kind"]))
+                hints.append(f"{name} ({kinds})")
+            print("graded but not listed: " + ", ".join(hints))
         return 0
 
     if args.command == "pick":
