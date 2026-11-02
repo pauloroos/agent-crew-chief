@@ -60,12 +60,13 @@ or when the user says "run directly" / "sem spec".
 
 ## 2. Pick a model per job
 
-`ACC pick --kind <kind>` names the cheapest model that scored well at least
-twice, then the scoreboard. "Not proven yet" means little data: use it, or
-try a model with no score yet, and the score you record settles it. Prefer
-free models for plain work; use a stronger one for risky or subtle jobs, or
-with `--max-cost` when the user sets a limit. The agent is the Orca agent id
-or CLI (`codex`, `claude`, `opencode`, ...) and the model its `--model` value.
+Run `ACC models` first. If it lists models, pick only among them (`ACC pick`);
+the notes say when to use each. `ACC pick --kind <kind>` names the cheapest
+model that scored well at least twice, then the scoreboard. "Not proven yet"
+means little data: use it, or try a model with no score yet; the score you
+record settles it. Prefer free models for plain work, a stronger one for risky
+or subtle jobs, `--max-cost` when the user sets a limit. Agent = Orca agent id
+or CLI (`codex`, `claude`, `opencode`, ...); model = its `--model` value.
 
 ## 3. Start the lanes
 
@@ -161,9 +162,9 @@ On each `worker_done` (plain mode: when the worker's process ends):
   and open the pull request with `gh pr create`.
 - Release every worker; remove lane worktrees and branches: Orca mode `orca
   worktree rm --worktree branch:acc/<slug>-<lane>` (deletes the branch too),
-  plain mode `git worktree remove ../<repo>-acc-<lane>` and `git branch -D
-  acc/<slug>-<lane>`. A folder "open in another program" is held by a
-  worker's leftover process: leave it and say so in the report.
+  plain mode `git worktree remove ../<repo>-acc-<lane>`, `git branch -D
+  acc/<slug>-<lane>` and, once no worker runs, `../<repo>-acc-logs/`. A folder
+  "open in another program" is held by a leftover process: leave it, report it.
 - Report to the user: the pull request, each job with its model, outcome and
   score, anything left open, and `ACC score --kind <kinds used>`.
 

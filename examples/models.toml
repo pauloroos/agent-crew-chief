@@ -1,0 +1,42 @@
+# Copy to ~/.crew-chief/models.toml (all your projects) or to
+# .crew-chief/models.toml at a repository root (that project only).
+# Names only: never put keys or tokens in this file.
+#
+# cost: free | included | cheap | paid
+# kinds (optional; absent = every kind): code, tests, refactor, design, docs,
+#   research, diagnosis, data, review
+
+[[model]]
+agent = "opencode"            # CLI / Orca agent: opencode, claude, codex, gemini, cursor, ...
+model = "provider/model-a"    # the exact --model value
+cost  = "free"
+note  = "everyday work"
+
+[[model]]
+agent  = "codex"
+model  = "model-b"
+cost   = "included"
+effort = "high"               # optional
+kinds  = ["code", "review"]
+note   = "risky or subtle changes"
+
+[[model]]
+agent = "claude"
+model = "model-c"
+cost  = "paid"
+kinds = ["design", "research"]
+note  = "only when the user allows paid models"
+
+# --- In a project file (.crew-chief/models.toml), start with these instead ---
+#
+# inherit = true              # false = ignore the global list in this project
+#
+# [[model]]                   # same agent + model as a global entry:
+# agent   = "opencode"        # only the fields set here change
+# model   = "provider/model-a"
+# enabled = false             # switch this model off in this project
+#
+# [[model]]                   # a model that exists only in this project
+# agent = "gemini"
+# model = "model-d"
+# cost  = "free"

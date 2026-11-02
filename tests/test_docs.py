@@ -46,7 +46,7 @@ def test_skill_md_covers_spec_kit_skills_and_plain_mode():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    assert __version__ == "0.8.0"
+    assert __version__ == "0.9.0"
     text = _read(CHANGELOG)
     current_section = text.split(f"## [{__version__}]", 1)[1].split("\n## [", 1)[0]
     assert current_section.strip()

@@ -4,22 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import sys
 from pathlib import Path
 
-from . import __version__, ledger, score
+from . import __version__, ledger, models, score
 
 
 def _project_name() -> str:
     """The repository's name, the same from any of its worktrees."""
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return Path.cwd().name
-    return Path(common).parent.name
+    root = models.repo_root()
+    return root.name if root is not None else Path.cwd().name
 
 
 def _score_value(text: str) -> int:
@@ -53,6 +47,9 @@ def _parser() -> argparse.ArgumentParser:
     show.add_argument("--project")
     show.add_argument("--json", action="store_true")
 
+    listed = commands.add_parser("models", help="the declared models and their scores")
+    listed.add_argument("--json", action="store_true")
+
     pick = commands.add_parser("pick", help="the model to use for a kind of work")
     pick.add_argument("--kind", required=True, choices=ledger.KINDS)
     pick.add_argument("--max-cost", choices=ledger.COSTS)
@@ -63,8 +60,35 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _match(rows: list[dict], entry: dict, kind: str | None = None) -> list[dict]:
+    """The ledger rows that grade this declared model (same agent+model, same effort when set)."""
+    return [
+        row for row in rows
+        if (kind is None or row["kind"] == kind)
+        and row.get("agent") == entry["agent"]
+        and row.get("model") == entry["model"]
+        and (entry.get("effort") is None or row.get("effort") == entry.get("effort"))
+    ]
+
+
+def _untried(kind: str, entry: dict) -> dict:
+    """A scoreboard row for a declared model with no grade yet."""
+    return {
+        "kind": kind, "executor": score.executor(entry), "agent": entry["agent"],
+        "model": entry["model"], "effort": entry.get("effort"), "cost": entry["cost"],
+        "score": None, "n": 0, "pass_rate": None, "minutes": None, "last": "",
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+
+    if args.command in ("models", "pick", "score"):
+        try:
+            declared, files = models.load()
+        except models.ModelsError as exc:
+            print(exc, file=sys.stderr)
+            return 2
 
     if args.command == "record":
         entry = ledger.append({
@@ -86,22 +110,98 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "score":
         rows = score.table(ledger.read(), args.kind, args.project)
-        print(json.dumps(rows, indent=2) if args.json else score.render(rows))
+        if not declared:
+            print(json.dumps(rows, indent=2) if args.json else score.render(rows))
+            return 0
+        if args.kind:
+            rows = [*rows, *(_untried(args.kind, m) for m in declared
+                             if (m.get("kinds") is None or args.kind in m["kinds"])
+                             and not _match(rows, m))]
+            print(json.dumps(rows, indent=2) if args.json else score.render(rows))
+            return 0
+        missing = [m for m in declared if not _match(rows, m)]
+        if not missing:
+            print(json.dumps(rows, indent=2) if args.json else score.render(rows))
+            return 0
+        if args.json:
+            rows = [*rows, *(_untried(kind, m) for m in missing
+                             for kind in (m["kinds"] or ledger.KINDS))]
+            print(json.dumps(rows, indent=2))
+            return 0
+        lines = [score.render(rows), "", "## not tried yet", ""]
+        for m in missing:
+            kinds = ", ".join(m["kinds"]) if m.get("kinds") else "all"
+            line = f"- {score.executor(m)} (cost {m['cost']}, kinds {kinds})"
+            lines.append(line + f": {m['note']}" if m.get("note") else line)
+        print("\n".join(lines))
+        return 0
+
+    if args.command == "models":
+        if not files:
+            print("No models.toml found: ACC pick uses the scoreboard only.")
+            project = models.project_path()
+            print(f"looked for: {models.global_path()}"
+                  + (f" and {project}" if project is not None
+                     else " (not in a git repository: no project file)"))
+            return 0
+        rows = score.table(ledger.read())
+        if args.json:
+            print(json.dumps({
+                "files": [str(p) for p in files],
+                "models": [{
+                    "agent": m["agent"], "model": m["model"], "effort": m.get("effort"),
+                    "cost": m["cost"], "kinds": m.get("kinds"), "note": m.get("note"),
+                    "source": m["source"],
+                    "scores": [{"kind": r["kind"], "score": r["score"], "n": r["n"]}
+                               for r in sorted(_match(rows, m), key=lambda r: r["kind"])],
+                } for m in declared],
+            }, indent=2))
+            return 0
+        print(f"models from: {', '.join(str(p) for p in files)}")
+        print()
+        lines = ["| model | from | cost | kinds | scores | note |",
+                 "| --- | --- | --- | --- | --- | --- |"]
+        for m in declared:
+            matched = sorted(_match(rows, m), key=lambda r: r["kind"])
+            scores = ", ".join(f"{r['kind']} {r['score']} ({r['n']})" for r in matched)
+            name = f"{m['agent']}:{m['model']}" + (f" ({m['effort']})" if m.get("effort") else "")
+            kinds = ", ".join(m["kinds"]) if m.get("kinds") else "all"
+            lines.append(f"| {name} | {m['source']} | {m['cost']} | {kinds} "
+                         f"| {scores or 'not tried yet'} | {m.get('note') or ''} |")
+        print("\n".join(lines))
         return 0
 
     if args.command == "pick":
         rows = score.table(ledger.read(), args.kind)
+        if declared:
+            candidates = []
+            for m in declared:
+                if m.get("kinds") is not None and args.kind not in m["kinds"]:
+                    continue
+                matched = _match(rows, m)
+                candidates += [{**r, "cost": m["cost"]} for r in matched] or [_untried(args.kind, m)]
+            rows = sorted(candidates, key=lambda r: (
+                score._tier(r), -r["score"] if r["score"] is not None else float("inf"),
+                -r["n"], r["executor"]))
         best = score.suggest(rows, args.max_cost)
         if args.json:
             print(json.dumps({"pick": best, "rows": rows[:5]}, indent=2))
+        elif best is None and declared:
+            within = f" within {args.max_cost}" if args.max_cost else ""
+            print(f"no model in your models.toml takes {args.kind} work{within}: "
+                  "add one or widen --max-cost")
         elif best is None:
             print(f"no graded {args.kind} jobs yet: use a model you trust and record its score")
         else:
-            sure = best["score"] >= score.GOOD and best["n"] >= score.SURE_N
-            print(
-                f"pick {args.kind}: {best['executor']} (score {best['score']}, n {best['n']}, "
-                f"{best['cost'] or 'cost ?'}){'' if sure else ' - not proven yet, try another too'}"
-            )
+            if best["n"] == 0:
+                print(f"pick {args.kind}: {best['executor']} (not tried yet, "
+                      f"{best['cost']}) - record its score")
+            else:
+                sure = best["score"] >= score.GOOD and best["n"] >= score.SURE_N
+                print(
+                    f"pick {args.kind}: {best['executor']} (score {best['score']}, n {best['n']}, "
+                    f"{best['cost'] or 'cost ?'}){'' if sure else ' - not proven yet, try another too'}"
+                )
             print()
             print(score.render(rows[:5]))
         return 0
