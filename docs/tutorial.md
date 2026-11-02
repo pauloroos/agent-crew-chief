@@ -201,7 +201,7 @@ git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
 `ls` shows, per lane: the engineer brief (`<lane>-engineer.md`), a job spec
-(`<lane>-<job>.md`), `.log`, `.log.err` and `.pid`. For high-risk jobs you
+(`<lane>-<job>.md`), `.log`, `.log.err` and `.pid`. For high-risk jobs, and for every job except low risk at pace `push`, you
 will also see scrutineer prompts and findings
 (`<lane>-<job>-scrutineer-<n>-prompt.md`, `<lane>-<job>-scrutineer-<n>.md`).
 `claude -p` writes its log only at the end, so an empty log is normal while
@@ -221,7 +221,7 @@ reads the scrutineer findings of high-risk jobs, and grades the engineer as
 `coordinate`:
 
 ```text
-recorded opencode:<model> coordinate pass 90 --lane greet --job "greet"
+recorded opencode:<model> coordinate pass 90
 ```
 
 Look at the scoreboard and the next pick:
@@ -238,7 +238,7 @@ When `~/.crew-chief/models.toml` lists untried models, `score` appends a
 collapsed line:
 
 ```text
-not tried yet (N): provider/model-a, provider/model-b, ...
+not tried yet (N): opencode:provider/model-a, codex:model-b, ...
 ```
 
 Optional: declare the models you have in `~/.crew-chief/models.toml` (see
@@ -373,6 +373,9 @@ Two related rules from the Pit Wall method:
 - **Fresh tyres**: before every new attempt of a job, the lane worktree is
   reset to the commit it had before the job started, so the next driver never
   inherits a failed attempt's edits or untracked files.
+- **Pit stop cap**: a job gets at most 2 pit stops; each is graded on its own
+  with "(pit stop <n>)" in the job title. After the cap the job either passes
+  or goes to Relay.
 - **Relay**: when a stint fails, attempt 2 uses another model on fresh tyres;
   attempt 3 moves one cost tier up, still on fresh tyres; after three failed
   attempts the engineer fixes the job itself or stops the lane.

@@ -204,8 +204,8 @@ git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
 O `ls` mostra, por trilha: o brief do engenheiro (`<trilha>-engineer.md`), uma
-spec de job (`<trilha>-<job>.md`), `.log`, `.log.err` e `.pid`. Para jobs de
-risco alto você também verá prompts e achados dos fiscais
+spec de job (`<trilha>-<job>.md`), `.log`, `.log.err` e `.pid`. Para jobs de risco alto, e para todo job exceto baixo risco no ritmo `push`,
+você também verá prompts e achados dos fiscais
 (`<trilha>-<job>-scrutineer-<n>-prompt.md`, `<trilha>-<job>-scrutineer-<n>.md`).
 O `claude -p` só escreve o log no fim, então log vazio é normal enquanto ele
 trabalha; commits novos e arquivos alterados é que mostram o progresso.
@@ -224,7 +224,7 @@ verificações da trilha, lê os achados dos fiscais dos jobs de risco alto e d�
 nota ao engenheiro como `coordinate`:
 
 ```text
-recorded opencode:<modelo> coordinate pass 90 --lane greet --job "greet"
+recorded opencode:<modelo> coordinate pass 90
 ```
 
 Veja o placar e a próxima escolha:
@@ -241,7 +241,7 @@ Depois da primeira execução cada modelo tem `n` 1, então o `pick` acrescenta
 modelos ainda não usados, o `score` acrescenta uma linha recolhida:
 
 ```text
-not tried yet (N): provider/model-a, provider/model-b, ...
+not tried yet (N): opencode:provider/model-a, codex:model-b, ...
 ```
 
 Opcional: declare os modelos que você tem em `~/.crew-chief/models.toml` (veja
@@ -379,6 +379,9 @@ Duas regras relacionadas do método Pit Wall:
 - **Pneus novos**: antes de cada nova tentativa de um job, o worktree da trilha
   é resetado para o commit que tinha antes do job começar, para o próximo piloto
   nunca herdar edições ou arquivos não rastreados de uma tentativa que falhou.
+- **Limite de pit stops**: um job tem no máximo 2 pit stops; cada um recebe sua
+  própria nota com "(pit stop <n>)" no título do job. Depois do limite o job
+  passa ou vai para Relay.
 - **Relay**: quando um stint falha, a tentativa 2 usa outro modelo com pneus
   novos; a tentativa 3 sobe um degrau de custo, ainda com pneus novos; depois de
   três tentativas falhadas o engenheiro conserta o job ele mesmo ou para a trilha.
