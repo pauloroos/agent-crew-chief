@@ -88,8 +88,25 @@ def suggest(rows: list[dict], max_cost: str | None = None) -> dict | None:
     return max(scored, key=lambda r: (r["score"], -_tier(r)), default=None)
 
 
-def render(rows: list[dict]) -> str:
-    """The rows as one markdown table per kind."""
+def _row_line(row: dict) -> str:
+    minutes = "-" if row["minutes"] is None else row["minutes"]
+    score = "-" if row["score"] is None else row["score"]
+    passed = "-" if row.get("pass_rate") is None else f"{round(row['pass_rate'] * 100)}%"
+    return (
+        f"| {row['executor']} | {score} | {row['n']} | {passed} "
+        f"| {minutes} | {row['cost'] or '?'} | {row['last']} |"
+    )
+
+
+def render(rows: list[dict], collapse_untried: bool = False) -> str:
+    """The rows as one markdown table per kind.
+
+    With ``collapse_untried``, rows with n 0 become one
+    ``not tried yet (N): ...`` line per kind, so ``ACC pick`` (which uses
+    the default) still shows them as table rows.
+    """
+    if collapse_untried:
+        return _render_collapsed(rows)
     lines: list[str] = []
     kind = None
     for row in rows:
@@ -103,11 +120,30 @@ def render(rows: list[dict]) -> str:
                 "| model | score | n | pass | minutes | cost | last |",
                 "| --- | --- | --- | --- | --- | --- | --- |",
             ]
-        minutes = "-" if row["minutes"] is None else row["minutes"]
-        score = "-" if row["score"] is None else row["score"]
-        passed = "-" if row.get("pass_rate") is None else f"{round(row['pass_rate'] * 100)}%"
-        lines.append(
-            f"| {row['executor']} | {score} | {row['n']} | {passed} "
-            f"| {minutes} | {row['cost'] or '?'} | {row['last']} |"
-        )
+        lines.append(_row_line(row))
+    return "\n".join(lines) if lines else "No graded jobs yet."
+
+
+def _render_collapsed(rows: list[dict]) -> str:
+    """One table of graded rows per kind, untried executors in one line."""
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        groups.setdefault(row["kind"], []).append(row)
+    lines: list[str] = []
+    for kind, group in groups.items():
+        if lines:
+            lines.append("")
+        lines += [f"## {kind}", ""]
+        graded = [row for row in group if row["n"] != 0]
+        untried = [row["executor"] for row in group if row["n"] == 0]
+        if graded:
+            lines += [
+                "| model | score | n | pass | minutes | cost | last |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+                *(_row_line(row) for row in graded),
+            ]
+        if untried:
+            if graded:
+                lines.append("")
+            lines.append(f"not tried yet ({len(untried)}): {', '.join(untried)}")
     return "\n".join(lines) if lines else "No graded jobs yet."
