@@ -190,6 +190,22 @@ a faixa mais barata (o score maior dentro da faixa). Se nenhum chegou lá
 ainda, ele aponta o melhor score até agora (empate vai para o mais barato) e
 avisa "not proven yet". `--max-cost` tira antes todo modelo acima daquela faixa.
 
+## Placar em várias máquinas
+
+O ledger (`~/.crew-chief/ledger.jsonl`) é por máquina. Dois jeitos opcionais
+de juntar as notas; sem configuração, nada muda.
+
+- **Juntar um arquivo.** Copie o `ledger.jsonl` de outra máquina e rode
+  `ACC merge <arquivo>`. Notas novas são adicionadas, duplicadas são puladas
+  e rodar de novo adiciona 0.
+- **Sincronizar por um repositório git privado.** Em cada máquina, uma vez:
+  `ACC sync --init git@github.com:<you>/crew-chief-ledger.git`. Depois,
+  `ACC sync` puxa, deduplica e envia. Só o `ledger.jsonl` é compartilhado
+  (o `models.toml` fica por máquina porque cada uma acessa modelos diferentes).
+  O union merge do git (`.gitattributes`: `ledger.jsonl merge=union`) torna
+  acréscimos concorrentes seguros. Usa o acesso git que você já tem; nenhum
+  token é pedido, guardado ou criado. O repositório precisa ser privado.
+
 ## Seus modelos
 
 Diga ao ACC quais modelos você tem. Dois arquivos opcionais, lidos com o
@@ -213,10 +229,13 @@ A lista global e a do projeto se juntam. Uma entrada do projeto com o mesmo
 `agent` e `model` muda só os campos que ela define (`enabled = false` desliga
 aquele modelo aqui); `inherit = false` no arquivo do projeto ignora a lista
 global. `ACC models` mostra a lista efetiva: de onde veio cada modelo, as
-notas e as observações. Com uma lista, o `ACC pick` e o coordenador escolhem
-só entre esses modelos; um modelo sem nota ainda é testado, e a nota que você
-registrar decide. Sem nenhum arquivo, nada muda. Um arquivo quebrado para o
-comando com `<caminho>: <problema>`. Um exemplo para copiar está em
+notas e as observações. Depois da tabela ele imprime
+`graded but not listed: <agent:model> (<kind> <score>, n <n>)` para executores
+que têm notas mas não estão no `models.toml`, para você poder adicioná-los.
+Com uma lista, o `ACC pick` e o coordenador escolhem só entre esses modelos;
+um modelo sem nota ainda é testado, e a nota que você registrar decide. Sem
+nenhum arquivo, nada muda. Um arquivo quebrado para o comando com
+`<caminho>: <problema>`. Um exemplo para copiar está em
 [`examples/models.toml`](examples/models.toml).
 
 O arquivo guarda só nomes. Nunca coloque chaves ou tokens nele; o ACC não lê
@@ -250,6 +269,8 @@ ACC pick --kind code [--max-cost free|included|cheap|paid] [--json]
 ACC record --kind code --agent opencode --model <modelo> --cost free --outcome pass --score 85 --minutes 12 [--effort <e>] [--lane <trilha>] [--job "<título>"] [--note "<por quê>"]
 ACC score [--kind code] [--project <nome>] [--json]
 ACC import /caminho/do/projeto     # notas guardadas pelo ACC 0.6 em docs/crew-chief/jobs
+ACC merge <arquivo>                # junta um ledger copiado de outra máquina
+ACC sync [--init <url>]            # sincroniza o ledger.jsonl por um repo git privado
 ```
 
 Tipos: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
@@ -261,12 +282,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.10.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.11.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.10.0.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.10.0),
+Sem git? Baixe `agent-crew-chief-v0.11.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -291,7 +312,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.10.0
+git -C agent-crew-chief checkout v0.11.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
