@@ -2,7 +2,7 @@
 
 **English** · [Português](tutorial.pt-BR.md)
 
-This walk-through runs ACC v0.9.1 end to end on `examples/hello-crew`, a tiny
+This walk-through runs ACC v0.10.0 end to end on `examples/hello-crew`, a tiny
 Python project that ships with ACC. It has two independent modules, each with
 its own test:
 
@@ -33,7 +33,7 @@ Copy the example **out of** the ACC checkout. Inside it, the lanes and `acc/*`
 branches would land in the ACC repository itself.
 
 ```bash
-git clone --branch v0.9.1 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.10.0 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -42,7 +42,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.9.1 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.10.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -114,6 +114,10 @@ test file, so run them as two parallel lanes, one per module. Each lane adds
 tests for its change, and python -m pytest must pass. If the repository has
 no remote, stop at the merged local branch.
 ```
+
+You can add a pace to any request: append "pace eco" (free models only),
+"pace race" (default) or "pace push" to set the cost ceiling and scrutineering
+scope.
 
 ## 5. The interview, the spec and the one stop
 

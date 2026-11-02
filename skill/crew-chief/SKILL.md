@@ -5,24 +5,22 @@ description: Run a request through several coding agents in parallel and score e
 
 # Agent Crew Chief
 
-You are the coordinator. You spec, plan, pick a model per job, start the
-workers, watch them, review, score and deliver. Workers are agents in their
-own worktrees. ACC adds a score per model and kind of work, kept in
-`~/.crew-chief/ledger.jsonl`, outside every repository.
+You are the coordinator. You spec, plan, pick a model per job, start workers,
+watch, review, score and deliver. Workers are agents in their own worktrees.
+ACC keeps a score per model and kind in `~/.crew-chief/ledger.jsonl`, outside
+every repository. The Pit Wall method (`pit-wall.md`) governs Stint, Fresh
+tyres, Relay, Scrutineering, risk and pace.
 
-`ACC` below is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
-(or `.claude/skills/...`, whichever exists).
-
-Any CLI can coordinate (Claude Code, Codex, OpenCode, ...). Choose the mode:
+`ACC` = `python -I .agents/skills/crew-chief/scripts/crew-chief.py` (or
+`.claude/skills/...`). Any CLI can coordinate (Claude Code, Codex, OpenCode).
 
 - **Orca mode** when `orca status --json` shows a running Orca. Run in an Orca
-  terminal of the project, so Orca knows you as the coordinator; load the
-  guide from `orca skills get orchestration` once before the first Orca command.
-- **Plain mode** otherwise, or when the user asks for it: steps 3 and 4 become
-  "Without Orca" below; everything else stays the same.
+  terminal; load `orca skills get orchestration` once before the first command.
+- **Plain mode** otherwise, or when asked: steps 3 and 4 become "Without Orca";
+  everything else stays the same.
 
-Do not ask permission between steps; the one exception is the spec approval
-in step 0. Otherwise ask only when the request is unclear; report at the end.
+Do not ask permission between steps except the spec approval in step 0. Ask
+only when the request is unclear; report at the end.
 
 ## 0. Spec first
 
@@ -41,14 +39,17 @@ or when the user says "run directly" / "sem spec".
 4. Create `acc/<slug>` from the base branch and commit the spec there before
    any lane branch exists, so every worker and the pull request carry it.
 5. Plan lanes (step 1) and pick models (step 2), then stop once: show the spec
-   summary and the lanes, and wait for approval. Then run to the end.
+   summary, each job's risk and pace, and the lanes, and wait for approval.
+   Then run to the end.
 
 ## 1. Plan lanes
 
-- Read the request and the code it touches. Split it into **jobs**: one
-  reviewable change each, with a kind (`code`, `tests`, `refactor`, `design`,
-  `docs`, `research`, `diagnosis`, `data`, `review`) and a check that proves
-  it is done (a test, a command, an output).
+- Read the request and the code it touches. Set each job's **risk**
+  (`low`/`normal`/`high`) and read the **pace** from the request (default
+  `race`); see `pit-wall.md` for the risk table and pace rules. Split the work
+  into **jobs**: one reviewable change each, with a kind (`code`, `tests`,
+  `refactor`, `design`, `docs`, `research`, `diagnosis`, `data`, `review`) and
+  a check that proves it is done (a test, a command, an output).
 - Group the jobs into **lanes**. Jobs that touch the same files or need each
   other's result share a lane and run in order. Lanes that do not overlap run
   at the same time. At most 4 lanes; one lane is fine for small work. With a
@@ -65,8 +66,10 @@ the notes say when to use each. `ACC pick --kind <kind>` names the cheapest
 model that scored well at least twice, then the scoreboard. "Not proven yet"
 means little data: use it, or try a model with no score yet; the score you
 record settles it. Prefer free models for plain work, a stronger one for risky
-or subtle jobs, `--max-cost` when the user sets a limit. Agent = Orca agent id
-or CLI (`codex`, `claude`, `opencode`, ...); model = its `--model` value.
+or subtle jobs, `--max-cost` from the pace (see `pit-wall.md`) or the user.
+Use `--exclude <agent:model>` (repeatable) to drop failed workers or the first
+scrutineer from candidates. Agent = Orca agent id or CLI (`codex`, `claude`,
+`opencode`, ...); model = its `--model` value.
 
 ## 3. Start the lanes
 
@@ -108,35 +111,22 @@ again, recording nothing.
 
 ## Without Orca (plain mode)
 
-Replaces steps 3 and 4. `<repo>` is the repository folder's name; worktrees
-and logs sit next to it, never inside. Per lane, add the worktree from your
-checkout. Per job, write the job spec to `../<repo>-acc-logs/<lane>-<job>.md`
-and start the worker in the background from inside the worktree with the
-prompt "Do the job in <its absolute path>" (a spec on the command line breaks
-on Windows), log `../<repo>-acc-logs/<lane>-<job>.log`, PID in `../<repo>-acc-logs/<lane>.pid`
-(never inside the worktree):
+Replaces steps 3–4. `<repo>` is the repo folder name; worktrees and logs sit
+next to it. Per lane: `git worktree add ../<repo>-acc-<lane> -b acc/<slug>-<lane> acc/<slug>`.
+Per job: write spec to `../<repo>-acc-logs/<lane>-<job>.md`, start worker in
+background from inside the worktree with prompt "Do the job in <abs path>",
+log to `../<repo>-acc-logs/<lane>-<job>.log`, PID in `../<repo>-acc-logs/<lane>.pid`:
 
 ```text
-git worktree add ../<repo>-acc-<lane> -b acc/<slug>-<lane> acc/<slug>
-claude -p "<prompt>" --model <model> --dangerously-skip-permissions   # refused as root
+claude -p "<prompt>" --model <model> --dangerously-skip-permissions
 codex exec -C <worktree> -s workspace-write -m <model> "<prompt>"
 opencode run --standalone --auto -m <model> "<prompt>"
-# Linux/macOS: start (job control off, so $! is the worker), then kill its group
-set +m; setsid nohup <cmd> > "<log>" 2>&1 & echo $! > "<pidfile>"
-kill -- -<pid>
-# Windows (PowerShell): start, then kill the whole tree
-$p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <worktree> -PassThru -WindowStyle Hidden -RedirectStandardOutput "<log>" -RedirectStandardError "<log>.err"; Set-Content "<pidfile>" $p.Id -Encoding ascii
-taskkill /PID <pid> /T /F
+# Linux/macOS: set +m; setsid nohup <cmd> > "<log>" 2>&1 & echo $! > "<pidfile>"; kill -- -<pid>
+# Windows PS: $p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <wt> -PassThru -WindowStyle Hidden -RedirectStandardOutput "<log>" -RedirectStandardError "<log>.err"; Set-Content "<pidfile>" $p.Id -Encoding ascii; taskkill /PID <pid> /T /F
 ```
 
-Monitor, each wait under 2 minutes: process alive, new commits
-(`git -C <worktree> log --oneline acc/<slug>..`), changed files (`git -C
-<worktree> status --porcelain`, newest mtime) and log growth (`<log>` and
-`<log>.err`, where opencode writes its progress; `claude -p` prints only at
-the end). Process gone means the job ended: review it (step 5);
-the exit code does not decide the outcome, the commits and the check do.
-30 minutes with no commit, file change or log growth: kill the tree; it is a
-failed attempt. A plain worker cannot ask you anything: keep specs self-contained.
+Monitor (each wait <2 min): process alive, new commits, changed files, log
+growth. Process gone → review (step 5). 30 min idle → kill tree (failed attempt).
 
 ## 5. Review and score every job
 
@@ -149,10 +139,11 @@ On each `worker_done` (plain mode: when the worker's process ends):
    Score what the worker delivered, even when you fix it afterwards.
 3. Record it, always, pass or fail:
    `ACC record --kind <kind> --agent <agent> --model <model> [--effort <e>] --cost <free|included|cheap|paid> --outcome <pass|fail> --score <n> --minutes <n> --lane <lane> --job "<title>" --note "<why>"`
-4. Pass: release the worker and start the lane's next job in the same
-   worktree. Fail: start the job again with another model (next in
-   `ACC pick`, or one tier up), with the review findings added to the spec.
-   After two failed retries, fix it yourself or stop the lane and report it.
+4. Pass on a high-risk job (or per pace): run Scrutineering before accepting;
+   see `pit-wall.md`. Pass otherwise: release the worker and start the lane's
+   next job in the same worktree. Fail: Relay — fresh tyres, then another
+   model via `ACC pick --exclude <failed>` (attempt 2 same tier, attempt 3
+   one tier up); after three failures, fix it yourself or stop the lane.
 
 ## 6. Deliver
 
@@ -165,8 +156,9 @@ On each `worker_done` (plain mode: when the worker's process ends):
   plain mode `git worktree remove ../<repo>-acc-<lane>`, `git branch -D
   acc/<slug>-<lane>` and, once no worker runs, `../<repo>-acc-logs/`. A folder
   "open in another program" is held by a leftover process: leave it, report it.
-- Report to the user: the pull request, each job with its model, outcome and
-  score, anything left open, and `ACC score --kind <kinds used>`.
+- Report to the user: the pull request, each job with its risk, pace, model,
+  attempts, scrutineer scores (if any), outcome and worker score, anything left
+  open, and `ACC score --kind <kinds used>`.
 
 ## Rules
 

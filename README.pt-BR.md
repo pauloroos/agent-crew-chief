@@ -33,6 +33,34 @@ Duas coisas, as duas instaladas no seu projeto:
 Primeira vez? Faça o [tutorial](docs/tutorial.pt-BR.md) num projeto de exemplo
 minúsculo que vem com o ACC.
 
+## O método Pit Wall
+
+O ACC roda cada job como um **Stint**: um worker no seu worktree de trilha,
+verificado pelo coordenador. Mudanças arriscadas ganham olhos independentes
+antes de serem aceitas, e as tentativas repetidas começam limpas.
+
+- **Pneus novos** (Fresh tyres): antes de cada nova tentativa, o worktree da
+ trilha volta ao commit que tinha antes do job (`git reset --hard <start>` +
+ `git clean -fd`). O próximo worker nunca herda edições de uma tentativa falha.
+- **Relay**: um stint reprovado passa o job adiante. A tentativa 2 usa outro
+ modelo (`ACC pick --kind <k> --exclude <falhou>`), mesma faixa permitida; a
+ tentativa 3 sobe uma faixa de custo. Depois de três falhas, o coordenador
+ conserta ou para a trilha.
+- **Vistoria** (Scrutineering): jobs de risco alto (auth, dinheiro, perda de
+ dados, concorrência) ganham dois vistoriadores paralelos, só leitura, modelos
+ diferentes do worker e preferencialmente de famílias diferentes. Achados
+ confirmados voltam para o mesmo modelo do worker numa sessão nova (**pit
+ stop**), no máximo 2 pit stops, depois passa ou Relay. Cada vistoriador é
+ avaliado como trabalho de `review`.
+- **Risco** (`low`/`normal`/`high`) é definido por job no plano. Só `high`
+ adiciona Vistoria por padrão.
+- **Ritmo** (pace) é definido por pedido: `eco` (só grátis), `race` (padrão,
+ mais barato bom), `push` (pode começar em included, vistoria em todo job
+ não-low). Modelos pagos são usados só quando você diz. Exemplo: "ACC, faz X,
+ ritmo push".
+
+Veja `skill/crew-chief/pit-wall.md` para as regras completas e a tabela de ritmo.
+
 ## Como funciona
 
 ```text
@@ -215,12 +243,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.9.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.10.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.9.1.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.9.1),
+Sem git? Baixe `agent-crew-chief-v0.10.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.10.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -245,7 +273,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.9.1
+git -C agent-crew-chief checkout v0.10.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

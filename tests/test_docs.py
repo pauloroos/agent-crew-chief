@@ -46,7 +46,7 @@ def test_skill_md_covers_spec_kit_skills_and_plain_mode():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    assert __version__ == "0.9.1"
+    assert __version__ == "0.10.0"
     text = _read(CHANGELOG)
     current_section = text.split(f"## [{__version__}]", 1)[1].split("\n## [", 1)[0]
     assert current_section.strip()
@@ -69,6 +69,26 @@ def test_tutorials_use_the_example_project():
     for path in TUTORIALS:
         assert "examples/hello-crew" in _read(path), path.name
     assert (ROOT / "examples" / "hello-crew" / "src" / "hello_crew" / "greet.py").is_file()
+
+
+def test_pit_wall_method_is_documented():
+    skill_text = _read(SKILL_MD)
+    readme_text = _read(README)
+    readme_pt_text = _read(README_PT)
+    pit_wall = SKILL_MD.parent / "pit-wall.md"
+    scrutineer = SKILL_MD.parent / "templates" / "scrutineer.md"
+    assert pit_wall.is_file(), "pit-wall.md missing"
+    assert scrutineer.is_file(), "templates/scrutineer.md missing"
+    pw_text = _read(pit_wall)
+    sc_text = _read(scrutineer)
+    for term in ("Stint", "Relay", "Scrutineering", "pace", "pit-wall.md"):
+        assert term in skill_text, f"SKILL.md missing {term}"
+    for term in ("Stint", "Relay", "Scrutineering", "pace", "Pit Wall"):
+        assert term in readme_text, f"README.md missing {term}"
+        assert term in readme_pt_text, f"README.pt-BR.md missing {term}"
+    assert "reset --hard" in pw_text, "pit-wall.md missing reset --hard"
+    assert "clean -fd" in pw_text, "pit-wall.md missing clean -fd"
+    assert "VERDICT" in sc_text, "scrutineer.md missing VERDICT"
 
 
 def test_no_invisible_bom_characters_in_sources():
