@@ -17,6 +17,9 @@ which keeps their full history, releases and changelog.
   stop and sync.
 - AGENTS.md: docs rule, every version keeps README, tutorial, skill and
   changelog in step.
+- `pit-wall.md` edge cases from the engineers' reports: job and pit-stop file
+  names, partly done work, review after a pit stop, a stalled scrutineer,
+  scrutineer choice at pace push, docs jobs, cross-lane test breaks.
 
 ## [0.11.0] - 2026-11-01
 
