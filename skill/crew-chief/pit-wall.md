@@ -17,13 +17,14 @@ self-contained and names:
 - **Working rules** - the block from SKILL.md, word for word.
 - **Finish** - commit the work on the current branch with a clear message; do
   not push, merge or open a pull request; never run `git config`; send
-  `worker_done` (plain: exit). When commits need a set author, start the
+  `worker_done` (without Orca: exit). When commits need a set author, start the
   driver with `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and
   `GIT_COMMITTER_EMAIL` in its environment: some CLIs refuse `git -c ...`.
 - When the job changes the CLI and docs are another lane's job, say in the
   spec which docs tests may fail until the lanes merge.
 
-When the driver is done (Orca: `worker_done`; plain: its process ended):
+When the driver is done (Orca: `worker_done`; without Orca: its tmux session or
+background process ended):
 
 1. Read its commits (`git -C <worktree> log -p <start>..HEAD`) and run the
    job's check yourself. Do not trust the driver's summary; the exit code
@@ -79,9 +80,10 @@ check is not yet accepted.
    it and pick again. They run in parallel in the lane worktree, read-only.
 2. Fill `templates/scrutineer.md` with the diff range `<start>..HEAD`, the job
    spec path and the output file, and save it per scrutineer.
-   - Plain mode: prompt file `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>-prompt.md`,
-     started like a driver with "Do the review in <its absolute path>";
-     output `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>.md`.
+   - Without Orca: prompt file `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>-prompt.md`,
+     started like a driver, as a tmux session or a background process, with "Do
+     the review in <its absolute path>"; output
+     `../<repo>-acc-logs/<lane>-<job>-scrutineer-<n>.md`.
    - Orca mode: the filled prompt is the `worker-start` spec; findings come
      back in the `worker_done` message.
 3. Merge findings, drop duplicates and any you cannot confirm. Then do your
@@ -123,29 +125,58 @@ use the one available plus your own review, and say so in the lane report.
 ## Starting and watching drivers
 
 A driver runs in the lane worktree on the lane branch. Its prompt is the job
-spec.
+spec. Every engineer, driver and scrutineer is named with the default name,
+`acc-<slug>-<lane>-<role>` for the first attempt and
+`acc-<slug>-<lane>-<role>-<n>` for the n-th, where `<slug>` comes from the
+feature branch `acc/<slug>` and `<role>` is `engineer`, `driver` or
+`scrutineer`: the Orca tab title, the tmux session name and the log file name
+are the same.
 
 ### Orca mode
 
 ```text
-orca orchestration worker-start --spec "<job spec>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --json
+orca orchestration worker-start --spec "<job spec>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --name acc-<slug>-<lane>-<role> --json
+orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<role> --command "<driver command>" --json
 orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 100000 --json
 ```
 
-Keep each wait under 2 minutes: CLIs kill longer commands. An empty result only
-means wait again. Answer questions, handle every `worker_done`, ack it
+Use `worker-start` when Orca knows the agent (`--agent <id>`); use
+`orca agent launch` for a lone terminal, or `orca terminal create` with the
+driver's command line when it does not. Either way the tab carries the default
+name. Keep each wait under 2 minutes: CLIs kill longer commands. An empty result
+only means wait again. Answer questions, handle every `worker_done`, ack it
 (`check --ack <delivery>`), then release the worker. A driver can miss its spec
 on a cold start: after 5 minutes with no commit, look at `orca orchestration
 worker-read --dispatch <id> --source auto --json`. An empty prompt means it
 never started: `worker-stop` it and start the job again, recording nothing.
 
-### Plain mode
+### tmux mode
 
-Write the job spec to `../<repo>-acc-logs/<lane>-<job>.md` and start the
-driver in the background from inside the lane worktree with the prompt "Do the
-job in <its absolute path>" (a spec on the command line breaks on Windows).
-Log `../<repo>-acc-logs/<lane>-<job>.log`, PID in
-`../<repo>-acc-logs/<lane>-<job>.pid`, never inside the worktree:
+Without Orca, with `tmux` on PATH, every engineer, driver and scrutineer runs in
+a named session in the lane worktree, so `tmux ls` lists the whole crew and
+`tmux attach -t <name>` opens any terminal from any IDE, CLI or SSH:
+
+```text
+tmux new-session -d -s <name> -c <worktree> "<driver command>"
+tmux pipe-pane -t <name> -o "cat >> ../<repo>-acc-logs/<name>.log"
+tmux display-message -p -t <name> '#{session_pid}' > ../<repo>-acc-logs/<name>.pid
+tmux ls
+tmux attach -t <name>
+tmux kill-session -t <name>
+```
+
+`pipe-pane` writes the same log file the background mode uses,
+`../<repo>-acc-logs/<name>.log`; the PID file holds the session pid, and
+`tmux kill-session -t <name>` replaces the PID kill.
+
+### Background mode
+
+Without Orca and without tmux (e.g. Windows without WSL), write the job spec to
+`../<repo>-acc-logs/<lane>-<job>.md` and start the driver in the background from
+inside the lane worktree with the prompt "Do the job in <its absolute path>" (a
+spec on the command line breaks on Windows). Log
+`../<repo>-acc-logs/<name>.log`, PID in `../<repo>-acc-logs/<name>.pid`, never
+inside the worktree:
 
 ```text
 claude -p "<prompt>" --model <model> --dangerously-skip-permissions   # refused as root
@@ -159,14 +190,18 @@ $p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <worktree> -Pa
 taskkill /PID <pid> /T /F
 ```
 
-Monitor, each wait under 2 minutes (a harness that blocks long sleeps
-takes a background wait that ends when the driver's process exits): process alive, new commits (`git -C
-<worktree> log --oneline <start>..`), changed files (`git -C <worktree> status
---porcelain`, newest mtime) and log growth (`<log>` and `<log>.err`, where
-opencode writes its progress; `claude -p` prints only at the end). Process
-gone means the job ended: review it (Stint). 30 minutes with no commit, file
-change or log growth: kill the tree; it is a failed attempt. A plain driver
-cannot ask you anything: keep specs self-contained.
+**Monitor.** Each wait stays under 2 minutes (a harness that blocks long sleeps
+takes a background wait that ends when the driver exits). The progress signals
+work in all three modes: Orca `orca orchestration worker-read --dispatch <id>
+--source auto --json`; tmux `tmux capture-pane -p -t <name>` plus growth of
+`../<repo>-acc-logs/<name>.log`; background growth of the same log and its
+`.err`, where opencode writes its progress (`claude -p` prints only at the end).
+In every mode also watch new commits (`git -C <worktree> log --oneline
+<start>..`) and changed files (`git -C <worktree> status --porcelain`, newest
+mtime). Session or process gone means the job ended: review it (Stint). 30
+minutes with no commit, file change or log growth: kill it; it is a failed
+attempt. A tmux or background driver cannot ask you anything: keep specs
+self-contained.
 
 ## Risk
 
