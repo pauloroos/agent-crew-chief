@@ -8,6 +8,35 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.11.0] - 2026-11-01
+
+### Added
+- **`ACC merge <file>`**: merges a ledger file copied from another machine; new
+  grades are appended, duplicates skipped, rerun adds 0.
+- **`ACC sync --init <url>`** and **`ACC sync`**: keeps `ledger.jsonl` in sync
+  across machines through a private git repository of your own. Uses git's
+  union merge so concurrent appends never conflict; uses the git access you
+  already have, no tokens asked for, stored or created. Optional: without
+  setup, nothing changes.
+- **`ACC score` collapses untried models.** With a `models.toml`, rows with
+  `n` 0 are replaced by one line per kind: `not tried yet (N): <executor>, ...`.
+  JSON output is unchanged.
+- **`ACC models` hints at graded-but-not-listed executors.** After the table it
+  prints `graded but not listed: <agent:model> (<kind> <score>, n <n>)` for
+  executors that have grades but are not in `models.toml`, so the user can add
+  them.
+
+### Changed
+- **Race engineers are recorded as the crew chief.** Engineers are by default
+  the crew chief's own subagents; their `coordinate` grades are recorded under
+  the crew chief's own `agent:model`. `ACC pick --kind coordinate` is used only
+  to choose an engineer that is not the crew chief itself.
+- **SKILL.md:** when `ACC sync` is set up, the crew chief runs it at the start
+  of a request and after the last grade. `ACC merge` and `ACC sync` are named
+  in the Rules section.
+- **Ledger dedupe.** `ledger.read()` returns each canonical entry once, which
+  makes duplicates harmless everywhere. Existing ledgers work unchanged.
+
 ## [0.10.0] - 2026-11-01
 
 ### Added

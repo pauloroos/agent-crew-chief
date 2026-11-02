@@ -1,4 +1,4 @@
-"""``crew-chief.py``: record a graded job, show the scores, pick a model, import 0.6 grades."""
+"""``crew-chief.py``: record a graded job, show the scores, pick a model, merge a ledger, sync it, import 0.6 grades."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, ledger, models, score
+from . import __version__, ledger, models, score, sync
 
 
 def _project_name() -> str:
@@ -56,6 +56,12 @@ def _parser() -> argparse.ArgumentParser:
     pick.add_argument("--exclude", action="append", default=[],
                       help="an executor to skip, e.g. codex:m (repeatable)")
     pick.add_argument("--json", action="store_true")
+
+    merged = commands.add_parser("merge", help="copy the grades of another ledger file")
+    merged.add_argument("file", type=Path)
+
+    synced = commands.add_parser("sync", help="sync the ledger through a private git repo")
+    synced.add_argument("--init", default=None, help="the url of a private repo to sync through")
 
     old = commands.add_parser("import", help="copy the grades of an ACC 0.6 project")
     old.add_argument("project", type=Path)
@@ -130,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             rows = [*rows, *(_untried(args.kind, m) for m in declared
                              if (m.get("kinds") is None or args.kind in m["kinds"])
                              and not _match(rows, m))]
-            print(json.dumps(rows, indent=2) if args.json else score.render(rows))
+            print(json.dumps(rows, indent=2) if args.json else score.render(rows, collapse_untried=True))
             return 0
         missing = [m for m in declared if not _match(rows, m)]
         if not missing:
@@ -182,6 +188,19 @@ def main(argv: list[str] | None = None) -> int:
             lines.append(f"| {name} | {m['source']} | {m['cost']} | {kinds} "
                          f"| {scores or 'not tried yet'} | {m.get('note') or ''} |")
         print("\n".join(lines))
+        unlisted: dict[str, list[dict]] = {}
+        for row in rows:
+            if not any(_match([row], m) for m in declared):
+                unlisted.setdefault(row["executor"], []).append(row)
+        if unlisted:
+            print()
+            hints = []
+            for name, group in sorted(unlisted.items()):
+                kinds = "; ".join(
+                    f"{r['kind']} {r['score']}, n {r['n']}"
+                    for r in sorted(group, key=lambda r: r["kind"]))
+                hints.append(f"{name} ({kinds})")
+            print("graded but not listed: " + ", ".join(hints))
         return 0
 
     if args.command == "pick":
@@ -219,6 +238,18 @@ def main(argv: list[str] | None = None) -> int:
             print()
             print(score.render(rows[:5]))
         return 0
+
+    if args.command == "merge":
+        try:
+            new, already = ledger.merge(args.file)
+        except ledger.MergeError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print(f"merged {new} new grades from {args.file} ({already} already here)")
+        return 0
+
+    if args.command == "sync":
+        return sync.main(args.init)
 
     project = args.project.expanduser().resolve()
     if not (project / "docs" / "crew-chief" / "jobs").is_dir():

@@ -41,12 +41,64 @@ def read() -> list[dict]:
     if not path.is_file():
         return []
     entries = []
+    seen = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
-            entries.append(json.loads(line))
+            entry = json.loads(line)
         except json.JSONDecodeError:
             continue  # a line cut short by a crash
+        key = entry_key(entry)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(entry)
     return entries
+
+
+def entry_key(entry) -> str:
+    return json.dumps(entry, sort_keys=True, ensure_ascii=False)
+
+
+class MergeError(Exception):
+    """A merge file that cannot be used; the message already fits ``<path>: <problem>``."""
+
+
+def merge(other: Path) -> tuple[int, int]:
+    """Copy the entries of ``other`` missing locally; return ``(new, already)``."""
+    if other.is_dir():
+        raise MergeError(f"{other}: is a folder")
+    try:
+        text = other.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise MergeError(f"{other}: no such file")
+    except UnicodeDecodeError:
+        raise MergeError(f"{other}: is not UTF-8 text")
+    except OSError as exc:
+        raise MergeError(f"{other}: {exc.strerror or exc}")
+    valid: list[dict] = []
+    for line in text.splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            valid.append(entry)
+    if text and not valid:
+        raise MergeError(f"{other}: is not a ledger")
+    known = {entry_key(entry) for entry in read()}
+    new = [entry for entry in valid if entry_key(entry) not in known
+           and not known.add(entry_key(entry))]
+    already = len(valid) - len(new)
+    if new:
+        path = ledger_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torn = path.is_file() and path.stat().st_size and not path.read_bytes().endswith(b"\n")
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
+            if torn:
+                handle.write("\n")
+            for entry in new:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return len(new), already
 
 
 def import_v06(project: Path) -> int:

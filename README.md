@@ -184,6 +184,22 @@ cheapest tier wins (the higher score inside a tier). If none qualifies yet, it
 names the best score so far (a tie goes to the cheaper) and says "not proven
 yet". `--max-cost` drops every model above that tier first.
 
+## Scores on several machines
+
+The ledger (`~/.crew-chief/ledger.jsonl`) is per machine. Two optional ways
+to bring grades together; without setup, nothing changes.
+
+- **Merge a file.** Copy `ledger.jsonl` from another machine and run
+  `ACC merge <file>`. New grades are appended, duplicates are skipped, and
+  running it again adds 0.
+- **Sync through a private git repo.** On each machine, once:
+  `ACC sync --init git@github.com:<you>/crew-chief-ledger.git`. After that,
+  `ACC sync` pulls, deduplicates and pushes. Only `ledger.jsonl` is shared
+  (`models.toml` stays per machine because machines reach different models).
+  Git's union merge (`.gitattributes`: `ledger.jsonl merge=union`) makes
+  concurrent appends safe. It uses the git access you already have; no token
+  is asked for, stored or created. The repository must be private.
+
 ## Your models
 
 Tell ACC which models you have. Two optional files, read with Python's
@@ -207,10 +223,13 @@ Global and project lists merge. A project entry with the same `agent` and
 `model` changes only the fields it sets (`enabled = false` switches that model
 off here); `inherit = false` in the project file ignores the global list.
 `ACC models` prints the effective list: where each model came from, its
-scores and notes. With a list, `ACC pick` and the coordinator choose only
-among those models; a model with no score yet gets tried, and the score you
-record settles it. Without any file, nothing changes. A broken file stops the
-command with `<path>: <problem>`. A copyable example is in
+scores and notes. After the table it prints
+`graded but not listed: <agent:model> (<kind> <score>, n <n>)` for executors
+that have grades but are not in `models.toml`, so you can add them. With a
+list, `ACC pick` and the coordinator choose only among those models; a model
+with no score yet gets tried, and the score you record settles it. Without
+any file, nothing changes. A broken file stops the command with
+`<path>: <problem>`. A copyable example is in
 [`examples/models.toml`](examples/models.toml).
 
 The file holds names only. Never put keys or tokens in it; ACC reads no
@@ -244,6 +263,8 @@ ACC pick --kind code [--max-cost free|included|cheap|paid] [--json]
 ACC record --kind code --agent opencode --model <model> --cost free --outcome pass --score 85 --minutes 12 [--effort <e>] [--lane <lane>] [--job "<title>"] [--note "<why>"]
 ACC score [--kind code] [--project <name>] [--json]
 ACC import /path/to/project     # grades kept by ACC 0.6 in docs/crew-chief/jobs
+ACC merge <file>                # merge a ledger file copied from another machine
+ACC sync [--init <url>]         # sync ledger.jsonl through a private git repo
 ```
 
 Kinds: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
@@ -255,12 +276,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.10.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.11.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.10.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.10.0),
+No git? Download `agent-crew-chief-v0.11.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -285,7 +306,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.10.0
+git -C agent-crew-chief checkout v0.11.0
 python agent-crew-chief/install.py /path/to/project
 ```
 

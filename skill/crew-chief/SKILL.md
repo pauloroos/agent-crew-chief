@@ -124,7 +124,10 @@ Every driver spec carries this block so workers use the kit:
 
 ## 5. Check lane reports and grade engineers
 
-On each lane report:
+Race engineers are by default the crew chief's own subagents. Record their
+`coordinate` grades under the crew chief's own `agent:model`; use
+`ACC pick --kind coordinate` only to choose an engineer that is not the crew
+chief itself. On each lane report:
 
 1. Run the lane's checks yourself; read the scrutineer findings of high-risk
    jobs. Do not trust the engineer's summary.
@@ -156,3 +159,7 @@ scores, outcome, worker and engineer scores, anything open, and
 - Never create, copy or ask for credentials or tokens.
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.
+- `ACC merge <file>` merges a ledger file copied from another machine.
+- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync`
+  runs it. When set up, run `ACC sync` at the start of a request and after
+  the last grade.
