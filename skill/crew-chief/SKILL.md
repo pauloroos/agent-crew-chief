@@ -1,12 +1,16 @@
 ---
 name: crew-chief
-description: Run a request through several coding agents in parallel and score every model on every job, so the next pick is better. Writes a short spec first when the request is not small, splits the work into lanes (one branch each), runs the lanes at the same time with Orca or with plain git worktrees, monitors them, reviews and scores each job, and delivers one pull request. Use when the user says "ACC", "crew chief", "load ACC, do X", or asks to have agents or models do the work and be compared. Not for a one-line edit or plain conversation.
+description: Run a request through several coding agents in parallel and score every model on every job, so the next pick is better. Writes a short spec first when the request is not small, splits the work into lanes (one branch each), dispatches a race engineer per lane, reviews and scores each job and each engineer, and delivers one pull request. Use when the user says "ACC", "crew chief", "load ACC, do X", or asks to have agents or models do the work and be compared. Not for a one-line edit or plain conversation.
 ---
 
 # Agent Crew Chief
 
-You are the coordinator. You spec, plan, pick a model per job, start workers,
-watch, review, score and deliver. Workers are agents in their own worktrees.
+You are the **crew chief** on the pit wall. You spec, plan lanes, pick models,
+hold the approval stop, dispatch a **race engineer** per lane, check their
+reports, grade them, merge the lanes and deliver. Engineers run drivers
+(workers) and scrutineers; you never run drivers yourself except a small
+request without a spec, where you may engineer its one lane yourself.
+
 ACC keeps a score per model and kind in `~/.crew-chief/ledger.jsonl`, outside
 every repository. The Pit Wall method (`pit-wall.md`) governs Stint, Fresh
 tyres, Relay, Scrutineering, risk and pace.
@@ -22,151 +26,121 @@ tyres, Relay, Scrutineering, risk and pace.
 Do not ask permission between steps except the spec approval in step 0. Ask
 only when the request is unclear; report at the end.
 
+## The team
+
+- **Crew chief** (you): specs, plans, picks, approves, dispatches engineers,
+  checks lane reports, grades engineers, merges and delivers.
+- **Race engineer**: one per lane. Coordinates that lane only: starts drivers,
+  runs Stint / Relay / Fresh tyres / Scrutineering, records grades, sends a
+  lane report. Brief: `templates/race-engineer.md`.
+- **Driver**: the worker agent that does one job in the lane worktree.
+- **Scrutineer**: read-only reviewer of high-risk jobs (per pace). Scored as
+  `review` work.
+
 ## 0. Spec first
 
-Skip this step for a small request (one job, one file area, no open question)
-or when the user says "run directly" / "sem spec".
+Skip for a small request (one job, one file area, no open question) or when
+the user says "run directly" / "sem spec".
 
 1. Read the request and the code. Before the spec, ask only questions whose
    answer changes what gets built: at most 5, in one message. On "decide for
-   me", decide and write your assumptions into `spec.md`.
-2. Folder: look for a specs folder the project already has (spec-kit's
-   `specs/`, for one) and use it; otherwise `specs/<NNN>-<slug>/` at the repo
-   root, `<NNN>` the next free number.
-3. Write `spec.md` and `tasks.md` from this skill's `templates/spec/`; add
-   `plan.md` only when the design is not obvious. In `tasks.md`, mark `[P]` on
-   tasks that can run in parallel and write "depends on Txxx" for order.
+   me", decide and write assumptions into `spec.md`.
+2. Folder: use a specs folder the project already has; otherwise
+   `specs/<NNN>-<slug>/` at the repo root, `<NNN>` the next free number.
+3. Write `spec.md` and `tasks.md` from `templates/spec/`; add `plan.md` only
+   when the design is not obvious. In `tasks.md`, mark `[P]` on parallel tasks
+   and write "depends on Txxx" for order.
 4. Create `acc/<slug>` from the base branch and commit the spec there before
-   any lane branch exists, so every worker and the pull request carry it.
+   any lane branch exists.
 5. Plan lanes (step 1) and pick models (step 2), then stop once: show the spec
    summary, each job's risk and pace, and the lanes, and wait for approval.
-   Then run to the end.
 
 ## 1. Plan lanes
 
-- Read the request and the code it touches. Set each job's **risk**
-  (`low`/`normal`/`high`) and read the **pace** from the request (default
-  `race`); see `pit-wall.md` for the risk table and pace rules. Split the work
-  into **jobs**: one reviewable change each, with a kind (`code`, `tests`,
-  `refactor`, `design`, `docs`, `research`, `diagnosis`, `data`, `review`) and
-  a check that proves it is done (a test, a command, an output).
-- Group the jobs into **lanes**. Jobs that touch the same files or need each
-  other's result share a lane and run in order. Lanes that do not overlap run
-  at the same time. At most 4 lanes; one lane is fine for small work. With a
-  spec, the jobs are the tasks in `tasks.md`: dependent or same-file tasks
-  share a lane; `[P]` tasks with no shared files go to separate lanes.
-- Branches: the feature branch `acc/<slug>` from the base branch, and one
-  branch per lane, `acc/<slug>-<lane>`, from the feature branch. Without a
-  spec, tell the user the plan in a few lines and go on.
+Read the request and the code it touches. Set each job's **risk**
+(`low`/`normal`/`high`) and read the **pace** from the request (default
+`race`); see `pit-wall.md`. Split work into **jobs**: one reviewable change
+each, with a kind (`code`, `tests`, `refactor`, `design`, `docs`, `research`,
+`diagnosis`, `data`, `review`) and a check that proves it done.
 
-## 2. Pick a model per job
+Group jobs into **lanes**. Jobs that touch the same files or need each other's
+result share a lane and run in order; non-overlapping jobs run in parallel. At
+most 4 lanes. With a spec, dependent or same-file tasks share a lane; `[P]`
+tasks with no shared files get separate lanes.
 
-Run `ACC models` first. If it lists models, pick only among them (`ACC pick`);
-the notes say when to use each. `ACC pick --kind <kind>` names the cheapest
-model that scored well at least twice, then the scoreboard. "Not proven yet"
-means little data: use it, or try a model with no score yet; the score you
-record settles it. Prefer free models for plain work, a stronger one for risky
-or subtle jobs, `--max-cost` from the pace (see `pit-wall.md`) or the user.
-Use `--exclude <agent:model>` (repeatable) to drop failed workers or the first
-scrutineer from candidates. Agent = Orca agent id or CLI (`codex`, `claude`,
-`opencode`, ...); model = its `--model` value.
+Branches: feature branch `acc/<slug>` from base, one branch per lane
+`acc/<slug>-<lane>` from the feature branch. Without a spec, tell the user the
+plan in a few lines and go on.
 
-## 3. Start the lanes
+## 2. Pick models
 
-```text
-orca orchestration run-create --objective "<the request>" --json
-orca worktree create --name <slug>-<lane> --base-branch acc/<slug> --branch acc/<slug>-<lane> --setup skip --json
-orca orchestration worker-start --spec "<job spec>" --worktree branch:acc/<slug>-<lane> --agent <agent> --model <model> [--effort <level>] --json
-```
+Run `ACC models` first. If it lists models, pick only among them (`ACC pick`).
+`ACC pick --kind <kind>` names the cheapest model that scored well at least
+twice, then the scoreboard. "Not proven yet" means little data: use it, or try
+a model with no score yet; the score you record settles it. Prefer free models
+for plain work, stronger ones for risky jobs, `--max-cost` from the pace or
+the user. Use `--exclude <agent:model>` (repeatable) to drop failed workers or
+the first scrutineer.
 
-Start the first job of every lane before waiting. A job spec is
-self-contained and names:
+## 3. Dispatch a race engineer per lane
 
-- **Target** - the files or area in scope; with a spec, its folder and task ids.
-- **Change** - the result to produce.
-- **Constraints** - what must not change; no secrets, `.env` or private data.
-- **Acceptance** - the check that must pass.
-- **Working rules** - always this text: "Use test-driven-development for code
-  changes, systematic-debugging for bugs, and verification-before-completion
-  before you finish. Follow ponytail: the smallest complete change. If these
-  skills are not installed, read this as plain guidance."
-- **Finish** - commit the work on the current branch with a clear message; do
-  not push, merge or open a pull request; send `worker_done` (plain: exit).
+For every lane, fill `templates/race-engineer.md` with the lane name, branch,
+worktree, jobs (title, kind, risk, check, task ids), pace, spec folder and the
+`ACC` command path. Start the engineer with your own subagent mechanism (e.g.
+Claude Code's Agent tool) or as a background CLI session like a plain-mode
+worker. Engineers run in parallel, one per lane.
 
 ## 4. Monitor
 
-```text
-orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 100000 --json
-```
-
-Keep each wait under 2 minutes: your CLI kills longer commands. An empty
-result only means wait again. Answer questions, handle every `worker_done`,
-ack, and wait again until every lane is done. Follow the Orca guide for empty
-waits and stuck workers.
-
-A worker can miss its spec on a cold start: after 5 minutes with no commit,
-look at `orca orchestration worker-read --dispatch <id> --source auto --json`.
-An empty prompt means it never started: `worker-stop` it and start the job
-again, recording nothing.
+Wait on engineer reports. In Orca mode, use `check --wait` under 2 minutes per
+call; in plain mode, watch process, commits and log growth. Answer questions,
+handle escalations, and wait again until every lane reports back.
 
 ## Without Orca (plain mode)
 
-Replaces steps 3–4. `<repo>` is the repo folder name; worktrees and logs sit
-next to it. Per lane: `git worktree add ../<repo>-acc-<lane> -b acc/<slug>-<lane> acc/<slug>`.
-Per job: write spec to `../<repo>-acc-logs/<lane>-<job>.md`, start worker in
-background from inside the worktree with prompt "Do the job in <abs path>",
-log to `../<repo>-acc-logs/<lane>-<job>.log`, PID in `../<repo>-acc-logs/<lane>.pid`:
+Replaces steps 3–4. Per lane: `git worktree add ../<repo>-acc-<lane> -b
+acc/<slug>-<lane> acc/<slug>`. Start the engineer in background from inside
+the worktree with prompt "Do the job in <abs path to filled brief>", log to
+`../<repo>-acc-logs/<lane>-engineer.log`, PID in
+`../<repo>-acc-logs/<lane>.pid`. Driver start commands live in `pit-wall.md`.
+Kill a stuck tree: Linux/macOS `kill -- -<pid>`; Windows PS `taskkill /PID <pid> /T /F`.
 
-```text
-claude -p "<prompt>" --model <model> --dangerously-skip-permissions
-codex exec -C <worktree> -s workspace-write -m <model> "<prompt>"
-opencode run --standalone --auto -m <model> "<prompt>"
-# Linux/macOS: set +m; setsid nohup <cmd> > "<log>" 2>&1 & echo $! > "<pidfile>"; kill -- -<pid>
-# Windows PS: $p = Start-Process cmd -ArgumentList '/c <cmd>' -WorkingDirectory <wt> -PassThru -WindowStyle Hidden -RedirectStandardOutput "<log>" -RedirectStandardError "<log>.err"; Set-Content "<pidfile>" $p.Id -Encoding ascii; taskkill /PID <pid> /T /F
-```
+## Working rules (for drivers)
 
-Monitor (each wait <2 min): process alive, new commits, changed files, log
-growth. Process gone → review (step 5). 30 min idle → kill tree (failed attempt).
+Every driver spec carries this block so workers use the kit:
 
-## 5. Review and score every job
+> Use test-driven-development for code changes, systematic-debugging for bugs,
+> and verification-before-completion before you finish. Follow ponytail: the
+> smallest complete change. If these skills are not installed, read this as
+> plain guidance.
 
-On each `worker_done` (plain mode: when the worker's process ends):
+## 5. Check lane reports and grade engineers
 
-1. Read the lane's new commits (`git -C <lane worktree> log -p <before>..HEAD`)
-   and run the job's check yourself. Do not trust the worker's summary.
-2. Score the worker 0-100: 90+ done and clean; 70-89 done with small fixes;
-   40-69 partly done or needed real fixes; below 40 wrong, broken or nothing.
-   Score what the worker delivered, even when you fix it afterwards.
-3. Record it, always, pass or fail:
-   `ACC record --kind <kind> --agent <agent> --model <model> [--effort <e>] --cost <free|included|cheap|paid> --outcome <pass|fail> --score <n> --minutes <n> --lane <lane> --job "<title>" --note "<why>"`
-4. Pass on a high-risk job (or per pace): run Scrutineering before accepting;
-   see `pit-wall.md`. Pass otherwise: release the worker and start the lane's
-   next job in the same worktree. Fail: Relay — fresh tyres, then another
-   model via `ACC pick --exclude <failed>` (attempt 2 same tier, attempt 3
-   one tier up); after three failures, fix it yourself or stop the lane.
+On each lane report:
+
+1. Run the lane's checks yourself; read the scrutineer findings of high-risk
+   jobs. Do not trust the engineer's summary.
+2. Grade the engineer 0-100 as `coordinate` work:
+   `ACC record --kind coordinate --agent <agent> --model <model> --cost <tier> --outcome <pass|fail> --score <n> --minutes <n> --lane <lane> --job "<lane>" --note "<why>"`
+3. Accept the lane or send findings back for another stint.
 
 ## 6. Deliver
 
-- When every lane passed: in your checkout on `acc/<slug>`, merge each lane
-  (`git merge --no-ff --no-edit acc/<slug>-<lane>`), resolve conflicts, run the
-  project's tests, use verification-before-completion, then push the branch
-  and open the pull request with `gh pr create`.
-- Release every worker; remove lane worktrees and branches: Orca mode `orca
-  worktree rm --worktree branch:acc/<slug>-<lane>` (deletes the branch too),
-  plain mode `git worktree remove ../<repo>-acc-<lane>`, `git branch -D
-  acc/<slug>-<lane>` and, once no worker runs, `../<repo>-acc-logs/`. A folder
-  "open in another program" is held by a leftover process: leave it, report it.
-- Report to the user: the pull request, each job with its risk, pace, model,
-  attempts, scrutineer scores (if any), outcome and worker score, anything left
-  open, and `ACC score --kind <kinds used>`.
+When every lane passed: in your checkout on `acc/<slug>`, merge each lane
+(`git merge --no-ff --no-edit acc/<slug>-<lane>`), resolve conflicts, run the
+project's tests, use verification-before-completion, then push and open the
+pull request with `gh pr create`. Release engineers; remove lane worktrees and
+branches. Report: PR, each job with risk, pace, model, attempts, scrutineer
+scores, outcome, worker and engineer scores, anything open, and
+`ACC score --kind <kinds used>`.
 
 ## Rules
 
 - Never commit or push to `main`, never `--force`, never rewrite pushed
   history. The owner merges the pull request unless they said otherwise.
-- Workers never push, merge or open pull requests; you do.
-- Orca may put the lane worktrees inside your checkout: never `git add -A`
-  or `git add .` there; add files by name.
+- Engineers and drivers never push, merge or open pull requests; you do.
+- Orca may put lane worktrees inside your checkout: never `git add -A` or
+  `git add .` there; add files by name.
 - Never create, copy or ask for credentials or tokens.
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.

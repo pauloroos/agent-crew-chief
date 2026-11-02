@@ -35,9 +35,21 @@ that ships with ACC.
 
 ## The Pit Wall method
 
-ACC runs every job as a **Stint**: one worker in its lane worktree, checked by
-the coordinator. Risky changes get independent eyes before they are accepted,
-and retries start clean.
+ACC runs every job as a **Stint**: one driver in its lane worktree, checked by
+a race engineer and then by the crew chief. Risky changes get independent eyes
+before they are accepted, and retries start clean.
+
+### The team
+
+- **Crew chief** — the agent you chat with. Specs, plans, picks models, holds
+  the approval stop, dispatches a race engineer per lane, checks lane reports,
+  grades engineers, merges and delivers.
+- **Race engineer** (engenheiro de corrida) — one per lane. Coordinates that
+  lane only: starts drivers, runs Stint / Relay / Fresh tyres / Scrutineering,
+  records grades, sends a lane report. Brief: `templates/race-engineer.md`.
+- **Driver** (piloto) — the worker agent that does one job in the lane worktree.
+- **Scrutineer** (fiscal) — read-only reviewer of high-risk jobs (per pace).
+  Scored as `review` work.
 
 - **Fresh tyres** (Pneus novos): before every new attempt, the lane worktree is
   reset to the commit it had before the job (`git reset --hard <start>` +
@@ -75,16 +87,19 @@ lanes: one branch each, acc/<slug>-<lane>
 pick a model per job (ACC pick) ── your approval (only with a spec)
   │
   ▼
-run lanes in parallel ── watch: Orca, or logs + git
+crew chief dispatches a race engineer per lane
   │
   ▼
-review every commit, run the check, ACC record a score
-  │   fail → retry with another model
+engineers run drivers in parallel ── watch: Orca, or logs + git
+  │
+  ▼
+engineer reviews, records grades; crew chief checks lane reports
+  │   fail → relay with another model
   ▼
 merge lanes into acc/<slug> → tests → push → pull request (you merge)
 ```
 
-1. **Spec first.** For a request that is not small, the coordinator asks the
+1. **Spec first.** For a request that is not small, the crew chief asks the
    questions whose answer changes what gets built (at most 5, in one message),
    then writes `specs/<NNN>-<slug>/spec.md` and `tasks.md` (and `plan.md` when
    the design is not obvious) and commits them on the feature branch. Small =
@@ -93,17 +108,19 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
    lane and run in order; tasks marked `[P]` with no shared files get their own
    lanes and run in parallel. At most 4 lanes.
 3. **Pick.** `ACC pick --kind <kind>` per job (see [the scoreboard](#the-scoreboard)); if you declared [your models](#your-models), only those are candidates.
-4. **One stop.** With a spec, the coordinator shows the spec summary, the
+4. **One stop.** With a spec, the crew chief shows the spec summary, the
    lanes and the models, and waits for your approval. That is the only stop;
    after it, it runs to the end.
-5. **Run and watch.** Workers start in their worktrees; the coordinator waits
-   in short checks (under 2 minutes each) until every lane is done.
-6. **Review and score.** It reads every commit, runs the job's check itself
-   and records a grade with `ACC record`, pass or fail. A failed job goes to
-   another model with the findings.
+5. **Dispatch and run.** The crew chief dispatches a race engineer per lane.
+   Engineers start drivers in their worktrees and wait in short checks (under
+   2 minutes each) until every driver is done.
+6. **Review and score.** Each engineer reads every commit, runs the job's
+   check and records driver and scrutineer grades with `ACC record`. The crew
+   chief checks each lane report, runs the lane's checks and grades the
+   engineer as `coordinate` work. A failed job goes to Relay.
 7. **Deliver.** Lanes are merged into `acc/<slug>`, the project's tests run,
-   the branch is pushed and one pull request is opened. You merge it. Workers
-   never push, merge or open pull requests.
+   the branch is pushed and one pull request is opened. You merge it. Engineers
+   and drivers never push, merge or open pull requests.
 
 ## Two modes
 
@@ -230,7 +247,7 @@ ACC import /path/to/project     # grades kept by ACC 0.6 in docs/crew-chief/jobs
 ```
 
 Kinds: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
-`diagnosis`, `data`, `review`.
+`diagnosis`, `data`, `review`, `coordinate`.
 
 ## Install
 

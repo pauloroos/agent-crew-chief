@@ -91,6 +91,19 @@ def test_pit_wall_method_is_documented():
     assert "VERDICT" in sc_text, "scrutineer.md missing VERDICT"
 
 
+def test_race_engineer_template_and_team_docs():
+    skill_text = _read(SKILL_MD)
+    readme_text = _read(README)
+    readme_pt_text = _read(README_PT)
+    race_engineer = SKILL_MD.parent / "templates" / "race-engineer.md"
+    assert race_engineer.is_file(), "templates/race-engineer.md missing"
+    assert "race engineer" in skill_text, "SKILL.md missing race engineer"
+    assert "race engineer" in readme_text, "README.md missing race engineer"
+    assert "engenheiro de corrida" in readme_pt_text, (
+        "README.pt-BR.md missing engenheiro de corrida"
+    )
+
+
 def test_no_invisible_bom_characters_in_sources():
     """A literal U+FEFF in code is invisible in review; spell it as an escape."""
     offenders = [

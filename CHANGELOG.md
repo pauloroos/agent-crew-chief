@@ -14,6 +14,8 @@ which keeps their full history, releases and changelog.
 - **The Pit Wall method** (`skill/crew-chief/pit-wall.md`): Stint, Fresh tyres,
   Relay, Scrutineering and pit stop patterns; risk per job (`low`/`normal`/high`);
   pace per request (`eco`/`race`/`push`) with implied `--max-cost`.
+- **The team**: crew chief dispatches a race engineer per lane; new ledger kind
+  `coordinate` grades engineers. Brief: `templates/race-engineer.md`.
 - **Scrutineer template** (`skill/crew-chief/templates/scrutineer.md`): read-only
   prompt for independent review of high-risk jobs, findings as
   `severity | file:line | failing scenario`, ending in `VERDICT: pass|fail`.

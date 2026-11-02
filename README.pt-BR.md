@@ -35,9 +35,23 @@ minúsculo que vem com o ACC.
 
 ## O método Pit Wall
 
-O ACC roda cada job como um **Stint**: um worker no seu worktree de trilha,
-verificado pelo coordenador. Mudanças arriscadas ganham olhos independentes
-antes de serem aceitas, e as tentativas repetidas começam limpas.
+O ACC roda cada job como um **Stint**: um piloto no seu worktree de trilha,
+verificado por um engenheiro de corrida e depois pelo chefe de equipe.
+Mudanças arriscadas ganham olhos independentes antes de serem aceitas, e as
+tentativas repetidas começam limpas.
+
+### A equipe
+
+- **Chefe de equipe** (crew chief) — o agente com quem você conversa. Faz a
+ spec, planeja, escolhe modelos, segura a parada de aprovação, despacha um
+ engenheiro de corrida por trilha, confere os relatórios das trilhas, dá nota
+ aos engenheiros, faz o merge e entrega.
+- **Engenheiro de corrida** (race engineer) — um por trilha. Coordena só aquela
+ trilha: larga os pilotos, roda Stint / Relay / Pneus novos / Vistoria,
+ registra notas, manda o relatório da trilha. Brief: `templates/race-engineer.md`.
+- **Piloto** (driver) — o agente worker que faz um job no worktree da trilha.
+- **Fiscal** (scrutineer) — revisor só leitura de jobs de risco alto (por ritmo).
+ Avaliado como trabalho de `review`.
 
 - **Pneus novos** (Fresh tyres): antes de cada nova tentativa, o worktree da
  trilha volta ao commit que tinha antes do job (`git reset --hard <start>` +
@@ -77,16 +91,19 @@ trilhas: uma branch cada, acc/<slug>-<trilha>
 escolhe um modelo por job (ACC pick) ── sua aprovação (só com spec)
   │
   ▼
-roda as trilhas em paralelo ── acompanha: Orca, ou logs + git
+chefe de equipe despacha um engenheiro de corrida por trilha
   │
   ▼
-revisa cada commit, roda a verificação, ACC record com a nota
-  │   reprovou → tenta de novo com outro modelo
+engenheiros rodam pilotos em paralelo ── acompanha: Orca, ou logs + git
+  │
+  ▼
+engenheiro revisa, registra notas; chefe confere relatórios das trilhas
+  │   reprovou → relay com outro modelo
   ▼
 merge das trilhas em acc/<slug> → testes → push → pull request (você faz o merge)
 ```
 
-1. **Spec antes.** Para um pedido que não é pequeno, o coordenador faz as
+1. **Spec antes.** Para um pedido que não é pequeno, o chefe de equipe faz as
    perguntas cuja resposta muda o que vai ser feito (no máximo 5, numa mensagem
    só), depois escreve `specs/<NNN>-<slug>/spec.md` e `tasks.md` (e `plan.md`
    quando o desenho não é óbvio) e faz commit deles na branch da feature.
@@ -95,18 +112,19 @@ merge das trilhas em acc/<slug> → testes → push → pull request (você faz 
    ficam na mesma trilha e rodam em ordem; tarefas marcadas `[P]` sem arquivos
    em comum ganham trilhas próprias e rodam em paralelo. No máximo 4 trilhas.
 3. **Escolha.** `ACC pick --kind <tipo>` para cada job (veja [o placar](#o-placar)); se você declarou [seus modelos](#seus-modelos), só eles são candidatos.
-4. **Uma parada.** Com spec, o coordenador mostra o resumo da spec, as trilhas
-   e os modelos, e espera a sua aprovação. É a única parada; depois dela, ele
-   vai até o fim.
-5. **Roda e acompanha.** Os workers sobem nos seus worktrees; o coordenador
-   espera em verificações curtas (menos de 2 minutos cada) até todas as
-   trilhas terminarem.
-6. **Revisa e dá nota.** Ele lê cada commit, roda ele mesmo a verificação do
-   job e registra uma nota com `ACC record`, passando ou não. Um job reprovado
-   vai para outro modelo junto com os achados.
+4. **Uma parada.** Com spec, o chefe de equipe mostra o resumo da spec, as
+   trilhas e os modelos, e espera a sua aprovação. É a única parada; depois
+   dela, ele vai até o fim.
+5. **Despacha e roda.** O chefe de equipe despacha um engenheiro de corrida por
+   trilha. Os engenheiros largam os pilotos nos seus worktrees e esperam em
+   verificações curtas (menos de 2 minutos cada) até todo piloto terminar.
+6. **Revisa e dá nota.** Cada engenheiro lê cada commit, roda a verificação do
+   job e registra notas de piloto e fiscal com `ACC record`. O chefe de equipe
+   confere cada relatório de trilha, roda as verificações da trilha e dá nota
+   ao engenheiro como trabalho de `coordinate`. Um job reprovado vai para Relay.
 7. **Entrega.** As trilhas entram em `acc/<slug>`, os testes do projeto rodam,
-   a branch é enviada e um pull request é aberto. Você faz o merge. Workers
-   nunca fazem push, merge nem abrem pull request.
+   a branch é enviada e um pull request é aberto. Você faz o merge. Engenheiros
+   e pilotos nunca fazem push, merge nem abrem pull request.
 
 ## Dois modos
 
@@ -235,7 +253,7 @@ ACC import /caminho/do/projeto     # notas guardadas pelo ACC 0.6 em docs/crew-c
 ```
 
 Tipos: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
-`diagnosis`, `data`, `review`.
+`diagnosis`, `data`, `review`, `coordinate`.
 
 ## Instalar
 

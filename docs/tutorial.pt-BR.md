@@ -61,14 +61,14 @@ ter as skills também.
 
 ```bash
 python ~/acc/install.py .
-git add . && git commit -m "Install ACC 0.9.1"
+git add . && git commit -m "Install ACC 0.10.0"
 alias ACC='python -I .agents/skills/crew-chief/scripts/crew-chief.py'
 ACC score --kind code
 ```
 
 ```powershell
 python $HOME\acc\install.py .
-git add .; git commit -m "Install ACC 0.9.1"
+git add .; git commit -m "Install ACC 0.10.0"
 function ACC { python -I .agents/skills/crew-chief/scripts/crew-chief.py @args }
 ACC score --kind code
 ```
