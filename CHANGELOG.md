@@ -8,6 +8,13 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.9.1] - 2026-11-01
+
+### Fixed
+- Output (and the files ACC reads and writes) in UTF-8 on Windows, where
+  `python -I` ignored PYTHONUTF8 and printed accented notes as broken
+  characters.
+
 ## [0.9.0] - 2026-11-01
 
 You declare the models you have; ACC no longer guesses from the scoreboard
