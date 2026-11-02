@@ -8,6 +8,19 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.11.1] - 2026-11-01
+
+### Changed
+- Docs brought in step with 0.10/0.11: following a run and its logs, the pace
+  table, the current Pit Wall rules, role names (crew chief, race engineers,
+  drivers, scrutineers), and the tutorial with engineers, scrutineers, a pit
+  stop and sync.
+- AGENTS.md: docs rule, every version keeps README, tutorial, skill and
+  changelog in step.
+- `pit-wall.md` edge cases from the engineers' reports: job and pit-stop file
+  names, partly done work, review after a pit stop, a stalled scrutineer,
+  scrutineer choice at pace push, docs jobs, cross-lane test breaks.
+
 ## [0.11.0] - 2026-11-01
 
 ### Added

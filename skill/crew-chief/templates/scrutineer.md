@@ -19,6 +19,7 @@ Look at the diff and the spec. Find real problems only — no style nits.
 - Broken error paths: swallowed exceptions, missing cleanup, partial writes left behind.
 - Missing tests: risky paths the spec calls out but no test covers.
 - Spec drift: behavior that differs from what the job spec asks for.
+- Docs: every claim checked against the code, the skill and `--help`; translations say the same.
 
 ## Output format
 

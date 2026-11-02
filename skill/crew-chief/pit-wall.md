@@ -97,6 +97,29 @@ check is not yet accepted.
 Fewer than two eligible scrutineers (by pace, `models.toml` or missing CLIs):
 use the one available plus your own review, and say so in the lane report.
 
+## Edge cases
+
+- **Names.** `<job>` in file names is a short slug of the job title. A pit
+  stop's spec is `<lane>-<job>-pitstop-<n>.md`.
+- **Partly done, tests green.** If the work is usable but the spec is not
+  fully met, the job goes to Scrutineering (when it applies) and a pit stop
+  for what is missing. Relay with Fresh tyres is for work that is wrong or
+  broken.
+- **After a pit stop.** Review the pit-stop diff yourself. Run the
+  scrutineers again only when the pit stop changed risky code they did not
+  see.
+- **A stalled scrutineer.** If a scrutineer writes nothing for 15 minutes,
+  kill its tree, score it as a fail and go on with the other scrutineer plus
+  your own pass.
+- **Picking scrutineers.** Use the pace's `--max-cost`. On a high-risk job or
+  at pace `push`, at least one scrutineer must have a `review` score of 70 or
+  more. If none has one yet, take a model that scored well in the job's kind.
+- **Docs jobs.** A scrutineer checks every claim against the code, the skill
+  and the CLI's `--help`, and checks that each translation says the same.
+- **Cross-lane checks.** A version bump or a CLI change in one lane can break
+  another lane's tests until the lanes merge. Name those tests in the job
+  spec.
+
 ## Starting and watching drivers
 
 A driver runs in the lane worktree on the lane branch. Its prompt is the job

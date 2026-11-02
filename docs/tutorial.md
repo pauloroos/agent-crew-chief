@@ -2,7 +2,7 @@
 
 **English** · [Português](tutorial.pt-BR.md)
 
-This walk-through runs ACC v0.11.0 end to end on `examples/hello-crew`, a tiny
+This walk-through runs ACC v0.11.1 end to end on `examples/hello-crew`, a tiny
 Python project that ships with ACC. It has two independent modules, each with
 its own test:
 
@@ -33,7 +33,7 @@ Copy the example **out of** the ACC checkout. Inside it, the lanes and `acc/*`
 branches would land in the ACC repository itself.
 
 ```bash
-git clone --branch v0.11.0 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -42,7 +42,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.11.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -60,14 +60,14 @@ skills too.
 
 ```bash
 python ~/acc/install.py .
-git add . && git commit -m "Install ACC 0.11.0"
+git add . && git commit -m "Install ACC 0.11.1"
 alias ACC='python -I .agents/skills/crew-chief/scripts/crew-chief.py'
 ACC score --kind code
 ```
 
 ```powershell
 python $HOME\acc\install.py .
-git add .; git commit -m "Install ACC 0.11.0"
+git add .; git commit -m "Install ACC 0.11.1"
 function ACC { python -I .agents/skills/crew-chief/scripts/crew-chief.py @args }
 ACC score --kind code
 ```
@@ -85,7 +85,14 @@ gh repo create hello-crew-scratch --private --source . --push
 
 Without a remote, the run stops at the merged local branch. Both are fine.
 
-## 3. Open the coordinator
+## 3. Open the crew chief
+
+The **crew chief** is your coordinator CLI. It writes the spec, plans lanes,
+picks models, holds the approval stop, dispatches one **race engineer** per
+lane (its own subagent, or a background CLI session), checks their reports,
+grades them, merges and delivers. Engineers run **drivers** (workers) and
+**scrutineers**; the crew chief never runs drivers itself except on a small
+request without a spec.
 
 - **Orca mode:** add `~/scratch/hello-crew` to Orca and open a terminal of the
   project in Orca. `orca status --json` there should show Orca running.
@@ -115,13 +122,13 @@ tests for its change, and python -m pytest must pass. If the repository has
 no remote, stop at the merged local branch.
 ```
 
-You can add a pace to any request: append "pace eco" (free models only),
-"pace race" (default) or "pace push" to set the cost ceiling and scrutineering
+You can add a **pace** to any request: append `pace eco` (free models only),
+`pace race` (default) or `pace push` to set the cost ceiling and scrutineering
 scope.
 
 ## 5. The interview, the spec and the one stop
 
-The request leaves real questions open, so the coordinator asks them first,
+The request leaves real questions open, so the crew chief asks them first,
 in one message. **Example** (yours will differ in wording):
 
 ```text
@@ -131,7 +138,7 @@ Before I write the spec, two questions:
 ```
 
 Answer, for example: `1. Raise ValueError. 2. Either side.` Or answer
-`decide for me`: the coordinator then writes its assumptions into `spec.md`.
+`decide for me`: the crew chief then writes its assumptions into `spec.md`.
 
 It then writes the spec on a new branch `acc/<slug>` and commits it.
 **Example** of `specs/001-greet-lang-and-shout/tasks.md`:
@@ -147,29 +154,37 @@ It then writes the spec on a new branch `acc/<slug>` and commits it.
 `spec.md` sits next to it (what the user wants, stories, requirements, "done
 when"). `plan.md` is usually absent here: the design is obvious.
 
-Then the **only stop** of the run. **Example:**
+Then the **only stop** of the run. Each job now shows its **risk** and the
+**pace** with the lanes and models. **Example:**
 
 ```text
 Spec: specs/001-greet-lang-and-shout/ (committed on acc/greet-lang-and-shout)
+Pace: race
 Lanes, in parallel:
-  greet  T001  code  opencode:<model>  free      check: pytest tests/test_greet.py
-  cli    T002  code  codex:<model>     included  check: pytest tests/test_cli.py
+  greet  T001  code  normal  opencode:<model>  free      check: pytest tests/test_greet.py
+  cli    T002  code  normal  codex:<model>     included  check: pytest tests/test_cli.py
 Approve, and I run both lanes to the end.
 ```
 
-Reply `approved`. From here the coordinator does not stop until it reports.
+Reply `approved`. From here the crew chief does not stop until it reports.
 
 ## 6. Watch the lanes
 
-**Orca mode:** the Orca panel shows two workers, one per lane worktree. From
+The crew chief dispatches one race engineer per lane. Each engineer starts
+drivers in its lane worktree and coordinates Stint / Relay / Fresh tyres /
+Scrutineering for that lane.
+
+**Orca mode:** the Orca panel shows workers, one per lane worktree. From
 another terminal:
 
 ```text
 orca worktree ps
 ```
 
+Lane reports come back in the chat as the engineers finish.
+
 **Plain mode:** worktrees and logs sit next to the project, never inside.
-Lane names are the coordinator's choice; these use `greet` and `cli`.
+Lane names are the crew chief's choice; these use `greet` and `cli`.
 
 ```bash
 ls ../hello-crew-acc-logs
@@ -185,28 +200,46 @@ git -C ..\hello-crew-acc-greet log --oneline -3
 git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
-`ls` shows a `.md` job spec, a `.log` and a `.pid` per lane. `claude -p` writes
-its log only at the end, so an empty log is normal while it works; new commits
-and changed files are the progress signal.
+`ls` shows, per lane: the engineer brief (`<lane>-engineer.md`), a job spec
+(`<lane>-<job>.md`), `.log`, `.log.err` and `.pid`. For high-risk jobs, and for every job except low risk at pace `push`, you
+will also see scrutineer prompts and findings
+(`<lane>-<job>-scrutineer-<n>-prompt.md`, `<lane>-<job>-scrutineer-<n>.md`).
+`claude -p` writes its log only at the end, so an empty log is normal while
+it works; new commits and changed files are the progress signal.
 
 ## 7. Review and scores
 
-When a worker finishes, the coordinator reads its commits, runs the check
+When a driver finishes, the race engineer reads its commits, runs the check
 itself and records a grade. You will see lines like:
 
 ```text
 recorded opencode:<model> code pass 88
 ```
 
+The crew chief then reads each lane report, runs the lane's checks itself,
+reads the scrutineer findings of high-risk jobs, and grades the engineer as
+`coordinate`:
+
+```text
+recorded opencode:<model> coordinate pass 90
+```
+
 Look at the scoreboard and the next pick:
 
 ```text
 ACC score --kind code
+ACC score --kind coordinate
 ACC pick --kind code
 ```
 
 After a first run each model has `n` 1, so `pick` adds `- not proven yet, try
 another too`: a model needs a score of 70 or more over 2 jobs to be "proven".
+When `~/.crew-chief/models.toml` lists untried models, `score` appends a
+collapsed line:
+
+```text
+not tried yet (N): opencode:provider/model-a, codex:model-b, ...
+```
 
 Optional: declare the models you have in `~/.crew-chief/models.toml` (see
 `examples/models.toml`) and run `ACC models`. From then on `pick` chooses only
@@ -214,14 +247,15 @@ among them.
 
 ## 8. Delivery
 
-The coordinator merges both lanes into `acc/<slug>` with `--no-ff`, runs
+The crew chief merges both lanes into `acc/<slug>` with `--no-ff`, runs
 `python -m pytest`, removes the lane worktrees and branches, and then:
 
 - **with the scratch remote:** pushes `acc/<slug>` and opens a pull request.
   `gh pr view --web` opens it. Merge or close it yourself.
 - **without a remote:** stops on the merged local branch `acc/<slug>`.
 
-The final report lists each job with its model, outcome and score.
+The final report lists each job with its risk, pace, model, attempts,
+scrutineer scores, outcome, worker and engineer scores, and anything open.
 
 ## 9. Did it work?
 
@@ -256,13 +290,13 @@ In PowerShell, the last two are:
 ```
 
 A folder "open in another program" can block the lane cleanup on Windows (a
-worker's leftover process, often an MCP server, holds it): the coordinator
+worker's leftover process, often an MCP server, holds it): the crew chief
 leaves it and says so. Once that process ends (or after a reboot), delete
 that folder, then run `git worktree prune` and `git branch -D acc/<slug>-<lane>`.
 
 ## 10. A small request, without a spec
 
-Start from `main` and open a new coordinator session:
+Start from `main` and open a new crew chief session:
 
 ```text
 git switch main
@@ -277,8 +311,8 @@ If the repository has no remote, stop at the merged local branch.
 ```
 
 One job, one file area, no open question: no interview, no spec files and no
-approval stop. The coordinator tells you the plan in a few lines and runs one
-lane. Set `SLUG2` to the new branch name, then:
+approval stop. The crew chief tells you the plan in a few lines and may
+engineer its one lane itself. Set `SLUG2` to the new branch name, then:
 
 | Command | Expected output |
 | --- | --- |
@@ -287,6 +321,87 @@ lane. Set `SLUG2` to the new branch name, then:
 | `ACC score --kind code` | the model used shows `n` one higher and `last` today |
 
 To force this path on a bigger request, say "run directly" (or "sem spec").
+
+## 11. A risky job: scrutineers and a pit stop
+
+High-risk jobs add independent review before they are accepted. This example
+uses generic model names; yours will differ.
+
+Request:
+
+```text
+ACC, make greet() reject bad names: empty, longer than 64 characters or with
+control characters; risk high.
+```
+
+What happens:
+
+1. The race engineer runs one driver. It passes: 14 tests, score 90.
+2. Two scrutineers from other model families review the diff read-only. Both
+   write findings in the format defined by `templates/scrutineer.md`:
+
+   ```text
+   severity | file:line | failing scenario
+   ```
+
+   Severity is `serious`, `medium` or `minor`. The last line of each file is
+   `VERDICT: pass` or `VERDICT: fail`. Both write `VERDICT: pass`.
+3. The crew chief does its own pass over the risky path and finds a gap the
+   scrutineers missed: `greet("\u202eabc")` (a Unicode bidi override that can
+   spoof terminal output) is accepted.
+4. The confirmed finding goes back to the **same driver model** in a fresh
+   session — a **pit stop**. It fixes on top of its work (no reset) and adds
+   13 new test cases rejecting Unicode format characters. New result: 27
+   tests, score 92.
+5. Both scrutineers are scored down for the miss (`ACC record --kind review`).
+
+Files left in `../hello-crew-acc-logs/` for this job (plain mode):
+
+```text
+<lane>-<job>.md                # job spec
+<lane>-<job>.log               # driver stdout
+<lane>-<job>.log.err           # driver stderr
+<lane>-<job>.pid               # driver PID
+<lane>-<job>-scrutineer-1-prompt.md
+<lane>-<job>-scrutineer-1.md
+<lane>-<job>-scrutineer-2-prompt.md
+<lane>-<job>-scrutineer-2.md
+```
+
+Two related rules from the Pit Wall method:
+
+- **Fresh tyres**: before every new attempt of a job, the lane worktree is
+  reset to the commit it had before the job started, so the next driver never
+  inherits a failed attempt's edits or untracked files.
+- **Pit stop cap**: a job gets at most 2 pit stops; each is graded on its own
+  with "(pit stop <n>)" in the job title. After the cap the job either passes
+  or goes to Relay.
+- **Relay**: when a stint fails, attempt 2 uses another model on fresh tyres;
+  attempt 3 moves one cost tier up, still on fresh tyres; after three failed
+  attempts the engineer fixes the job itself or stops the lane.
+
+## 12. Two machines (optional)
+
+Share the ledger between machines through a private git repo. On each machine,
+once:
+
+```text
+ACC sync --init git@github.com:<you>/crew-chief-ledger.git
+```
+
+Then, at the start of a request and after the last grade:
+
+```text
+ACC sync
+```
+
+To merge a ledger file copied from another machine by hand:
+
+```text
+ACC merge <file>
+```
+
+Only the ledger is shared; specs, branches and worktrees stay local.
 
 ## Clean up
 
