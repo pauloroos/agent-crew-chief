@@ -30,7 +30,7 @@ to drop failed workers or the first scrutineer.
 
 ## Starting drivers
 
-Use the plain-mode or Orca commands from SKILL.md. A driver runs in the lane
+Use the Orca or plain-mode commands in `pit-wall.md` ("Starting and watching drivers"). A driver runs in the lane
 worktree on the lane branch. Its prompt is the job spec (self-contained, with
 target, change, constraints, acceptance, working rules and finish block).
 

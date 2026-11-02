@@ -84,11 +84,19 @@ the first scrutineer.
 
 ## 3. Dispatch a race engineer per lane
 
+Create each lane's worktree first. Orca mode:
+
+```text
+orca orchestration run-create --objective "<the request>" --json
+orca worktree create --name <slug>-<lane> --base-branch acc/<slug> --branch acc/<slug>-<lane> --setup skip --json
+```
+
 For every lane, fill `templates/race-engineer.md` with the lane name, branch,
 worktree, jobs (title, kind, risk, check, task ids), pace, spec folder and the
 `ACC` command path. Start the engineer with your own subagent mechanism (e.g.
-Claude Code's Agent tool) or as a background CLI session like a plain-mode
-worker. Engineers run in parallel, one per lane.
+Claude Code's Agent tool), else as an Orca worker (`worker-start` with the
+brief, in the lane worktree) or a background CLI session (plain mode, below).
+Engineers run in parallel, one per lane; start them all before waiting.
 
 ## 4. Monitor
 
@@ -130,7 +138,11 @@ When every lane passed: in your checkout on `acc/<slug>`, merge each lane
 (`git merge --no-ff --no-edit acc/<slug>-<lane>`), resolve conflicts, run the
 project's tests, use verification-before-completion, then push and open the
 pull request with `gh pr create`. Release engineers; remove lane worktrees and
-branches. Report: PR, each job with risk, pace, model, attempts, scrutineer
+branches: Orca `orca worktree rm --worktree branch:acc/<slug>-<lane>` (deletes
+the branch too); plain `git worktree remove ../<repo>-acc-<lane>`, `git branch
+-D acc/<slug>-<lane>` and, once nothing runs, `../<repo>-acc-logs/`. A folder
+"open in another program" is held by a leftover process: leave it, report it.
+Report: PR, each job with risk, pace, model, attempts, scrutineer
 scores, outcome, worker and engineer scores, anything open, and
 `ACC score --kind <kinds used>`.
 
