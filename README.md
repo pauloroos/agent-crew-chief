@@ -287,7 +287,7 @@ Steering a run:
 - **Limit cost:** say "free models only" or "nothing above included"; the
   crew chief passes `--max-cost free|included|cheap|paid` to `ACC pick`.
 
-The five commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+The seven commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (or `.claude/skills/...`) in a project where the skill is installed:
 
 ```text

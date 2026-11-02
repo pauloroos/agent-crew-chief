@@ -295,7 +295,7 @@ Conduzindo uma execução:
 - **Limitar custo:** diga "só modelos grátis" ou "nada acima de included"; o
   chefe de equipe passa `--max-cost free|included|cheap|paid` para o `ACC pick`.
 
-Os cinco comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+Os sete comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (ou `.claude/skills/...`) num projeto com a skill instalada:
 
 ```text
