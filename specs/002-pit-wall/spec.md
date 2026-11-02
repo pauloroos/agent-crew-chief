@@ -59,6 +59,40 @@ is `race`.
 
 Paid models are used only when the user says so, at any pace.
 
+## The team
+
+ACC always starts in a chat with an agent. That agent is the **crew chief**
+and stays on the pit wall:
+
+- It writes the spec, plans lanes, picks models, holds the approval stop,
+  merges the lanes and delivers.
+- It never runs workers itself.
+- The only exception is a small request run without a spec, where the crew
+  chief may engineer its one lane itself.
+
+For every lane, the crew chief dispatches a **race engineer**, a coordinator
+agent that runs that lane:
+
+- **Starting one:** use the crew chief's own subagent mechanism when it has
+  one (for example Claude Code's Agent tool). Otherwise run a background CLI
+  session with the engineer brief, the same way a worker is started in plain
+  mode.
+- **Brief:** `templates/race-engineer.md`, filled with the lane, its jobs
+  with kind, risk and check, the pace, the spec folder and the rules.
+- **Work:** the engineer starts the **drivers** (workers), runs Stint, Relay,
+  Fresh tyres and Scrutineering, and records every driver and scrutineer
+  grade with `ACC record`. It commits only through its drivers, on its lane
+  branch. It never merges, pushes or opens a pull request.
+- **Report:** one short lane report to the crew chief: each job with its
+  models, attempts, outcome and scores, the scrutineer files and the lane
+  branch head.
+- **Checks on the engineer:** the crew chief checks each lane report. It
+  runs the lane's checks itself and reads the scrutineer findings of high-risk
+  jobs. It then grades the engineer as `coordinate` work (a new ledger kind),
+  so engineer models get a score too.
+
+Engineers run in parallel, one per lane, at most 4.
+
 ## Stories
 
 ### User Story 1 - Risky work gets scrutineers (Priority: P1)
