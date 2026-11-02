@@ -261,3 +261,12 @@ def test_git_disables_terminal_prompt_and_detaches_stdin(monkeypatch, tmp_path: 
     syncmod._git(tmp_path, "status")
     assert captured["env"]["GIT_TERMINAL_PROMPT"] == "0"
     assert captured["stdin"] == subprocess.DEVNULL
+
+
+def test_sync_init_writes_lf_files_so_windows_and_linux_machines_agree(tmp_path: Path, monkeypatch, capsys):
+    """A CRLF .gitattributes from Windows would clash (add/add) with a Linux machine's LF copy."""
+    url = _remote(tmp_path)
+    home = _switch_home(tmp_path, monkeypatch, "a")
+    assert main(["sync", "--init", url]) == 0
+    for name in (".gitattributes", ".gitignore"):
+        assert b"\r\n" not in (home / name).read_bytes(), name

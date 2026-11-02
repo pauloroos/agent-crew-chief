@@ -29,7 +29,8 @@ NOT_SET_UP = "sync is not set up: ACC sync --init <url of a private repo>"
 
 def _git(home: Path, *args: str, commit_like: bool = False) -> subprocess.CompletedProcess[str]:
     cmd = ["git", *(GIT_IDENTITY if commit_like else []), *args]
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    # no prompt, no credential-manager window: fail with git's error instead of waiting
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
     try:
         return subprocess.run(cmd, cwd=home, capture_output=True, text=True,
                               stdin=subprocess.DEVNULL, env=env)
@@ -135,8 +136,8 @@ def main(init_url: str | None) -> int:
     if initialized.returncode != 0:
         return _fail(initialized, home)
     _git(home, "symbolic-ref", "HEAD", f"refs/heads/{BRANCH}")
-    (home / ".gitattributes").write_text(ATTRIBUTES, encoding="utf-8")
-    (home / ".gitignore").write_text(IGNORE, encoding="utf-8")
+    (home / ".gitattributes").write_text(ATTRIBUTES, encoding="utf-8", newline="\n")
+    (home / ".gitignore").write_text(IGNORE, encoding="utf-8", newline="\n")
     add = _git(home, "remote", "add", REMOTE, init_url)
     if add.returncode != 0:
         return _fail(add, home)
