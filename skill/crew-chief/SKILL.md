@@ -99,7 +99,7 @@ subagent in any harness; drivers and scrutineers get Orca terminals there too:
 
 ```text
 orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> --json
-orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-<job>-engineer --json
+orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-engineer --json
 orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<job>-<role> --command "<driver command>" --json
 ```
 
@@ -107,11 +107,11 @@ The rename `<handle>` comes from the `worker-start` receipt, `worker-show`,
 or `orca terminal list --worktree <lane worktree> --json`. Use `worker-start`
 when Orca knows the agent, then rename the terminal to the standard title;
 `orca agent launch` for a lone terminal always passes `--surface terminal`.
-Rename fails for workers without a terminal: fall back to
-`orca terminal create --title <standard name>` or note it in the lane report.
-Names: `acc-<slug>-<lane>-<job>-<role>`, plus `-<n>` for the n-th attempt;
-engineers run in parallel; without Orca, steps 3 and 4 become the
-"Without Orca (background mode)" section below.
+No terminal handle (a worker without a terminal, or a Chat UI that hides it):
+skip the rename; use `orca terminal create --title <standard name>` or note it
+in the lane report. Names: `acc-<slug>-<lane>[-<job>]-<role>`, plus `-<n>` for
+the n-th attempt; the engineer has no `<job>`. Engineers run in parallel;
+without Orca, steps 3–4 become the "Without Orca (background mode)" section.
 
 ## 4. Monitor
 
@@ -123,11 +123,11 @@ escalations, wait again.
 
 Replaces steps 3–4. Per lane: `git worktree add ../<repo>-acc-<lane> -b
 acc/<slug>-<lane> acc/<slug>`. Name each child
-`acc-<slug>-<lane>-<job>-<role>`, or `...-<role>-<n>` for the n-th. Write the
-job spec to `../<repo>-acc-logs/<name>.md` and start the driver in the
-background from inside the lane worktree with the prompt "Do the job in <its
-absolute path>". Log `../<repo>-acc-logs/<name>.log`, PID in
-`../<repo>-acc-logs/<name>.pid`, never inside the worktree; kill with
+`acc-<slug>-<lane>[-<job>]-<role>`, or `...-<role>-<n>` for the n-th (no
+`<job>` for the engineer). Write the job spec to `../<repo>-acc-logs/<name>.md`
+and start the driver in the background from inside the lane worktree with the
+prompt "Do the job in <its absolute path>". Log `../<repo>-acc-logs/<name>.log`,
+PID in `../<repo>-acc-logs/<name>.pid`, never inside the worktree; kill with
 Linux/macOS `kill -- -<pid>` or Windows PS `taskkill /PID <pid> /T /F`.
 
 ## Working rules (for drivers)

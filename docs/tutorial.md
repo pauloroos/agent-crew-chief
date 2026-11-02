@@ -2,7 +2,7 @@
 
 **English** · [Português](tutorial.pt-BR.md)
 
-This walk-through runs ACC v0.12.0 end to end on `examples/hello-crew`, a tiny
+This walk-through runs ACC v0.12.1 end to end on `examples/hello-crew`, a tiny
 Python project that ships with ACC. It has two independent modules, each with
 its own test:
 
@@ -33,7 +33,7 @@ Copy the example **out of** the ACC checkout. Inside it, the lanes and `acc/*`
 branches would land in the ACC repository itself.
 
 ```bash
-git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -42,7 +42,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -60,14 +60,14 @@ skills too.
 
 ```bash
 python ~/acc/install.py .
-git add . && git commit -m "Install ACC 0.12.0"
+git add . && git commit -m "Install ACC 0.12.1"
 alias ACC='python -I .agents/skills/crew-chief/scripts/crew-chief.py'
 ACC score --kind code
 ```
 
 ```powershell
 python $HOME\acc\install.py .
-git add .; git commit -m "Install ACC 0.12.0"
+git add .; git commit -m "Install ACC 0.12.1"
 function ACC { python -I .agents/skills/crew-chief/scripts/crew-chief.py @args }
 ACC score --kind code
 ```
@@ -172,7 +172,10 @@ Reply `approved`. From here the crew chief does not stop until it reports.
 
 The crew chief dispatches one race engineer per lane. Each engineer starts
 drivers in its lane worktree and coordinates Stint / Relay / Fresh tyres /
-Scrutineering for that lane.
+Scrutineering for that lane. Every agent gets the standard name: the engineer
+`acc-<slug>-<lane>-engineer`, drivers and scrutineers
+`acc-<slug>-<lane>-<job>-<role>`, plus `-<n>` on the n-th attempt. It is the
+Orca tab title and the log file name.
 
 **Orca mode:** each lane worktree is created as a child of the crew chief
 worktree (`orca worktree create ... --parent-worktree <crew chief worktree
@@ -183,10 +186,12 @@ the lane worktree. List them:
 orca terminal list --json
 ```
 
-Lane reports come back in the chat as the engineers finish.
+Each engineer's lane report comes back to the crew chief in its `worker_done`
+message, which the crew chief waits for with `orca orchestration check --wait`.
 
 **Background mode:** worktrees and logs sit next to the project, never inside.
-Lane names are the crew chief's choice; these use `greet` and `cli`.
+Lane names are the crew chief's choice; these use `greet` and `cli`. Each
+engineer's lane report ends up in its own log, where the crew chief reads it.
 
 ```bash
 ls ../hello-crew-acc-logs
@@ -203,10 +208,9 @@ git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
 `ls` shows, per agent: the brief or job spec (`<name>.md`), `.log`, `.log.err`
-and `.pid`, where `<name>` is the standard name
-`acc-<slug>-<lane>-<job>-<role>[-<n>]`. For high-risk jobs, and for every job
-except low risk at pace `push`, you will also see scrutineer prompts and
-findings. `claude -p` writes its log only at the end, so an empty log is normal
+and `.pid`, where `<name>` is the standard name above. For high-risk jobs,
+and for every job except low risk at pace `push`, you will also see
+scrutineer prompts and findings. `claude -p` writes its log only at the end, so an empty log is normal
 while it works; new commits and changed files are the progress signal.
 
 ## 7. Review and scores
@@ -348,14 +352,16 @@ What happens:
 
    Severity is `serious`, `medium` or `minor`. The last line of each file is
    `VERDICT: pass` or `VERDICT: fail`. Both write `VERDICT: pass`.
-3. The crew chief does its own pass over the risky path and finds a gap the
+3. The race engineer does its own pass over the risky path and finds a gap the
    scrutineers missed: `greet("\u202eabc")` (a Unicode bidi override that can
    spoof terminal output) is accepted.
-4. The confirmed finding goes back to the **same driver model** in a fresh
-   session — a **pit stop**. It fixes on top of its work (no reset) and adds
-   13 new test cases rejecting Unicode format characters. New result: 27
+4. The race engineer sends the confirmed finding back to the **same driver
+   model** in a fresh session — a **pit stop**. It fixes on top of its work
+   (no reset) and adds 13 new test cases rejecting Unicode format characters. New result: 27
    tests, score 92.
-5. Both scrutineers are scored down for the miss (`ACC record --kind review`).
+5. The race engineer scores both scrutineers down for the miss
+   (`ACC record --kind review`). The crew chief reads the findings when it
+   checks the lane report.
 
 Files left in `../hello-crew-acc-logs/` for this job (background mode):
 
@@ -372,7 +378,7 @@ where `<name>` is the standard name `acc-<slug>-<lane>-<job>-<role>[-<n>]`;
 each scrutineer's own `<name>` already ends in `-scrutineer-1`, `-scrutineer-2`,
 so no extra role suffix is added.
 
-Two related rules from the Pit Wall method:
+Three related rules from the Pit Wall method:
 
 - **Fresh tyres**: before every new attempt of a job, the lane worktree is
   reset to the commit it had before the job started, so the next driver never

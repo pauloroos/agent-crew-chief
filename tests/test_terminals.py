@@ -19,16 +19,40 @@ def test_second_attempt_appends_number() -> None:
 
 
 def test_third_attempt_appends_number() -> None:
-    assert terminal_name("terminais", "code", "auth", "engineer", 3) == "acc-terminais-code-auth-engineer-3"
+    assert terminal_name("terminais", "code", "auth", "scrutineer", 3) == "acc-terminais-code-auth-scrutineer-3"
 
 
 def test_default_attempt_is_one() -> None:
     assert terminal_name("terminais", "code", "greet", "driver") == "acc-terminais-code-greet-driver"
 
 
-@pytest.mark.parametrize("role", ROLES)
-def test_every_role_is_accepted(role: str) -> None:
+@pytest.mark.parametrize("role", ["driver", "scrutineer"])
+def test_every_job_role_is_accepted(role: str) -> None:
     assert terminal_name("terminais", "code", "greet", role) == f"acc-terminais-code-greet-{role}"
+
+
+def test_roles_are_the_three_crew_roles() -> None:
+    assert ROLES == ("engineer", "driver", "scrutineer")
+
+
+def test_engineer_has_no_job_segment() -> None:
+    assert terminal_name("terminais", "code", None, "engineer") == "acc-terminais-code-engineer"
+
+
+def test_engineer_attempt_appends_number() -> None:
+    assert terminal_name("terminais", "code", None, "Engineer", 2) == "acc-terminais-code-engineer-2"
+
+
+@pytest.mark.parametrize("job", ["greet", "", "   "])
+def test_engineer_with_job_is_rejected(job: str) -> None:
+    with pytest.raises(ValueError, match="job"):
+        terminal_name("terminais", "code", job, "engineer")
+
+
+@pytest.mark.parametrize("role", ["driver", "scrutineer"])
+def test_job_role_without_job_is_rejected(role: str) -> None:
+    with pytest.raises(ValueError, match="job"):
+        terminal_name("terminais", "code", None, role)
 
 
 def test_strips_and_lowercases_inputs() -> None:
@@ -38,13 +62,13 @@ def test_strips_and_lowercases_inputs() -> None:
 @pytest.mark.parametrize(
     "slug, lane, job, role, attempt",
     [
-        ("terminais", "code", "greet", "engineer", 1),
+        ("terminais", "code", None, "engineer", 1),
         ("terminais", "lane1", "cli", "driver", 2),
         ("shop", "code", "auth", "scrutineer", 10),
-        ("a1", "lane2", "data", "engineer", 7),
+        ("a1", "lane2", None, "engineer", 7),
     ],
 )
-def test_names_are_single_hyphen_lowercase(slug: str, lane: str, job: str, role: str, attempt: int) -> None:
+def test_names_are_single_hyphen_lowercase(slug: str, lane: str, job: str | None, role: str, attempt: int) -> None:
     name = terminal_name(slug, lane, job, role, attempt)
     assert re.fullmatch(r"acc-[a-z0-9-]+", name), name
     assert "--" not in name

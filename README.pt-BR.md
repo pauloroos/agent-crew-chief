@@ -157,16 +157,21 @@ tentativa reprovada.
 
 Como você acompanha o progresso e onde os artefatos ficam depende do modo:
 
+- **Nomes:** todo agente tem um nome padrão, usado como título da aba do Orca
+  e nome do arquivo de log: o engenheiro de corrida
+  `acc-<slug>-<trilha>-engineer[-<n>]`, pilotos e fiscais
+  `acc-<slug>-<trilha>-<job>-<papel>[-<n>]`.
 - **Modo Orca:** o engenheiro de corrida é um worker do Orca na worktree da
-  trilha. Os relatórios das trilhas chegam no chat; use o painel do Orca e
+  trilha. O relatório da trilha chega ao chefe de equipe na mensagem
+  `worker_done` (`orca orchestration check --wait`); use o painel do Orca e
   `worker-read`. Liste os terminais com `orca terminal list --json`.
 - **Modo segundo plano:** a pasta `../<repo>-acc-logs/` ao lado do repo guarda
   os artefatos de cada trilha. Arquivos por agente: `<nome>.md` (brief ou spec
   do job), `<nome>.log` e `<nome>.log.err` (o opencode escreve o progresso em
   `.err`; o `claude -p` só imprime no final), `<nome>.pid`, onde `<nome>` é o
-  nome padrão `acc-<slug>-<trilha>-<job>-<papel>[-<n>]`. Prompts e achados dos
-  fiscais seguem o mesmo padrão. A pasta é apagada na entrega, quando nada mais
-  roda.
+  nome padrão. O relatório da trilha do engenheiro de corrida fica no log
+  dele. Prompts e achados dos fiscais seguem o mesmo padrão. A pasta é apagada
+  na entrega, quando nada mais roda.
 - **Progresso no git:** `git -C ../<repo>-acc-<trilha> log --oneline acc/<slug>..`.
 - **Notas:** `~/.crew-chief/ledger.jsonl`; leia com `ACC score` (modelos
   listados não testados viram `not tried yet (N): ...`), um tipo com
@@ -316,12 +321,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.12.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.12.0.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.0),
+Sem git? Baixe `agent-crew-chief-v0.12.1.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.1),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -346,7 +351,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.12.0
+git -C agent-crew-chief checkout v0.12.1
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
@@ -357,7 +362,7 @@ tocado.
 ## Vindo da 0.6 ou da 0.7
 
 - **Da 0.7:** rode o instalador de novo. Você ganha a etapa de spec, o kit e o
-  modo simples; o placar é o mesmo arquivo.
+  modo segundo plano; o placar é o mesmo arquivo.
 - **Da 0.6:** o maestro, o motor de despacho, os slots e as preferências por
   projeto não voltam. As cópias do kit que a 0.6 instalou têm o mesmo marcador
   e são atualizadas no lugar. Traga as notas antigas para o placar uma vez com
