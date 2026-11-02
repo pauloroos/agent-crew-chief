@@ -96,8 +96,8 @@ itself except on a small request without a spec.
 
 - **Orca mode:** add `~/scratch/hello-crew` to Orca and open a terminal of the
   project in Orca. `orca status --json` there should show Orca running.
-- **Plain mode:** any terminal (or VS Code), in `~/scratch/hello-crew`. If Orca
-  is running and you still want plain mode, add "Without Orca." to the request.
+- **Background mode:** any terminal (or VS Code), in `~/scratch/hello-crew`. If Orca
+  is running and you still want background mode, add "Without Orca." to the request.
 
 Start your CLI there: `claude`, `codex` or `opencode`.
 
@@ -174,7 +174,10 @@ The crew chief dispatches one race engineer per lane. Each engineer starts
 drivers in its lane worktree and coordinates Stint / Relay / Fresh tyres /
 Scrutineering for that lane.
 
-**Orca mode:** each agent has an Orca tab in the lane worktree. List them:
+**Orca mode:** each lane worktree is created as a child of the crew chief
+worktree (`orca worktree create ... --parent-worktree <crew chief worktree
+selector>`), so Orca shows it under the run. Each agent has an Orca tab in
+the lane worktree. List them:
 
 ```text
 orca terminal list --json
@@ -361,13 +364,13 @@ Files left in `../hello-crew-acc-logs/` for this job (background mode):
 <name>.log                     # driver stdout
 <name>.log.err                 # driver stderr
 <name>.pid                     # driver PID
-<name>-scrutineer-1-prompt.md
-<name>-scrutineer-1.md
-<name>-scrutineer-2-prompt.md
-<name>-scrutineer-2.md
+<name>-prompt.md               # scrutineer prompt (one per scrutineer)
+<name>.md                      # scrutineer findings (one per scrutineer)
 ```
 
-where `<name>` is the standard name `acc-<slug>-<lane>-<job>-<role>[-<n>]`.
+where `<name>` is the standard name `acc-<slug>-<lane>-<job>-<role>[-<n>]`;
+each scrutineer's own `<name>` already ends in `-scrutineer-1`, `-scrutineer-2`,
+so no extra role suffix is added.
 
 Two related rules from the Pit Wall method:
 

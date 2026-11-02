@@ -85,11 +85,11 @@ the first scrutineer.
 
 ## 3. Dispatch a race engineer per lane
 
-Create each lane's worktree first. Orca mode:
+Create each lane's worktree first as a child of the crew chief worktree, so Orca shows it under the run. Orca mode:
 
 ```text
 orca orchestration run-create --objective "<the request>" --json
-orca worktree create --name <slug>-<lane> --base-branch acc/<slug> --branch acc/<slug>-<lane> --setup skip --json
+orca worktree create --name <slug>-<lane> --base-branch acc/<slug> --branch acc/<slug>-<lane> --setup skip --parent-worktree <crew chief worktree selector> --json
 ```
 
 For every lane, fill `templates/race-engineer.md` with the lane, branch,
@@ -103,13 +103,15 @@ orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-<job>-enginee
 orca terminal create --worktree path:<worktree> --title acc-<slug>-<lane>-<job>-<role> --command "<driver command>" --json
 ```
 
-Use `worker-start` when Orca knows the agent, then rename the terminal to the
-standard title (the Chat UI may not expose a handle; in that case skip the
-rename and rely on `worker-read`). Otherwise use `orca terminal create`
-(`orca agent launch` for a lone terminal). Names:
-`acc-<slug>-<lane>-<job>-<role>`, plus `-<n>` for the n-th attempt; engineers
-run in parallel. Without Orca, steps 3 and 4 become the "Without Orca (plain
-mode)" section below.
+The rename `<handle>` comes from the `worker-start` receipt, `worker-show`,
+or `orca terminal list --worktree <lane worktree> --json`. Use `worker-start`
+when Orca knows the agent, then rename the terminal to the standard title;
+`orca agent launch` for a lone terminal always passes `--surface terminal`.
+Rename fails for workers without a terminal: fall back to
+`orca terminal create --title <standard name>` or note it in the lane report.
+Names: `acc-<slug>-<lane>-<job>-<role>`, plus `-<n>` for the n-th attempt;
+engineers run in parallel; without Orca, steps 3 and 4 become the
+"Without Orca (background mode)" section below.
 
 ## 4. Monitor
 
@@ -156,7 +158,7 @@ When every lane passed: in your checkout on `acc/<slug>`, merge each lane
 project's tests, use verification-before-completion, then push and open the
 pull request with `gh pr create`. Release engineers; remove lane worktrees and
 branches: Orca `orca worktree rm --worktree branch:acc/<slug>-<lane>` (deletes
-the branch too); plain `git worktree remove ../<repo>-acc-<lane>`, `git branch
+the branch too); background-mode `git worktree remove ../<repo>-acc-<lane>`, `git branch
 -D acc/<slug>-<lane>` and, once nothing runs, `../<repo>-acc-logs/`. A folder
 "open in another program" is held by a leftover process: leave it, report it.
 Report: PR, each job with risk, pace, model, attempts, scrutineer
@@ -174,6 +176,4 @@ scores, outcome, worker and engineer scores, anything open, and
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.
 - `ACC merge <file>` merges a ledger file copied from another machine.
-- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync`
-  runs it. When set up, run `ACC sync` at the start of a request and after
-  the last grade.
+- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when set up, run it at the start of a request and after the last grade.

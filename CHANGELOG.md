@@ -19,7 +19,11 @@ which keeps their full history, releases and changelog.
 - **`crew_chief.terminals` module.** `terminal_name(slug, lane, job, role,
   attempt)` builds the standard name including the job slug for uniqueness
   across parallel jobs and scrutineers. `log_file(logs_dir, name)` returns
-  the standard log path used in both modes.
+  the standard log path used in background mode (Orca-mode workers produce
+  no `.log` files).
+- **Lane worktrees are children of the crew chief worktree.** `orca worktree
+  create` passes `--parent-worktree <crew chief worktree selector>`, so Orca
+  shows every lane under the run.
 
 ### Changed
 - **SKILL.md step 3** now requires starting the race engineer as an Orca

@@ -100,8 +100,8 @@ pequeno sem spec.
 
 - **Modo Orca:** adicione `~/scratch/hello-crew` ao Orca e abra um terminal do
   projeto no Orca. Ali, `orca status --json` deve mostrar o Orca rodando.
-- **Modo simples:** qualquer terminal (ou o VS Code), em `~/scratch/hello-crew`.
-  Se o Orca estiver rodando e você quiser o modo simples mesmo assim, ponha
+- **Modo em segundo plano:** qualquer terminal (ou o VS Code), em `~/scratch/hello-crew`.
+  Se o Orca estiver rodando e você quiser o modo em segundo plano mesmo assim, ponha
   "Sem Orca." no pedido.
 
 Abra o seu CLI ali: `claude`, `codex` ou `opencode`.
@@ -179,7 +179,10 @@ inicia pilotos no worktree da trilha e coordena Stint / Relay / Pneus novos /
 Vistoria naquela trilha. Todo agente roda num terminal visível com o nome
 padrão `acc-<slug>-<trilha>-<papel>` (ou `-<n>` nas repetições).
 
-**Modo Orca:** cada agente tem uma aba do Orca na worktree da trilha. Liste:
+**Modo Orca:** cada worktree de trilha é criada como filha da worktree do
+chefe de equipe (`orca worktree create ... --parent-worktree <worktree do
+chefe de equipe>`), para o Orca mostrá-la dentro da execução. Cada agente tem
+uma aba do Orca na worktree da trilha. Liste:
 
 ```text
 orca terminal list --json
@@ -187,7 +190,7 @@ orca terminal list --json
 
 Os relatórios das trilhas também chegam no chat conforme os engenheiros terminam.
 
-**Modo segundo plano** (sem Orca): worktrees e logs ficam ao lado do projeto,
+**Modo em segundo plano** (sem Orca): worktrees e logs ficam ao lado do projeto,
 nunca dentro. Os nomes das trilhas são escolha do chefe de equipe; aqui são
 `greet` e `cli`.
 
@@ -364,20 +367,20 @@ O que acontece:
    Novo resultado: 27 testes, nota 92.
 5. Os dois fiscais perdem pontos pela falha (`ACC record --kind review`).
 
-Arquivos deixados em `../hello-crew-acc-logs/` para este job (modo segundo plano):
+Arquivos deixados em `../hello-crew-acc-logs/` para este job (modo em segundo plano):
 
 ```text
 <nome>.md                            # spec do job
 <nome>.log                           # stdout do piloto
 <nome>.log.err                       # stderr do piloto
 <nome>.pid                           # PID do piloto
-<nome>-scrutineer-1-prompt.md
-<nome>-scrutineer-1.md
-<nome>-scrutineer-2-prompt.md
-<nome>-scrutineer-2.md
+<nome>-prompt.md                     # prompt do fiscal (um por fiscal)
+<nome>.md                            # achados do fiscal (um por fiscal)
 ```
 
-onde `<nome>` é o nome padrão `acc-<slug>-<trilha>-<job>-<papel>[-<n>]`.
+onde `<nome>` é o nome padrão `acc-<slug>-<trilha>-<job>-<papel>[-<n>]`;
+o `<nome>` de cada fiscal já termina em `-scrutineer-1`, `-scrutineer-2`,
+então nenhum sufixo de papel é acrescentado.
 
 Duas regras relacionadas do método Pit Wall:
 

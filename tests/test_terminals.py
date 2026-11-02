@@ -81,6 +81,26 @@ def test_bad_attempt_is_rejected(attempt: object) -> None:
         terminal_name("terminais", "code", "greet", "driver", attempt)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("argument", ["slug", "lane", "job"])
+@pytest.mark.parametrize("bad", ["my job", "a/b", "a_b", "a.b", "a:b", "job!", "../x"])
+def test_outside_charset_is_rejected(argument: str, bad: str) -> None:
+    kwargs = {"slug": "terminais", "lane": "code", "job": "greet", "role": "driver"}
+    kwargs[argument] = bad
+    with pytest.raises(ValueError, match=argument):
+        terminal_name(**kwargs)  # type: ignore[arg-type]
+
+
+def test_role_outside_charset_is_rejected() -> None:
+    with pytest.raises(ValueError, match="role"):
+        terminal_name("terminais", "code", "greet", "dri ver")
+
+
+def test_log_file_docstring_says_background_mode_only() -> None:
+    assert log_file.__doc__ is not None
+    assert "background mode" in log_file.__doc__
+    assert "Orca-mode workers produce no `.log` files" in log_file.__doc__
+
+
 def test_log_file_is_a_path_with_the_name() -> None:
     path = log_file("../shop-acc-logs", "acc-terminais-code-greet-driver")
     assert isinstance(path, Path)

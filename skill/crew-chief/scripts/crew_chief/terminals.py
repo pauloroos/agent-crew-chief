@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 ROLES = ("engineer", "driver", "scrutineer")
+
+_CLEAN_RE = re.compile(r"[a-z0-9-]+")
 
 
 def _clean(value: str, argument: str) -> str:
@@ -13,6 +16,8 @@ def _clean(value: str, argument: str) -> str:
     cleaned = value.strip().lower()
     if not cleaned:
         raise ValueError(f"'{argument}' must not be empty")
+    if _CLEAN_RE.fullmatch(cleaned) is None:
+        raise ValueError(f"'{argument}' must use only [a-z0-9-]")
     return cleaned
 
 
@@ -31,5 +36,8 @@ def terminal_name(slug: str, lane: str, job: str, role: str, attempt: int = 1) -
 
 
 def log_file(logs_dir, name: str) -> pathlib.Path:
-    """`<logs_dir>/<name>.log`, the standard log path for every mode."""
+    """`<logs_dir>/<name>.log`, the standard log path in background mode.
+
+    Orca-mode workers produce no `.log` files; only background mode writes them.
+    """
     return pathlib.Path(logs_dir) / f"{name}.log"

@@ -101,7 +101,8 @@ use the one available plus your own review, and say so in the lane report.
 ## Edge cases
 
 - **Names.** `<job>` in file names is a short slug of the job title. A pit
-  stop's spec is `<lane>-<job>-pitstop-<n>.md`.
+  stop's spec is `<name>-pitstop-<n>.md`, where `<name>` is the standard name
+  of the job it fixes.
 - **Partly done, tests green.** If the work is usable but the spec is not
   fully met, the job goes to Scrutineering (when it applies) and a pit stop
   for what is missing. Relay with Fresh tyres is for work that is wrong or
@@ -124,7 +125,10 @@ use the one available plus your own review, and say so in the lane report.
 ## Starting and watching drivers
 
 A driver runs in the lane worktree on the lane branch. Its prompt is the job
-spec. Every engineer, driver and scrutineer is named with the standard name,
+spec. Lane worktrees are created as children of the crew chief worktree
+(`orca worktree create ... --parent-worktree <crew chief worktree selector>`,
+e.g. `active`, `branch:<crew chief branch>` or `path:<path>`), so Orca shows
+them under the run. Every engineer, driver and scrutineer is named with the standard name,
 `acc-<slug>-<lane>-<job>-<role>` for the first attempt and
 `acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th, where `<slug>` comes from
 the feature branch `acc/<slug>`, `<job>` is a short slug of the job title, and
@@ -137,8 +141,9 @@ log file name are the same. Scrutineers running in parallel use `-1` and `-2`
 The race engineer always starts as an Orca worker in the existing lane
 worktree, never as the crew chief's subagent. The worktree already exists, so
 do not pass `--name` to `worker-start`; rename the terminal to the standard
-title afterwards. When the Chat UI does not expose a terminal handle, skip the
-rename and rely on `worker-read`.
+title afterwards. The rename `<handle>` comes from the `worker-start`
+receipt, `worker-show`, or `orca terminal list --worktree <lane worktree>
+--json`.
 
 ```text
 orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --json
@@ -148,8 +153,12 @@ orca orchestration check --wait --types "worker_done,escalation,question" --time
 ```
 
 Use `worker-start` when Orca knows the agent (`--agent <id>`); use
-`orca agent launch` for a lone terminal, or `orca terminal create` with the
-driver's command line when it does not. Keep each wait under 2 minutes: CLIs
+`orca agent launch --surface terminal` for a lone terminal, or
+`orca terminal create` with the driver's command line when it does not.
+Rename fails for workers without a terminal: fall back to
+`orca terminal create --title <standard name>` or note it in the lane report,
+and rely on `worker-read`. When the Chat UI does not expose a terminal handle,
+skip the rename and rely on `worker-read`. Keep each wait under 2 minutes: CLIs
 kill longer commands. An empty result only means wait again. Answer questions,
 handle every `worker_done`, ack it (`check --ack <delivery>`), then release the
 worker. A driver can miss its spec on a cold start: after 5 minutes with no

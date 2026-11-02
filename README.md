@@ -139,7 +139,7 @@ The crew chief chooses at the start of every run:
 | --- | --- | --- |
 | When | `orca status --json` shows a running Orca | otherwise, or when you ask for it |
 | Where you run the crew chief | an Orca terminal of the project | any terminal, VS Code, any CLI |
-| Lanes | Orca worktrees | `git worktree add ../<repo>-acc-<lane>` |
+| Lanes | Orca worktrees, each a child of the crew chief worktree (`orca worktree create ... --parent-worktree <crew chief worktree selector>`) | `git worktree add ../<repo>-acc-<lane>` |
 | Engineers | Orca worker in the lane worktree | background process with log and PID |
 | Drivers | `orca orchestration worker-start` or `orca terminal create` | `claude -p`, `codex exec` or `opencode run` in the background |
 | Watching | Orca panel, `check --wait`, driver questions | process alive, new commits, changed files, `../<repo>-acc-logs/*.log` |

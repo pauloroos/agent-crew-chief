@@ -143,7 +143,7 @@ O chefe de equipe escolhe no começo de cada execução:
 | --- | --- | --- |
 | Quando | `orca status --json` mostra um Orca rodando | nos outros casos, ou quando você pede |
 | Onde você roda o chefe de equipe | num terminal do Orca no projeto | qualquer terminal, VS Code, qualquer CLI |
-| Trilhas | worktrees do Orca | `git worktree add ../<repo>-acc-<trilha>` |
+| Trilhas | worktrees do Orca, cada uma filha da worktree do chefe de equipe (`orca worktree create ... --parent-worktree <worktree do chefe de equipe>`) | `git worktree add ../<repo>-acc-<trilha>` |
 | Engenheiros | worker do Orca na worktree da trilha | processo em segundo plano com log e PID |
 | Pilotos | `orca orchestration worker-start` ou `orca terminal create` | `claude -p`, `codex exec` ou `opencode run` em segundo plano |
 | Acompanhamento | painel do Orca, `check --wait`, perguntas dos pilotos | processo vivo, commits novos, arquivos alterados, `../<repo>-acc-logs/*.log` |
