@@ -175,19 +175,30 @@ Responda `aprovado`. Daqui em diante o chefe de equipe não para até o relatór
 
 O chefe de equipe despacha um engenheiro de corrida por trilha. Cada engenheiro
 inicia pilotos no worktree da trilha e coordena Stint / Relay / Pneus novos /
-Vistoria naquela trilha.
+Vistoria naquela trilha. Todo agente roda num terminal visível com o nome
+padrão `acc-<slug>-<trilha>-<papel>` (ou `-<n>` nas repetições).
 
-**Modo Orca:** o painel do Orca mostra workers, um por worktree de trilha. De
-outro terminal:
+**Modo Orca:** cada agente tem uma aba do Orca na worktree da trilha. Liste:
 
 ```text
-orca worktree ps
+orca terminal list --json
 ```
 
-Os relatórios das trilhas voltam no chat à medida que os engenheiros terminam.
+Troque para qualquer terminal pelo handle ou título; os relatórios das trilhas
+também chegam no chat conforme os engenheiros terminam.
 
-**Modo simples:** worktrees e logs ficam ao lado do projeto, nunca dentro.
-Os nomes das trilhas são escolha do chefe de equipe; aqui são `greet` e `cli`.
+**Modo tmux** (sem Orca, `tmux` no PATH): cada agente é uma sessão tmux
+nomeada.
+
+```bash
+tmux ls
+tmux attach -t acc-greet-lang-and-shout-greet-driver
+tail -f ../hello-crew-acc-logs/acc-greet-lang-and-shout-greet-driver.log
+```
+
+**Modo segundo plano** (sem Orca, sem tmux): worktrees e logs ficam ao lado do
+projeto, nunca dentro. Os nomes das trilhas são escolha do chefe de equipe;
+aqui são `greet` e `cli`.
 
 ```bash
 ls ../hello-crew-acc-logs
@@ -203,12 +214,12 @@ git -C ..\hello-crew-acc-greet log --oneline -3
 git -C ..\hello-crew-acc-cli status --porcelain
 ```
 
-O `ls` mostra, por trilha: o brief do engenheiro (`<trilha>-engineer.md`), uma
-spec de job (`<trilha>-<job>.md`), `.log`, `.log.err` e `.pid`. Para jobs de risco alto, e para todo job exceto baixo risco no ritmo `push`,
-você também verá prompts e achados dos fiscais
-(`<trilha>-<job>-scrutineer-<n>-prompt.md`, `<trilha>-<job>-scrutineer-<n>.md`).
-O `claude -p` só escreve o log no fim, então log vazio é normal enquanto ele
-trabalha; commits novos e arquivos alterados é que mostram o progresso.
+No modo segundo plano, o `ls` mostra por agente: o brief ou spec de job
+(`<nome>.md`), `.log`, `.log.err` e `.pid`. Para jobs de risco alto, e para
+todo job exceto baixo risco no ritmo `push`, você também verá prompts e
+achados dos fiscais. O `claude -p` só escreve o log no fim, então log vazio é
+normal enquanto ele trabalha; commits novos e arquivos alterados é que mostram
+o progresso em todos os modos.
 
 ## 7. Revisão e notas
 
