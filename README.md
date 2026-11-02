@@ -26,7 +26,7 @@ Two things, both installed into your project:
 
 - **A skill** (`crew-chief`) for the coding agent you already use: Claude
   Code, Codex, OpenCode, Gemini CLI or Cursor. The agent you talk to becomes
-  the coordinator; other agents, in their own worktrees, are the workers.
+  the crew chief; other agents, in their own worktrees, are the drivers.
 - **A model scoreboard**, a small Python CLI with no dependencies. Every job
   gets a grade from 0 to 100, and the next pick uses those grades.
 
@@ -47,29 +47,38 @@ before they are accepted, and retries start clean.
 - **Race engineer** (engenheiro de corrida) — one per lane. Coordinates that
   lane only: starts drivers, runs Stint / Relay / Fresh tyres / Scrutineering,
   records grades, sends a lane report. Brief: `templates/race-engineer.md`.
-- **Driver** (piloto) — the worker agent that does one job in the lane worktree.
+- **Driver** (piloto) — the agent that does one job in the lane worktree.
 - **Scrutineer** (fiscal) — read-only reviewer of high-risk jobs (per pace).
   Scored as `review` work.
 
 - **Fresh tyres** (Pneus novos): before every new attempt, the lane worktree is
   reset to the commit it had before the job (`git reset --hard <start>` +
-  `git clean -fd`). The next worker never inherits a failed attempt's edits.
+  `git clean -fd`). The next driver never inherits a failed attempt's edits.
 - **Relay**: a failed stint hands the job over. Attempt 2 uses another model
   (`ACC pick --kind <k> --exclude <failed>`), same tier allowed; attempt 3
-  moves one cost tier up. After three failures, the coordinator fixes it or
+  moves one cost tier up. After three failures, the race engineer fixes it or
   stops the lane.
 - **Scrutineering** (Vistoria): high-risk jobs (auth, money, data loss,
-  concurrency) get two parallel read-only scrutineers, different models from
-  the worker and preferably from different families. Confirmed findings go
-  back to the same worker model in a fresh session (**pit stop**), at most 2
-  pit stops, then pass or Relay. Each scrutineer is scored as `review` work.
+  concurrency) get two parallel read-only scrutineers. Neither may share the
+  driver's model family (a rule, not a preference). Confirmed findings go
+  back to the same driver model in a fresh session (**pit stop**); each pit
+  stop is its own grade ("(pit stop n)" in the job title). At most 2 pit
+  stops, then pass or Relay. The race engineer does its own pass over the
+  risky path: a pass with no findings is not proof. Scrutineers who miss a
+  real problem are scored down; each scrutineer is scored as `review` work.
 - **Risk** (`low`/`normal`/`high`) is set per job in the plan. Only `high`
   adds Scrutineering by default.
 - **Pace** is set per request: `eco` (free only), `race` (default, cheapest
   good), `push` (may start at included, scrutineering on every non-low job).
   Paid models are used only when you say so. Example: "ACC, do X, pace push".
 
-See `skill/crew-chief/pit-wall.md` for the full rules and the pace table.
+| Pace | Drivers | Scrutineering | Scrutineers | Implied `--max-cost` |
+| --- | --- | --- | --- | --- |
+| `eco` | free only | high risk | free only | `free` |
+| `race` | cheapest good (`ACC pick`) | high risk | free + included | `included` |
+| `push` | may start at included | every job except low risk | free + included | `included` |
+
+See `skill/crew-chief/pit-wall.md` for the full rules.
 
 ## How it works
 
@@ -124,37 +133,61 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
 
 ## Two modes
 
-The coordinator chooses at the start of every run:
+The crew chief chooses at the start of every run:
 
 | | Orca mode | Plain mode |
 | --- | --- | --- |
 | When | `orca status --json` shows a running Orca | otherwise, or when you ask for it |
-| Where you run the coordinator | an Orca terminal of the project | any terminal, VS Code, any CLI |
+| Where you run the crew chief | an Orca terminal of the project | any terminal, VS Code, any CLI |
 | Lanes | Orca worktrees | `git worktree add ../<repo>-acc-<lane>` |
-| Workers | `orca orchestration worker-start` | `claude -p`, `codex exec` or `opencode run` in the background |
-| Watching | Orca panel, `check --wait`, worker questions | process alive, new commits, changed files, `../<repo>-acc-logs/*.log` |
+| Drivers | `orca orchestration worker-start` | `claude -p`, `codex exec` or `opencode run` in the background |
+| Watching | Orca panel, `check --wait`, driver questions | process alive, new commits, changed files, `../<repo>-acc-logs/*.log` |
 
-Plain mode has no question channel: a worker that needs an answer stops or
+Plain mode has no question channel: a driver that needs an answer stops or
 guesses, so specs must be self-contained. A job with 30 minutes of no commit,
 no file change and no log growth is killed and counts as a failed attempt.
+
+## Following a run
+
+How you watch progress and where the artifacts land depends on the mode:
+
+- **With a subagent race engineer** (e.g. Claude Code): lane reports arrive in
+  the chat. In Orca mode, use the Orca panel and `worker-read`.
+- **Plain mode:** the folder `../<repo>-acc-logs/` next to the repo holds the
+  artifacts for each lane. Files per job: `<lane>-engineer.md` (the engineer's
+  brief) and `<lane>-engineer.log` when the engineer is a CLI session;
+  `<lane>-<job>.md` (job spec), `.log` and `.log.err` (opencode writes its
+  progress to `.err`; `claude -p` prints only at the end), `.pid`;
+  `<lane>-<job>-scrutineer-<n>-prompt.md` and
+  `<lane>-<job>-scrutineer-<n>.md` (findings, last line `VERDICT:`); pit-stop
+  specs follow the same pattern. The folder is deleted at delivery, once
+  nothing runs.
+- **Progress in git:** `git -C ../<repo>-acc-<lane> log --oneline acc/<slug>..`.
+- **Grades:** `~/.crew-chief/ledger.jsonl`; read them with `ACC score`
+  (untried listed models collapse into `not tried yet (N): ...`), one kind
+  with `--kind`; `ACC models` shows your list with scores and
+  `graded but not listed`.
+- **The final report:** the crew chief's final report to you gives the PR link
+  and each job with risk, pace, models, attempts, scrutineer scores, outcome,
+  driver and engineer scores, anything open, and `ACC score --kind <kinds used>`.
 
 ## The skills kit
 
 The installer also copies five skills next to `crew-chief`, and every job spec
-tells workers to use them:
+tells drivers to use them:
 
 | Skill | From | Used for |
 | --- | --- | --- |
 | `test-driven-development` | superpowers | code changes: test first |
 | `systematic-debugging` | superpowers | bugs: find the cause before fixing |
-| `verification-before-completion` | superpowers | run the check before saying "done" (the coordinator too, before the PR) |
+| `verification-before-completion` | superpowers | run the check before saying "done" (the crew chief too, before the PR) |
 | `ponytail` | ponytail | the smallest complete change |
 | `ponytail-review` | ponytail | a quality review of a change |
 
 Each copy carries an `.installed-by-agent-crew-chief` marker file. A folder
 with the same name but no marker is yours and is never touched. Skip a kit with
 `--no-superpowers` or `--no-ponytail` (copies already there are left as they
-are). A worker without the skills reads the rule as plain guidance.
+are). A driver without the skills reads the rule as plain guidance.
 
 ## The scoreboard
 
@@ -216,7 +249,7 @@ agent  = "opencode"          # CLI / Orca agent: opencode, claude, codex, gemini
 model  = "provider/model-a"  # the exact --model value
 cost   = "free"              # free | included | cheap | paid
 kinds  = ["code", "tests"]   # optional; absent = every kind
-note   = "everyday work"     # optional; shown to the coordinator
+note   = "everyday work"     # optional; shown to the crew chief
 ```
 
 Global and project lists merge. A project entry with the same `agent` and
@@ -226,7 +259,7 @@ off here); `inherit = false` in the project file ignores the global list.
 scores and notes. After the table it prints
 `graded but not listed: <agent:model> (<kind> <score>, n <n>)` for executors
 that have grades but are not in `models.toml`, so you can add them. With a
-list, `ACC pick` and the coordinator choose only among those models; a model
+list, `ACC pick` and the crew chief choose only among those models; a model
 with no score yet gets tried, and the score you record settles it. Without
 any file, nothing changes. A broken file stops the command with
 `<path>: <problem>`. A copyable example is in
@@ -252,9 +285,9 @@ Steering a run:
 - **Skip the spec:** say "run directly" (or "sem spec").
 - **Force plain mode:** say "without Orca" (or "plain mode").
 - **Limit cost:** say "free models only" or "nothing above included"; the
-  coordinator passes `--max-cost free|included|cheap|paid` to `ACC pick`.
+  crew chief passes `--max-cost free|included|cheap|paid` to `ACC pick`.
 
-The five commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+The seven commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (or `.claude/skills/...`) in a project where the skill is installed:
 
 ```text
@@ -276,12 +309,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.11.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.11.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.11.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.0),
+No git? Download `agent-crew-chief-v0.11.1.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.11.1),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -306,7 +339,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.11.0
+git -C agent-crew-chief checkout v0.11.1
 python agent-crew-chief/install.py /path/to/project
 ```
 
