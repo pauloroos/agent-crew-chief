@@ -29,8 +29,10 @@ NOT_SET_UP = "sync is not set up: ACC sync --init <url of a private repo>"
 
 def _git(home: Path, *args: str, commit_like: bool = False) -> subprocess.CompletedProcess[str]:
     cmd = ["git", *(GIT_IDENTITY if commit_like else []), *args]
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     try:
-        return subprocess.run(cmd, cwd=home, capture_output=True, text=True)
+        return subprocess.run(cmd, cwd=home, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, env=env)
     except FileNotFoundError:
         print("git not found: ACC sync needs the git CLI", file=sys.stderr)
         raise SystemExit(1)
@@ -39,9 +41,10 @@ def _git(home: Path, *args: str, commit_like: bool = False) -> subprocess.Comple
 def _fail(result: subprocess.CompletedProcess[str], home: Path) -> int:
     if (home / ".git" / "MERGE_HEAD").is_file():
         _git(home, "merge", "--abort")
-    output = (result.stderr or result.stdout).strip()
-    if output:
-        print(output, file=sys.stderr)
+    for chunk in (result.stdout, result.stderr):
+        output = (chunk or "").strip()
+        if output:
+            print(output, file=sys.stderr)
     return 1
 
 
@@ -93,7 +96,7 @@ def _push(home: Path, url: str) -> int:
     result = _git(home, "push", "-u", REMOTE, BRANCH)
     if result.returncode != 0:
         return _fail(result, home)
-    print(f"synced {len(ledger.read())} grades with {url}")
+    print(f"synced {len(ledger.read())} grades")
     return 0
 
 
@@ -137,5 +140,6 @@ def main(init_url: str | None) -> int:
     add = _git(home, "remote", "add", REMOTE, init_url)
     if add.returncode != 0:
         return _fail(add, home)
-    _commit_tracked(home, "sync: track the ledger")
+    if _commit_tracked(home, "sync: track the ledger") is None:
+        return 1
     return run_sync(home, init_url)

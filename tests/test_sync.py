@@ -209,3 +209,55 @@ def test_sync_init_with_different_url_exits_2(tmp_path: Path, monkeypatch, capsy
     capsys.readouterr()
     assert main(["sync", "--init", str(tmp_path / "other.git")]) == 2
     assert url in capsys.readouterr().err
+
+
+def test_sync_conflicting_gitattributes_aborts_merge_and_keeps_grades(
+        tmp_path: Path, monkeypatch, capsys):
+    url = _remote(tmp_path)
+    home_a = _switch_home(tmp_path, monkeypatch, "a")
+    _home_with_grades(home_a, 80)
+    assert main(["sync", "--init", url]) == 0
+    capsys.readouterr()
+
+    home_b = _switch_home(tmp_path, monkeypatch, "b")
+    _home_with_grades(home_b, 81)
+    assert main(["sync", "--init", url]) == 0
+    capsys.readouterr()
+
+    monkeypatch.setenv("CREW_CHIEF_HOME", str(home_a))
+    with (home_a / ".gitattributes").open("a", encoding="utf-8") as handle:
+        handle.write("# a\n")
+    _home_with_grades(home_a, 82)
+    assert main(["sync"]) == 0
+    capsys.readouterr()
+
+    monkeypatch.setenv("CREW_CHIEF_HOME", str(home_b))
+    with (home_b / ".gitattributes").open("a", encoding="utf-8") as handle:
+        handle.write("# b\n")
+    _home_with_grades(home_b, 83)
+    assert main(["sync"]) == 1
+    err = capsys.readouterr().err
+    assert "CONFLICT" in err
+    assert not (home_b / ".git" / "MERGE_HEAD").exists()
+    assert "<<<<<<<" not in (home_b / "ledger.jsonl").read_text(encoding="utf-8")
+    assert sorted(e["score"] for e in ledger.read()) == [80, 81, 83]
+
+
+def test_git_disables_terminal_prompt_and_detaches_stdin(monkeypatch, tmp_path: Path):
+    from crew_chief import sync as syncmod
+
+    captured: dict = {}
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured.update(kwargs)
+        return _Result()
+
+    monkeypatch.setattr(syncmod.subprocess, "run", fake_run)
+    syncmod._git(tmp_path, "status")
+    assert captured["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert captured["stdin"] == subprocess.DEVNULL
