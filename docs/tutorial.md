@@ -2,7 +2,7 @@
 
 **English** · [Português](tutorial.pt-BR.md)
 
-This walk-through runs ACC v0.8.0 end to end on `examples/hello-crew`, a tiny
+This walk-through runs ACC v0.9.0 end to end on `examples/hello-crew`, a tiny
 Python project that ships with ACC. It has two independent modules, each with
 its own test:
 
@@ -33,7 +33,7 @@ Copy the example **out of** the ACC checkout. Inside it, the lanes and `acc/*`
 branches would land in the ACC repository itself.
 
 ```bash
-git clone --branch v0.8.0 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.9.0 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -42,7 +42,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.8.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.9.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -60,14 +60,14 @@ skills too.
 
 ```bash
 python ~/acc/install.py .
-git add . && git commit -m "Install ACC 0.8.0"
+git add . && git commit -m "Install ACC 0.9.0"
 alias ACC='python -I .agents/skills/crew-chief/scripts/crew-chief.py'
 ACC score --kind code
 ```
 
 ```powershell
 python $HOME\acc\install.py .
-git add .; git commit -m "Install ACC 0.8.0"
+git add .; git commit -m "Install ACC 0.9.0"
 function ACC { python -I .agents/skills/crew-chief/scripts/crew-chief.py @args }
 ACC score --kind code
 ```
@@ -203,6 +203,10 @@ ACC pick --kind code
 
 After a first run each model has `n` 1, so `pick` adds `- not proven yet, try
 another too`: a model needs a score of 70 or more over 2 jobs to be "proven".
+
+Optional: declare the models you have in `~/.crew-chief/models.toml` (see
+`examples/models.toml`) and run `ACC models`. From then on `pick` chooses only
+among them.
 
 ## 8. Delivery
 

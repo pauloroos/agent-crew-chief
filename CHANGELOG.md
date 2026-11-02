@@ -8,6 +8,28 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.9.0] - 2026-11-01
+
+You declare the models you have; ACC no longer guesses from the scoreboard
+alone.
+
+### Added
+- **`models.toml`**, global (`~/.crew-chief/models.toml`) and per project
+  (`.crew-chief/models.toml` at the repository root, shared by every
+  worktree). Names only, never keys. The project file can switch a global
+  model off (`enabled = false`) or ignore the global list (`inherit = false`).
+- **`ACC models [--json]`**: the effective list, where each model came from,
+  its cost, kinds, scores and notes.
+- `examples/models.toml`, a commented file to copy.
+
+### Changed
+- `ACC pick` with a list picks only among the listed models that take the
+  kind, using the declared cost; an untried model of the cheapest tier can be
+  picked ("not tried yet"). `ACC score` also shows listed models with no
+  grade. A broken file stops these commands with `<path>: <problem>`.
+  Without a file nothing changes.
+- SKILL.md step 2: run `ACC models` first and pick among the listed models.
+
 ## [0.8.0] - 2026-10-31
 
 Brings back what 0.7 cut without asking: the owner had decided on 2026-10-29
