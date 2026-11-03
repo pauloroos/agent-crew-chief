@@ -244,6 +244,19 @@ de juntar as notas; sem configuração, nada muda.
   O union merge do git (`.gitattributes`: `ledger.jsonl merge=union`) torna
   acréscimos concorrentes seguros. Usa o acesso git que você já tem; nenhum
   token é pedido, guardado ou criado. O repositório precisa ser privado.
+- **Um repositório para tudo.** O `ACC sync` também leva
+  `jobs/<máquina>/*.jsonl`, para um lançador (agendador, ponte, CI) que grava
+  uma linha de resumo por job. O ACC em si não grava nada ali. Uma
+  configuração antiga ganha as linhas de `jobs/` no `.gitignore` e no
+  `.gitattributes` no próximo sync.
+
+Toda nota leva `machine`: `$CREW_CHIEF_MACHINE` ou, sem ela, o nome do host
+(defina a variável em containers, cujo nome de host muda). O texto livre da
+nota passa antes por um filtro de segredos: tokens do GitHub, estilo OpenAI,
+Slack e AWS, JWTs, chaves privadas, pares `password=...` e sequências longas
+que misturam letras e números viram `[redacted]`. O sync nunca roda sozinho:
+agende o `ACC sync` (cron, timer do systemd, Agendador de Tarefas) se quiser
+que ele rode sem ninguém lembrar.
 
 ## Seus modelos
 
@@ -321,12 +334,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.12.1.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.1),
+Sem git? Baixe `agent-crew-chief-v0.13.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.13.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -351,7 +364,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.12.1
+git -C agent-crew-chief checkout v0.13.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

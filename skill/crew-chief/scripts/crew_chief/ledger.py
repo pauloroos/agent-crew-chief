@@ -9,12 +9,35 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 KINDS = ("code", "tests", "refactor", "design", "docs", "research", "diagnosis", "data", "review", "coordinate")
 COSTS = ("free", "included", "cheap", "paid")
 OUTCOMES = ("pass", "fail")
+
+# What must never reach a shared ledger: GitHub, OpenAI-style, Slack and AWS tokens, JWTs,
+# PEM private keys, `password=...`-style pairs, and long runs that mix letters and digits.
+# shortcut: a 40-character commit hash is redacted too; record short hashes.
+_SECRET = re.compile(
+    r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|sk-[\w-]{16,}|xox[abprs]-[\w-]{10,}"
+    r"|AKIA[0-9A-Z]{16}|eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]*|-----BEGIN [A-Z ]*PRIVATE KEY-----"
+    r"|(?i:\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*)\S+"
+    r"|\b(?=[A-Za-z_+=]*\d)(?=[\d_+=]*[A-Za-z])[A-Za-z0-9_+=]{32,}"
+)
+
+
+def redact(text: str) -> str:
+    """``text`` with anything that looks like a token or a key replaced by ``[redacted]``."""
+    return _SECRET.sub("[redacted]", text)
+
+
+def machine() -> str:
+    """This machine's name in the ledger: ``$CREW_CHIEF_MACHINE``, else the host name."""
+    name = os.environ.get("CREW_CHIEF_MACHINE") or platform.node() or "unknown"
+    return re.sub(r"[^A-Za-z0-9._-]", "-", name)[:64]
 
 
 def ledger_path() -> Path:
@@ -23,8 +46,9 @@ def ledger_path() -> Path:
 
 
 def append(entry: dict) -> dict:
-    """Write one entry (``at`` defaults to now, ``None`` fields are dropped) and return it."""
-    fields = {key: value for key, value in entry.items() if value is not None}
+    """Write one entry (``at`` defaults to now, ``None`` fields are dropped, text redacted) and return it."""
+    fields = {key: redact(value) if isinstance(value, str) else value
+              for key, value in entry.items() if value is not None}
     entry = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
     path = ledger_path()
     path.parent.mkdir(parents=True, exist_ok=True)

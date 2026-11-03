@@ -8,6 +8,24 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.13.0] - 2026-11-03
+
+### Added
+- **`machine` on every grade.** `ACC record` writes `$CREW_CHIEF_MACHINE`,
+  else the host name, so a synced ledger tells PC, notebook and server apart.
+  Older grades have no `machine` and still count.
+- **`ACC sync` carries `jobs/<machine>/*.jsonl`**, one summary line per job
+  written by a launcher, so grades and job summaries live in one private
+  repository. `.gitignore` and `.gitattributes` from an older setup get the
+  `jobs/` lines on the next sync; user edits to them are kept.
+
+### Changed
+- **Secret filter on the ledger.** Every text field of a grade (note, job,
+  lane, model...) passes through `ledger.redact()` before it is written:
+  GitHub, OpenAI-style, Slack and AWS tokens, JWTs, PEM private keys,
+  `password=...` pairs and long runs mixing letters and digits become
+  `[redacted]`.
+
 ## [0.12.1] - 2026-11-02
 
 ### Changed

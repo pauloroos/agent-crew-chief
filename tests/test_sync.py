@@ -270,3 +270,69 @@ def test_sync_init_writes_lf_files_so_windows_and_linux_machines_agree(tmp_path:
     assert main(["sync", "--init", url]) == 0
     for name in (".gitattributes", ".gitignore"):
         assert b"\r\n" not in (home / name).read_bytes(), name
+
+
+# 0.13.0: machine on each grade, no secrets in the ledger, jobs/ travels with sync
+
+def test_record_names_the_machine_and_redacts_secrets(monkeypatch, capsys):
+    monkeypatch.setenv("CREW_CHIEF_MACHINE", "orca/../x y")
+    token = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2"
+    assert main(["record", "--kind", "code", "--agent", "opencode", "--model", "m",
+                 "--outcome", "pass", "--score", "90", "--project", "p",
+                 "--note", f"pushed with {token} and password=hunter22"]) == 0
+    capsys.readouterr()
+    entry = ledger.read()[0]
+    assert entry["machine"] == "orca-..-x-y"
+    assert token not in entry["note"] and "hunter22" not in entry["note"]
+    assert entry["note"] == "pushed with [redacted] and [redacted]"
+
+
+@pytest.mark.parametrize("text", [
+    "20261030-0339-f3-producao-e-rede-fase-7-e-performance-",
+    "avisos/multas/modelos/relatorios/equipe/gestor",
+    "https://github.com/pauloroos/compasso-finance/pull/12",
+    "opencode-go/deepseek-v4.1-flash on top of cc6427f, 27 pass",
+    "FarolMeter+TrendChart+RequirementCard",
+])
+def test_redact_keeps_ordinary_text(text):
+    assert ledger.redact(text) == text
+
+
+@pytest.mark.parametrize("secret", [
+    "github_pat_11ABCDEFG0123456789_abcdefghijklmnop",
+    "sk-proj-abcdefghijklmnop1234",
+    "AKIAABCDEFGHIJKLMNOP",
+    "aGVsbG8gd29ybGQgdGhpcyBpcyBhIGxvbmcga2V5",
+])
+def test_redact_hides_tokens(secret):
+    assert ledger.redact(f"x {secret} y") == "x [redacted] y"
+
+
+def test_sync_carries_jobs_and_upgrades_an_older_setup(tmp_path: Path, monkeypatch, capsys):
+    from crew_chief import sync as syncmod
+
+    url = _remote(tmp_path)
+    home_a = _switch_home(tmp_path, monkeypatch, "a")
+    _home_with_grades(home_a, 80)
+    assert main(["sync", "--init", url]) == 0
+    # an older ACC wrote these files without the jobs/ lines
+    (home_a / ".gitignore").write_text("*\n!ledger.jsonl\n!.gitattributes\n!.gitignore\n",
+                                       encoding="utf-8", newline="\n")
+    (home_a / ".gitattributes").write_text("ledger.jsonl merge=union text eol=lf\n",
+                                           encoding="utf-8", newline="\n")
+    jobs = home_a / "jobs" / "orca"
+    jobs.mkdir(parents=True)
+    (jobs / "2026-11.jsonl").write_text('{"id": "j1"}\n', encoding="utf-8", newline="\n")
+    (home_a / "jobs" / "orca" / "raw.log").write_text("not shared\n", encoding="utf-8")
+    assert main(["sync"]) == 0
+    capsys.readouterr()
+    assert (home_a / ".gitignore").read_text(encoding="utf-8") == syncmod.IGNORE
+    assert (home_a / ".gitattributes").read_text(encoding="utf-8") == syncmod.ATTRIBUTES
+    names = subprocess.run(["git", "--git-dir", str(tmp_path / "remote.git"), "ls-tree", "-r",
+                            "--name-only", "main"], capture_output=True, text=True).stdout.split()
+    assert "jobs/orca/2026-11.jsonl" in names and "jobs/orca/raw.log" not in names
+
+    home_b = _switch_home(tmp_path, monkeypatch, "b")
+    assert main(["sync", "--init", url]) == 0
+    capsys.readouterr()
+    assert (home_b / "jobs" / "orca" / "2026-11.jsonl").read_text(encoding="utf-8") == '{"id": "j1"}\n'

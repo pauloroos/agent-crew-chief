@@ -176,4 +176,4 @@ scores, outcome, worker and engineer scores, anything open, and
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.
 - `ACC merge <file>` merges a ledger file copied from another machine.
-- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when set up, run it at the start of a request and after the last grade.
+- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when set up, run it at the start of a request and after the last grade. It also carries `jobs/<machine>/` summaries written by a launcher; never put a brief, log or diff there.

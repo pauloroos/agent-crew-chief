@@ -236,6 +236,18 @@ to bring grades together; without setup, nothing changes.
   Git's union merge (`.gitattributes`: `ledger.jsonl merge=union`) makes
   concurrent appends safe. It uses the git access you already have; no token
   is asked for, stored or created. The repository must be private.
+- **One repository for everything.** `ACC sync` also carries
+  `jobs/<machine>/*.jsonl`, for a launcher (a scheduler, a bridge, CI) that
+  writes one summary line per job. ACC itself writes nothing there. An older
+  setup gets the `jobs/` lines added to `.gitignore` and `.gitattributes` on
+  its next sync.
+
+Every grade carries `machine`: `$CREW_CHIEF_MACHINE`, else the host name (set
+the variable in containers, whose host name changes). Free text in a grade
+goes through a secret filter first: GitHub, OpenAI-style, Slack and AWS
+tokens, JWTs, private keys, `password=...` pairs and long runs that mix
+letters and digits become `[redacted]`. Sync never runs by itself: schedule
+`ACC sync` (cron, systemd timer, Task Scheduler) if you want it hands-off.
 
 ## Your models
 
@@ -313,12 +325,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.12.1.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.12.1),
+No git? Download `agent-crew-chief-v0.13.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.13.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -343,7 +355,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.12.1
+git -C agent-crew-chief checkout v0.13.0
 python agent-crew-chief/install.py /path/to/project
 ```
 

@@ -123,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
             "lane": args.lane,
             "job": args.job,
             "note": args.note,
+            "machine": ledger.machine(),
         })
         print(f"recorded {score.executor(entry)} {args.kind} {args.outcome} {args.score}")
         return 0
