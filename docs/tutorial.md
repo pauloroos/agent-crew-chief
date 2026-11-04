@@ -254,11 +254,17 @@ among them.
 ## 8. Delivery
 
 The crew chief merges both lanes into `acc/<slug>` with `--no-ff`, runs
-`python -m pytest`, removes the lane worktrees and branches, and then:
+`python -m pytest`, and then:
 
 - **with the scratch remote:** pushes `acc/<slug>` and opens a pull request.
   `gh pr view --web` opens it. Merge or close it yourself.
 - **without a remote:** stops on the merged local branch `acc/<slug>`.
+
+Before cleaning up, it runs `ACC summary --job <slug>` (with `--pr <url>` when
+there is one), which adds one line about the run to
+`~/.crew-chief/jobs/<machine>/<YYYY-MM>.jsonl`: times, models graded, the
+scrutineers' verdicts and error counts, never log text. Then it removes the
+lane worktrees, their branches and `../hello-crew-acc-logs/`.
 
 The final report lists each job with its risk, pace, model, attempts,
 scrutineer scores, outcome, worker and engineer scores, and anything open.

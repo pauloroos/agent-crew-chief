@@ -171,7 +171,8 @@ Como você acompanha o progresso e onde os artefatos ficam depende do modo:
   `.err`; o `claude -p` só imprime no final), `<nome>.pid`, onde `<nome>` é o
   nome padrão. O relatório da trilha do engenheiro de corrida fica no log
   dele. Prompts e achados dos fiscais seguem o mesmo padrão. A pasta é apagada
-  na entrega, quando nada mais roda.
+  na entrega, quando nada mais roda; antes, o `ACC summary` guarda uma linha
+  sobre a rodada (veja "Placar em várias máquinas").
 - **Progresso no git:** `git -C ../<repo>-acc-<trilha> log --oneline acc/<slug>..`.
 - **Notas:** `~/.crew-chief/ledger.jsonl`; leia com `ACC score` (modelos
   listados não testados viram `not tried yet (N): ...`), um tipo com
@@ -245,8 +246,18 @@ de juntar as notas; sem configuração, nada muda.
   acréscimos concorrentes seguros. Usa o acesso git que você já tem; nenhum
   token é pedido, guardado ou criado. O repositório precisa ser privado.
 - **Um repositório para tudo.** O `ACC sync` também leva
-  `jobs/<máquina>/*.jsonl`, para um lançador (agendador, ponte, CI) que grava
-  uma linha de resumo por job. O ACC em si não grava nada ali. Uma
+  `jobs/<máquina>/<AAAA-MM>.jsonl`: uma linha de resumo por rodada. O chefe de
+  equipe grava essa linha com `ACC summary` na entrega, antes de a pasta de
+  logs sumir: `id`, `maquina`, `repo`, `inicio`, `fim`, `minutos`, `rc`,
+  `modelos_usados` (as notas desta máquina para o repo durante a rodada),
+  `vereditos_fiscal` (o último `VERDICT:` de cada fiscal), `erros` (linhas
+  dos `.log` que falam de cota, 429, timeout ou `outside_write`) e `pr_url`.
+  Nunca um brief, uma linha de log ou um diff, e o filtro de segredos passa
+  por ela. Um lançador (agendador, ponte, CI) também pode gravar linhas ali:
+  com `CREW_CHIEF_JOB_ID` (o id dele; `AAAAMMDD-HHMMSS-xxxxxx` em UTC também
+  dá o início) e `CREW_CHIEF_COORDINATOR` (`agente:modelo`) no ambiente do
+  chefe de equipe, o `ACC summary` usa os dois, e uma segunda linha com o
+  mesmo id nunca é gravada; assim o lançador pula os ids que já estão lá. Uma
   configuração antiga ganha as linhas de `jobs/` no `.gitignore` e no
   `.gitattributes` no próximo sync.
 
@@ -256,7 +267,10 @@ nota passa antes por um filtro de segredos: tokens do GitHub, estilo OpenAI,
 Slack e AWS, JWTs, chaves privadas, pares `password=...` e sequências longas
 que misturam letras e números viram `[redacted]`. O sync nunca roda sozinho:
 agende o `ACC sync` (cron, timer do systemd, Agendador de Tarefas) se quiser
-que ele rode sem ninguém lembrar.
+que ele rode sem ninguém lembrar. Notas, resumos e sync usam uma trava de
+arquivo (`~/.crew-chief/.lock`): a nota gravada no meio de um sync espera por
+ele em vez de se perder; uma trava com mais de 5 minutos é tida como deixada
+por um processo morto e é quebrada.
 
 ## Seus modelos
 
@@ -312,7 +326,7 @@ Conduzindo uma execução:
 - **Limitar custo:** diga "só modelos grátis" ou "nada acima de included"; o
   chefe de equipe passa `--max-cost free|included|cheap|paid` para o `ACC pick`.
 
-Os sete comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+Os oito comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (ou `.claude/skills/...`) num projeto com a skill instalada:
 
 ```text
@@ -321,6 +335,7 @@ ACC pick --kind code [--max-cost free|included|cheap|paid] [--json]
 ACC record --kind code --agent opencode --model <modelo> --cost free --outcome pass --score 85 --minutes 12 [--effort <e>] [--lane <trilha>] [--job "<título>"] [--note "<por quê>"]
 ACC score [--kind code] [--project <nome>] [--json]
 ACC import /caminho/do/projeto     # notas guardadas pelo ACC 0.6 em docs/crew-chief/jobs
+ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <pasta>]  # uma linha sobre a rodada, antes de os logs sumirem
 ACC merge <arquivo>                # junta um ledger copiado de outra máquina
 ACC sync [--init <url>]            # sincroniza o ledger.jsonl por um repo git privado
 ```

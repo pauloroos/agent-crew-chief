@@ -165,7 +165,8 @@ How you watch progress and where the artifacts land depends on the mode:
   `.err`; `claude -p` prints only at the end), `<name>.pid`, where `<name>`
   is the standard name. The race engineer's lane report ends up in its own
   log. Scrutineer prompts and findings follow the same pattern. The folder is
-  deleted at delivery, once nothing runs.
+  deleted at delivery, once nothing runs; first `ACC summary` keeps one line
+  about the run (see "Scores on several machines").
 - **Progress in git:** `git -C ../<repo>-acc-<lane> log --oneline acc/<slug>..`.
 - **Grades:** `~/.crew-chief/ledger.jsonl`; read them with `ACC score`
   (untried listed models collapse into `not tried yet (N): ...`), one kind
@@ -237,10 +238,19 @@ to bring grades together; without setup, nothing changes.
   concurrent appends safe. It uses the git access you already have; no token
   is asked for, stored or created. The repository must be private.
 - **One repository for everything.** `ACC sync` also carries
-  `jobs/<machine>/*.jsonl`, for a launcher (a scheduler, a bridge, CI) that
-  writes one summary line per job. ACC itself writes nothing there. An older
-  setup gets the `jobs/` lines added to `.gitignore` and `.gitattributes` on
-  its next sync.
+  `jobs/<machine>/<YYYY-MM>.jsonl`: one summary line per run. The crew chief
+  writes it with `ACC summary` at delivery, before the logs folder goes:
+  `id`, `maquina`, `repo`, `inicio`, `fim`, `minutos`, `rc`, `modelos_usados`
+  (this machine's grades for the repo during the run), `vereditos_fiscal`
+  (the last `VERDICT:` of each scrutineer), `erros` (lines in the `.log`
+  files that report quota, 429, timeout or `outside_write`) and `pr_url`.
+  Never a brief, a log line or a diff, and the secret filter runs on it. A
+  launcher (a scheduler, a bridge, CI) can write lines there too: setting
+  `CREW_CHIEF_JOB_ID` (its own id, `YYYYMMDD-HHMMSS-xxxxxx` in UTC also gives
+  the start) and `CREW_CHIEF_COORDINATOR` (`agent:model`) for the crew chief
+  makes `ACC summary` use them, and a second line with the same id is never
+  written, so the launcher can skip ids already there. An older setup gets the
+  `jobs/` lines added to `.gitignore` and `.gitattributes` on its next sync.
 
 Every grade carries `machine`: `$CREW_CHIEF_MACHINE`, else the host name (set
 the variable in containers, whose host name changes). Free text in a grade
@@ -248,6 +258,9 @@ goes through a secret filter first: GitHub, OpenAI-style, Slack and AWS
 tokens, JWTs, private keys, `password=...` pairs and long runs that mix
 letters and digits become `[redacted]`. Sync never runs by itself: schedule
 `ACC sync` (cron, systemd timer, Task Scheduler) if you want it hands-off.
+Grades, summaries and sync share a lock file (`~/.crew-chief/.lock`), so a
+grade written during a sync waits for it instead of being lost; a lock older
+than 5 minutes is taken as left by a killed process and broken.
 
 ## Your models
 
@@ -303,7 +316,7 @@ Steering a run:
 - **Limit cost:** say "free models only" or "nothing above included"; the
   crew chief passes `--max-cost free|included|cheap|paid` to `ACC pick`.
 
-The seven commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+The eight commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (or `.claude/skills/...`) in a project where the skill is installed:
 
 ```text
@@ -312,6 +325,7 @@ ACC pick --kind code [--max-cost free|included|cheap|paid] [--json]
 ACC record --kind code --agent opencode --model <model> --cost free --outcome pass --score 85 --minutes 12 [--effort <e>] [--lane <lane>] [--job "<title>"] [--note "<why>"]
 ACC score [--kind code] [--project <name>] [--json]
 ACC import /path/to/project     # grades kept by ACC 0.6 in docs/crew-chief/jobs
+ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <dir>]  # one line about this run, before the logs go
 ACC merge <file>                # merge a ledger file copied from another machine
 ACC sync [--init <url>]         # sync ledger.jsonl through a private git repo
 ```

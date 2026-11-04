@@ -1,4 +1,5 @@
-"""``crew-chief.py``: record a graded job, show the scores, pick a model, merge a ledger, sync it, import 0.6 grades."""
+"""``crew-chief.py``: record a graded job, show the scores, pick a model, summarize a run, merge a ledger, sync it,
+import 0.6 grades."""
 
 from __future__ import annotations
 
@@ -7,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, ledger, models, score, sync
+from . import __version__, jobs, ledger, models, score, sync
 
 
 def _project_name() -> str:
@@ -59,6 +60,13 @@ def _parser() -> argparse.ArgumentParser:
 
     merged = commands.add_parser("merge", help="copy the grades of another ledger file")
     merged.add_argument("file", type=Path)
+
+    summary = commands.add_parser("summary", help="write this run's job summary before the logs are removed")
+    summary.add_argument("--job", required=True, help="the request's slug")
+    summary.add_argument("--pr", help="the pull request url")
+    summary.add_argument("--rc", type=int, default=0, help="0 when delivered (default), else not")
+    summary.add_argument("--logs", type=Path, help="default: ../<repo>-acc-logs")
+    summary.add_argument("--project", help="default: this repository's name")
 
     synced = commands.add_parser("sync", help="sync the ledger through a private git repo")
     synced.add_argument("--init", default=None, help="the url of a private repo to sync through")
@@ -247,6 +255,17 @@ def main(argv: list[str] | None = None) -> int:
             print(exc, file=sys.stderr)
             return 2
         print(f"merged {new} new grades from {args.file} ({already} already here)")
+        return 0
+
+    if args.command == "summary":
+        if args.logs is not None:
+            logs = args.logs
+        else:
+            root = models.repo_root() or Path.cwd()
+            logs = root.parent / f"{root.name}-acc-logs"
+        line = jobs.summarize(args.project or _project_name(), logs, args.job, args.rc, args.pr)
+        where = f"jobs/{line['maquina']}/{line['inicio'][:7]}.jsonl"
+        print(f"summary {line['id']} {'written to' if jobs.write(line) else 'already in'} {where}")
         return 0
 
     if args.command == "sync":

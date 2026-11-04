@@ -290,7 +290,7 @@ def test_record_names_the_machine_and_redacts_secrets(monkeypatch, capsys):
 @pytest.mark.parametrize("text", [
     "20261030-0339-f3-producao-e-rede-fase-7-e-performance-",
     "avisos/multas/modelos/relatorios/equipe/gestor",
-    "https://github.com/pauloroos/compasso-finance/pull/12",
+    "https://github.com/octo-org/shop/pull/12",
     "opencode-go/deepseek-v4.1-flash on top of cc6427f, 27 pass",
     "FarolMeter+TrendChart+RequirementCard",
 ])

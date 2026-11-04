@@ -11,6 +11,8 @@ import json
 import os
 import platform
 import re
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,18 +47,51 @@ def ledger_path() -> Path:
     return (Path(home) if home else Path.home() / ".crew-chief") / "ledger.jsonl"
 
 
+# ACC sync runs git with no prompt, and a launcher may kill it: a lock older than this was left behind
+LOCK_STALE_S = 300
+
+
+@contextmanager
+def locked():
+    """Hold ``.lock`` next to the ledger, so a grade written during ``ACC sync`` is never lost."""
+    path = ledger_path().parent / ".lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                # shortcut: two waiters that both find a stale lock can both break it; only after LOCK_STALE_S
+                if time.time() - path.stat().st_mtime > LOCK_STALE_S:
+                    path.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            time.sleep(0.1)
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def append_line(path: Path, line: dict) -> None:
+    """Append one JSON line to ``path`` under the lock."""
+    with locked():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # a line cut short by a crash has no newline: start on a fresh one
+        torn = path.is_file() and path.stat().st_size and not path.read_bytes().endswith(b"\n")
+        # one short append per entry: parallel coordinators do not interleave lines
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(("\n" if torn else "") + json.dumps(line, ensure_ascii=False) + "\n")
+
+
 def append(entry: dict) -> dict:
     """Write one entry (``at`` defaults to now, ``None`` fields are dropped, text redacted) and return it."""
     fields = {key: redact(value) if isinstance(value, str) else value
               for key, value in entry.items() if value is not None}
     entry = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
-    path = ledger_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # a line cut short by a crash has no newline: start on a fresh one
-    torn = path.is_file() and path.stat().st_size and not path.read_bytes().endswith(b"\n")
-    # one short append per entry: parallel coordinators do not interleave lines
-    with path.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(("\n" if torn else "") + json.dumps(entry, ensure_ascii=False) + "\n")
+    append_line(ledger_path(), entry)
     return entry
 
 
@@ -109,20 +144,20 @@ def merge(other: Path) -> tuple[int, int]:
             valid.append(entry)
     if text and not valid:
         raise MergeError(f"{other}: is not a ledger")
-    known = {entry_key(entry) for entry in read()}
-    new = [entry for entry in valid if entry_key(entry) not in known
-           and not known.add(entry_key(entry))]
-    already = len(valid) - len(new)
-    if new:
-        path = ledger_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        torn = path.is_file() and path.stat().st_size and not path.read_bytes().endswith(b"\n")
-        with path.open("a", encoding="utf-8", newline="\n") as handle:
-            if torn:
-                handle.write("\n")
-            for entry in new:
-                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    return len(new), already
+    with locked():
+        known = {entry_key(entry) for entry in read()}
+        new = [entry for entry in valid if entry_key(entry) not in known
+               and not known.add(entry_key(entry))]
+        if new:
+            path = ledger_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            torn = path.is_file() and path.stat().st_size and not path.read_bytes().endswith(b"\n")
+            with path.open("a", encoding="utf-8", newline="\n") as handle:
+                if torn:
+                    handle.write("\n")
+                for entry in new:
+                    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return len(new), len(valid) - len(new)
 
 
 def import_v06(project: Path) -> int:

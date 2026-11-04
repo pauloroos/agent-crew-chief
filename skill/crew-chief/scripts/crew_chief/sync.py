@@ -23,11 +23,6 @@ IGNORE = "*\n!ledger.jsonl\n!.gitattributes\n!.gitignore\n!jobs/\n!jobs/*/\n!job
 TRACKED = ("ledger.jsonl", ".gitattributes", ".gitignore", "jobs")
 NOT_SET_UP = "sync is not set up: ACC sync --init <url of a private repo>"
 
-# shortcut: an `ACC record` that runs at the same moment as `ACC sync` can race
-# with the pull or the dedupe rewrite; upgrade to a file lock around both when
-# that stops being a corner case.
-
-
 def _git(home: Path, *args: str, commit_like: bool = False) -> subprocess.CompletedProcess[str]:
     cmd = ["git", *(GIT_IDENTITY if commit_like else []), *args]
     # no prompt, no credential-manager window: fail with git's error instead of waiting
@@ -116,6 +111,12 @@ def _push(home: Path, url: str) -> int:
 
 
 def run_sync(home: Path, url: str) -> int:
+    # the pull and the dedupe rewrite ledger.jsonl: a grade or summary written meanwhile waits for the lock
+    with ledger.locked():
+        return _run_sync(home, url)
+
+
+def _run_sync(home: Path, url: str) -> int:
     _upgrade(home)
     if _commit_tracked(home, "sync: local changes") is None:
         return 1

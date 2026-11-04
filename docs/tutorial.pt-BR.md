@@ -261,11 +261,17 @@ entre eles.
 ## 8. Entrega
 
 O chefe de equipe faz o merge das duas trilhas em `acc/<slug>` com `--no-ff`,
-roda `python -m pytest`, remove os worktrees e as branches das trilhas, e então:
+roda `python -m pytest`, e então:
 
 - **com o remoto de rascunho:** envia `acc/<slug>` e abre um pull request.
   `gh pr view --web` abre o PR. O merge ou o fechamento é seu.
 - **sem remoto:** para na branch local `acc/<slug>` com o merge feito.
+
+Antes de limpar, ele roda `ACC summary --job <slug>` (com `--pr <url>` quando
+houver PR), que acrescenta uma linha sobre a rodada em
+`~/.crew-chief/jobs/<máquina>/<AAAA-MM>.jsonl`: horários, modelos com nota,
+vereditos dos fiscais e contagem de erros, nunca texto de log. Depois remove
+os worktrees das trilhas, as branches e `../hello-crew-acc-logs/`.
 
 O relatório final lista cada job com risco, ritmo, modelo, tentativas, notas
 dos fiscais, resultado, notas do piloto e do engenheiro, e qualquer pendência.
