@@ -156,7 +156,8 @@ Race engineers run as Orca workers or background processes. Record their
 When every lane passed: in your checkout on `acc/<slug>`, merge each lane
 (`git merge --no-ff --no-edit acc/<slug>-<lane>`), resolve conflicts, run the
 project's tests, use verification-before-completion, then push and open the
-pull request with `gh pr create`. Release engineers; remove lane worktrees and
+pull request with `gh pr create`. Run `ACC summary --job <slug> --pr <url>`
+(`--rc 1` if not delivered) before any cleanup; then release engineers, remove lane worktrees and
 branches: Orca `orca worktree rm --worktree branch:acc/<slug>-<lane>` (deletes
 the branch too); background-mode `git worktree remove ../<repo>-acc-<lane>`, `git branch
 -D acc/<slug>-<lane>` and, once nothing runs, `../<repo>-acc-logs/`. A folder
@@ -176,4 +177,4 @@ scores, outcome, worker and engineer scores, anything open, and
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.
 - `ACC merge <file>` merges a ledger file copied from another machine.
-- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when set up, run it at the start of a request and after the last grade.
+- `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when set up, run it at the start of a request and after the last grade. It also carries the `jobs/<machine>/` lines of `ACC summary` or a launcher; never put a brief, log or diff there.

@@ -8,6 +8,41 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.13.0] - 2026-11-03
+
+### Added
+- **`machine` on every grade.** `ACC record` writes `$CREW_CHIEF_MACHINE`,
+  else the host name, so a synced ledger tells PC, notebook and server apart.
+  Older grades have no `machine` and still count.
+- **`ACC sync` carries `jobs/<machine>/*.jsonl`**, one summary line per job
+  written by `ACC summary` or a launcher, so grades and job summaries live in one private
+  repository. `.gitignore` and `.gitattributes` from an older setup get the
+  `jobs/` lines on the next sync; user edits to them are kept.
+- **`ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <dir>]`.** At
+  delivery, before `../<repo>-acc-logs/` is removed, the crew chief writes one
+  line about the run to `jobs/<machine>/<YYYY-MM>.jsonl`: `id`, `maquina`,
+  `repo`, `inicio`, `fim`, `minutos`, `rc`, `modelos_usados` (this machine's
+  grades for the repo during the run), `vereditos_fiscal` (last `VERDICT:` of
+  each scrutineer file), `erros` (`.log` lines on quota, 429, timeout,
+  `outside_write`) and `pr_url`. Counts, names and links only, through the
+  secret filter. So a machine with no launcher (a PC) keeps an error history
+  per model too. A launcher can pass `CREW_CHIEF_JOB_ID` and
+  `CREW_CHIEF_COORDINATOR`; one id is written once, so a launcher that also
+  summarizes skips ids ACC already wrote.
+
+### Changed
+- **Secret filter on the ledger.** Every text field of a grade (note, job,
+  lane, model...) passes through `ledger.redact()` before it is written:
+  GitHub, OpenAI-style, Slack and AWS tokens, JWTs, PEM private keys,
+  `password=...` pairs and long runs mixing letters and digits become
+  `[redacted]`.
+
+### Fixed
+- **A grade written during `ACC sync` is no longer lost.** Grades, merges,
+  summaries and sync hold `~/.crew-chief/.lock`; the pull and the dedupe
+  rewrite of `ledger.jsonl` can no longer drop a line appended meanwhile. A
+  lock older than 5 minutes is broken as left by a killed process.
+
 ## [0.12.1] - 2026-11-02
 
 ### Changed

@@ -2,7 +2,7 @@
 
 [English](tutorial.md) · **Português**
 
-Este passo a passo roda o ACC v0.12.1 de ponta a ponta no `examples/hello-crew`,
+Este passo a passo roda o ACC v0.13.0 de ponta a ponta no `examples/hello-crew`,
 um projeto Python minúsculo que vem com o ACC. Ele tem dois módulos
 independentes, cada um com o seu teste:
 
@@ -34,7 +34,7 @@ Copie o exemplo para **fora** do checkout do ACC. Dentro dele, as trilhas e as
 branches `acc/*` cairiam no próprio repositório do ACC.
 
 ```bash
-git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -43,7 +43,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.12.1 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -61,14 +61,14 @@ ter as skills também.
 
 ```bash
 python ~/acc/install.py .
-git add . && git commit -m "Install ACC 0.12.1"
+git add . && git commit -m "Install ACC 0.13.0"
 alias ACC='python -I .agents/skills/crew-chief/scripts/crew-chief.py'
 ACC score --kind code
 ```
 
 ```powershell
 python $HOME\acc\install.py .
-git add .; git commit -m "Install ACC 0.12.1"
+git add .; git commit -m "Install ACC 0.13.0"
 function ACC { python -I .agents/skills/crew-chief/scripts/crew-chief.py @args }
 ACC score --kind code
 ```
@@ -261,11 +261,17 @@ entre eles.
 ## 8. Entrega
 
 O chefe de equipe faz o merge das duas trilhas em `acc/<slug>` com `--no-ff`,
-roda `python -m pytest`, remove os worktrees e as branches das trilhas, e então:
+roda `python -m pytest`, e então:
 
 - **com o remoto de rascunho:** envia `acc/<slug>` e abre um pull request.
   `gh pr view --web` abre o PR. O merge ou o fechamento é seu.
 - **sem remoto:** para na branch local `acc/<slug>` com o merge feito.
+
+Antes de limpar, ele roda `ACC summary --job <slug>` (com `--pr <url>` quando
+houver PR), que acrescenta uma linha sobre a rodada em
+`~/.crew-chief/jobs/<máquina>/<AAAA-MM>.jsonl`: horários, modelos com nota,
+vereditos dos fiscais e contagem de erros, nunca texto de log. Depois remove
+os worktrees das trilhas, as branches e `../hello-crew-acc-logs/`.
 
 O relatório final lista cada job com risco, ritmo, modelo, tentativas, notas
 dos fiscais, resultado, notas do piloto e do engenheiro, e qualquer pendência.

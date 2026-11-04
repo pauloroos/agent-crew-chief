@@ -17,15 +17,11 @@ from . import ledger
 BRANCH = "main"
 REMOTE = "origin"
 GIT_IDENTITY = ["-c", "user.name=crew-chief", "-c", "user.email=crew-chief@localhost"]
-ATTRIBUTES = "ledger.jsonl merge=union text eol=lf\n"
-IGNORE = "*\n!ledger.jsonl\n!.gitattributes\n!.gitignore\n"
-TRACKED = ("ledger.jsonl", ".gitattributes", ".gitignore")
+ATTRIBUTES = "ledger.jsonl merge=union text eol=lf\njobs/**/*.jsonl merge=union text eol=lf\n"
+# jobs/<machine>/<YYYY-MM>.jsonl: one summary line per job, written by whatever starts jobs there
+IGNORE = "*\n!ledger.jsonl\n!.gitattributes\n!.gitignore\n!jobs/\n!jobs/*/\n!jobs/*/*.jsonl\n"
+TRACKED = ("ledger.jsonl", ".gitattributes", ".gitignore", "jobs")
 NOT_SET_UP = "sync is not set up: ACC sync --init <url of a private repo>"
-
-# shortcut: an `ACC record` that runs at the same moment as `ACC sync` can race
-# with the pull or the dedupe rewrite; upgrade to a file lock around both when
-# that stops being a corner case.
-
 
 def _git(home: Path, *args: str, commit_like: bool = False) -> subprocess.CompletedProcess[str]:
     cmd = ["git", *(GIT_IDENTITY if commit_like else []), *args]
@@ -54,9 +50,22 @@ def _origin(home: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _upgrade(home: Path) -> None:
+    """Append the lines a newer ACC needs (the jobs/ folder) to files an older one wrote."""
+    for name, wanted in ((".gitattributes", ATTRIBUTES), (".gitignore", IGNORE)):
+        path = home / name
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        missing = [line for line in wanted.splitlines() if line not in text.splitlines()]
+        if missing:
+            start = text if not text or text.endswith("\n") else text + "\n"
+            path.write_text(start + "\n".join(missing) + "\n", encoding="utf-8", newline="\n")
+
+
 def _commit_tracked(home: Path, message: str) -> bool | None:
-    _git(home, "add", *TRACKED)
-    diff = _git(home, "diff", "--cached", "--quiet", "--", *TRACKED)
+    # git add fails on a pathspec that matches nothing, and jobs/ is often missing
+    paths = [name for name in TRACKED if (home / name).exists()]
+    _git(home, "add", *paths)
+    diff = _git(home, "diff", "--cached", "--quiet", "--", *paths)
     if diff.returncode == 0:
         return False
     result = _git(home, "commit", "-m", message, "--no-edit", commit_like=True)
@@ -102,6 +111,13 @@ def _push(home: Path, url: str) -> int:
 
 
 def run_sync(home: Path, url: str) -> int:
+    # the pull and the dedupe rewrite ledger.jsonl: a grade or summary written meanwhile waits for the lock
+    with ledger.locked():
+        return _run_sync(home, url)
+
+
+def _run_sync(home: Path, url: str) -> int:
+    _upgrade(home)
     if _commit_tracked(home, "sync: local changes") is None:
         return 1
     branch = _has_remote_branch(home, url)
