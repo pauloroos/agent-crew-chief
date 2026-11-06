@@ -2,7 +2,7 @@
 
 [English](tutorial.md) · **Português**
 
-Este passo a passo roda o ACC v0.13.0 de ponta a ponta no `examples/hello-crew`,
+Este passo a passo roda o ACC v0.13.1 de ponta a ponta no `examples/hello-crew`,
 um projeto Python minúsculo que vem com o ACC. Ele tem dois módulos
 independentes, cada um com o seu teste:
 
@@ -34,7 +34,7 @@ Copie o exemplo para **fora** do checkout do ACC. Dentro dele, as trilhas e as
 branches `acc/*` cairiam no próprio repositório do ACC.
 
 ```bash
-git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.13.1 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -43,7 +43,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.13.1 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -267,7 +267,7 @@ roda `python -m pytest`, e então:
   `gh pr view --web` abre o PR. O merge ou o fechamento é seu.
 - **sem remoto:** para na branch local `acc/<slug>` com o merge feito.
 
-Antes de limpar, ele roda `ACC summary --job <slug>` (com `--pr <url>` quando
+Depois da última nota e antes de limpar, ele roda `ACC summary --job <slug>` (com `--pr <url>` quando
 houver PR), que acrescenta uma linha sobre a rodada em
 `~/.crew-chief/jobs/<máquina>/<AAAA-MM>.jsonl`: horários, modelos com nota,
 vereditos dos fiscais e contagem de erros, nunca texto de log. Depois remove
@@ -415,7 +415,7 @@ máquina, uma vez só:
 ACC sync --init git@github.com:<voce>/crew-chief-ledger.git
 ```
 
-Depois, no início de um pedido e depois da última nota:
+Depois, no início de um pedido e depois do `ACC summary`:
 
 ```text
 ACC sync

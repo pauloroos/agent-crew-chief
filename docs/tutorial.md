@@ -2,7 +2,7 @@
 
 **English** · [Português](tutorial.pt-BR.md)
 
-This walk-through runs ACC v0.13.0 end to end on `examples/hello-crew`, a tiny
+This walk-through runs ACC v0.13.1 end to end on `examples/hello-crew`, a tiny
 Python project that ships with ACC. It has two independent modules, each with
 its own test:
 
@@ -33,7 +33,7 @@ Copy the example **out of** the ACC checkout. Inside it, the lanes and `acc/*`
 branches would land in the ACC repository itself.
 
 ```bash
-git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.13.1 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -42,7 +42,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.13.1 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew
@@ -260,7 +260,7 @@ The crew chief merges both lanes into `acc/<slug>` with `--no-ff`, runs
   `gh pr view --web` opens it. Merge or close it yourself.
 - **without a remote:** stops on the merged local branch `acc/<slug>`.
 
-Before cleaning up, it runs `ACC summary --job <slug>` (with `--pr <url>` when
+After the last grade and before cleaning up, it runs `ACC summary --job <slug>` (with `--pr <url>` when
 there is one), which adds one line about the run to
 `~/.crew-chief/jobs/<machine>/<YYYY-MM>.jsonl`: times, models graded, the
 scrutineers' verdicts and error counts, never log text. Then it removes the
@@ -405,7 +405,7 @@ once:
 ACC sync --init git@github.com:<you>/crew-chief-ledger.git
 ```
 
-Then, at the start of a request and after the last grade:
+Then, at the start of a request and after `ACC summary`:
 
 ```text
 ACC sync

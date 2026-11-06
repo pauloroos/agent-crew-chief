@@ -8,6 +8,22 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.13.1] - 2026-11-06
+
+### Fixed
+- **`ACC summary` no longer lends an earlier run's verdicts.** In Orca mode
+  `../<repo>-acc-logs/` was never removed, so every later summary on the VPS
+  listed the old scrutineers' `VERDICT:` lines. When a launcher sets
+  `CREW_CHIEF_JOB_ID`, files older than its start are now skipped, and the
+  skill removes the logs folder in both modes.
+- **`--project owner/repo` also matches grades of `repo`.** A launcher passing
+  the full name got an empty `modelos_usados`.
+- **`ACC sync` runs after `ACC summary`**, not after the last grade, so the
+  run's summary line is synced in the same run.
+- **Grades recorded after the summary were missed.** The Deliver step now says
+  to record every grade first, and to run `ACC summary` in every run that
+  opens or updates a pull request.
+
 ## [0.13.0] - 2026-11-03
 
 ### Added

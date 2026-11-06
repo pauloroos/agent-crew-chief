@@ -158,7 +158,9 @@ How you watch progress and where the artifacts land depends on the mode:
 - **Orca mode:** the race engineer is an Orca worker in the lane worktree. Its
   lane report reaches the crew chief in the `worker_done` message
   (`orca orchestration check --wait`); use the Orca panel and `worker-read`.
-  List terminals with `orca terminal list --json`.
+  List terminals with `orca terminal list --json`. Scrutineers started with
+  `orca terminal create` write to `../<repo>-acc-logs/` as in background mode,
+  and the folder is deleted at delivery in both modes.
 - **Background mode:** the folder `../<repo>-acc-logs/` next to the repo holds
   the artifacts for each lane. Files per agent: `<name>.md` (brief or job
   spec), `<name>.log` and `<name>.log.err` (opencode writes its progress to
@@ -244,6 +246,11 @@ to bring grades together; without setup, nothing changes.
   (this machine's grades for the repo during the run), `vereditos_fiscal`
   (the last `VERDICT:` of each scrutineer), `erros` (lines in the `.log`
   files that report quota, 429, timeout or `outside_write`) and `pr_url`.
+  It runs at delivery in every run that opens or updates a pull request, and
+  only grades recorded before it count, so the crew chief grades first. When a
+  launcher sets `CREW_CHIEF_JOB_ID`, files older than its start (a folder left
+  by an earlier run) are skipped; `--project owner/repo` also matches grades
+  of `repo`.
   Never a brief, a log line or a diff, and the secret filter runs on it. A
   launcher (a scheduler, a bridge, CI) can write lines there too: setting
   `CREW_CHIEF_JOB_ID` (its own id, `YYYYMMDD-HHMMSS-xxxxxx` in UTC also gives
@@ -339,12 +346,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.13.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.13.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.13.0),
+No git? Download `agent-crew-chief-v0.13.1.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.13.1),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -369,7 +376,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.13.0
+git -C agent-crew-chief checkout v0.13.1
 python agent-crew-chief/install.py /path/to/project
 ```
 
