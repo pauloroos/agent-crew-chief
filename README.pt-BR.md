@@ -164,7 +164,9 @@ Como você acompanha o progresso e onde os artefatos ficam depende do modo:
 - **Modo Orca:** o engenheiro de corrida é um worker do Orca na worktree da
   trilha. O relatório da trilha chega ao chefe de equipe na mensagem
   `worker_done` (`orca orchestration check --wait`); use o painel do Orca e
-  `worker-read`. Liste os terminais com `orca terminal list --json`.
+  `worker-read`. Liste os terminais com `orca terminal list --json`. Fiscais
+  abertos com `orca terminal create` gravam em `../<repo>-acc-logs/` como no
+  modo segundo plano, e a pasta é apagada na entrega nos dois modos.
 - **Modo segundo plano:** a pasta `../<repo>-acc-logs/` ao lado do repo guarda
   os artefatos de cada trilha. Arquivos por agente: `<nome>.md` (brief ou spec
   do job), `<nome>.log` e `<nome>.log.err` (o opencode escreve o progresso em
@@ -252,6 +254,11 @@ de juntar as notas; sem configuração, nada muda.
   `modelos_usados` (as notas desta máquina para o repo durante a rodada),
   `vereditos_fiscal` (o último `VERDICT:` de cada fiscal), `erros` (linhas
   dos `.log` que falam de cota, 429, timeout ou `outside_write`) e `pr_url`.
+  Ele roda na entrega em toda rodada que abre ou atualiza um PR, e só contam
+  as notas gravadas antes dele, por isso o chefe de equipe dá as notas
+  primeiro. Quando um lançador define `CREW_CHIEF_JOB_ID`, arquivos mais
+  antigos que o início dele (pasta deixada por uma rodada anterior) são
+  ignorados; `--project dono/repo` também casa com as notas de `repo`.
   Nunca um brief, uma linha de log ou um diff, e o filtro de segredos passa
   por ela. Um lançador (agendador, ponte, CI) também pode gravar linhas ali:
   com `CREW_CHIEF_JOB_ID` (o id dele; `AAAAMMDD-HHMMSS-xxxxxx` em UTC também
@@ -349,12 +356,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.13.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.13.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.13.0.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.13.0),
+Sem git? Baixe `agent-crew-chief-v0.13.1.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.13.1),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -379,7 +386,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.13.0
+git -C agent-crew-chief checkout v0.13.1
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

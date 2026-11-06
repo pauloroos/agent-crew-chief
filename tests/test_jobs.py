@@ -89,6 +89,21 @@ def test_summary_takes_the_launcher_id_and_coordinator(tmp_path, monkeypatch, ca
     assert line["erros"] == {"cota": 0, "429": 0, "timeout": 0, "escrita_fora_da_pasta": 0}
 
 
+def test_summary_skips_an_earlier_runs_files_and_matches_owner_repo(tmp_path, monkeypatch):
+    """0.13.1: a logs folder left by an earlier run lent its verdicts; owner/repo missed every grade."""
+    monkeypatch.setenv("CREW_CHIEF_MACHINE", "orca")
+    monkeypatch.setenv("CREW_CHIEF_JOB_ID", "20261104-193148-4e153c")
+    monkeypatch.delenv("CREW_CHIEF_COORDINATOR", raising=False)
+    logs = _logs(tmp_path)  # every file dated START, the run before
+    (logs / "acc-cc-l2-scrutineer-1.md").write_text("VERDICT: pass\n", encoding="utf-8")  # this run's
+    ledger.append({"at": "2026-11-04T20:10:00+00:00", "project": "shop", "kind": "code",
+                   "agent": "opencode", "model": "beam", "outcome": "pass", "score": 90, "machine": "orca"})
+    line = jobs.summarize("me/shop", logs, "cc", 0, None, now=datetime.now(timezone.utc))
+    assert line["vereditos_fiscal"] == {"acc-cc-l2-scrutineer-1": "pass"}
+    assert line["erros"] == {"cota": 0, "429": 0, "timeout": 0, "escrita_fora_da_pasta": 0}
+    assert line["modelos_usados"] == ["opencode:beam"]
+
+
 def test_a_grade_written_during_a_sync_waits_for_the_lock():
     held = threading.Event()
 

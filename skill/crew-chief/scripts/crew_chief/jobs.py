@@ -82,6 +82,8 @@ def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: dat
         start = datetime.fromtimestamp(min(p.stat().st_mtime for p in files), timezone.utc).replace(microsecond=0)
     else:
         start = end
+    # a logs folder left by an earlier run (Orca mode kept it until 0.13.1) must not lend its verdicts or errors
+    files = [p for p in files if p.stat().st_mtime >= start.timestamp()]
     slug = re.sub(r"[^A-Za-z0-9._-]", "-", job)[:60]
     job_id = re.sub(r"[^A-Za-z0-9._-]", "-", launcher)[:80] if launcher else f"{start:%Y%m%d-%H%M%S}-{slug}"
 
@@ -100,9 +102,10 @@ def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: dat
             verdicts[path.stem] = found[-1] if found else "sem veredito"
 
     used = [os.environ["CREW_CHIEF_COORDINATOR"]] if os.environ.get("CREW_CHIEF_COORDINATOR") else []
+    name = repo.rsplit("/", 1)[-1]  # a launcher may pass owner/repo; grades carry the bare name
     for row in ledger.read():
         at = _at(row.get("at"))
-        if (row.get("project") == repo and at is not None and start <= at <= end
+        if (row.get("project") in (repo, name) and at is not None and start <= at <= end
                 and row.get("machine", me) == me):
             used.append(f"{row.get('agent')}:{row.get('model')}")
     return _clean({
