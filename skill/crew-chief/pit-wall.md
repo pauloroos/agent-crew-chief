@@ -135,7 +135,7 @@ e.g. `active`, `branch:<crew chief branch>` or `path:<path>`), so Orca shows
 them under the run. Every driver and scrutineer is named with the standard name,
 `acc-<slug>-<lane>-<job>-<role>` for the first attempt and
 `acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th, where `<slug>` comes from
-the feature branch `acc/<slug>`, `<job>` is a short slug of the job title, and
+the feature branch (`acc/<slug>`, or the description of the requested `Branch:`), `<job>` is a short slug of the job title, and
 `<role>` is `driver` or `scrutineer`. The engineer covers the whole lane, so
 it has no `<job>`: `acc-<slug>-<lane>-engineer[-<n>]`. The Orca tab title and
 the log file name are the same. Scrutineers running in parallel use `-1` and `-2`

@@ -8,6 +8,15 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.14.0] - 2026-11-15
+
+### Added
+- **The request can name the branch and the base.** With `Branch: <name>` and
+  `Base: <branch>` lines in the request, the feature branch is `<name>` created
+  from `Base` (instead of `acc/<slug>`), lane branches are `<name>-<lane>`
+  (local, never pushed) and the pull request opens against `Base`. Without those
+  lines nothing changes: `acc/<slug>` from the base branch.
+
 ## [0.13.1] - 2026-11-06
 
 ### Fixed
