@@ -51,8 +51,7 @@ the user says "run directly" / "sem spec".
 3. Write `spec.md` and `tasks.md` from `templates/spec/`; add `plan.md` only
    when the design is not obvious. In `tasks.md`, mark `[P]` on parallel tasks
    and write "depends on Txxx" for order.
-4. Create `acc/<slug>` from the base branch and commit the spec there before
-   any lane branch exists.
+4. Create `<feature>` (see Branches); commit the spec there before any lane branch.
 5. Plan lanes (step 1) and pick models (step 2), then stop once: show the spec
    summary, each job's risk and pace, and the lanes, and wait for approval.
 
@@ -69,9 +68,10 @@ result share a lane and run in order; non-overlapping jobs run in parallel. At
 most 4 lanes. With a spec, dependent or same-file tasks share a lane; `[P]`
 tasks with no shared files get separate lanes.
 
-Branches: feature branch `acc/<slug>` from base, one branch per lane
-`acc/<slug>-<lane>` from the feature branch. Without a spec, tell the user the
-plan in a few lines and go on.
+Branches: feature branch `<feature>` = `acc/<slug>` from base, lane branches
+`<feature>-<lane>`. With `Branch: <name>` and `Base: <branch>` lines in the request,
+`<feature>` = `<name>` created from `Base`, lanes stay local (never pushed), the PR
+goes to `Base`, `<slug>` = the branch description. No spec: brief plan, go on.
 
 ## 2. Pick models
 
@@ -89,7 +89,7 @@ Create each lane's worktree first as a child of the crew chief worktree, so Orca
 
 ```text
 orca orchestration run-create --objective "<the request>" --json
-orca worktree create --name <slug>-<lane> --base-branch acc/<slug> --branch acc/<slug>-<lane> --setup skip --parent-worktree <crew chief worktree selector> --json
+orca worktree create --name <slug>-<lane> --base-branch <feature> --branch <feature>-<lane> --setup skip --parent-worktree <crew chief worktree selector> --json
 ```
 
 For every lane, fill `templates/race-engineer.md` with the lane, branch,
@@ -122,7 +122,7 @@ escalations, wait again.
 ## Without Orca (background mode)
 
 Replaces steps 3–4. Per lane: `git worktree add ../<repo>-acc-<lane> -b
-acc/<slug>-<lane> acc/<slug>`. Name each child
+<feature>-<lane> <feature>`. Name each child
 `acc-<slug>-<lane>[-<job>]-<role>`, or `...-<role>-<n>` for the n-th (no
 `<job>` for the engineer). Write the job spec to `../<repo>-acc-logs/<name>.md`
 and start the driver in the background from inside the lane worktree with the
@@ -153,15 +153,15 @@ Race engineers run as Orca workers or background processes. Record their
 
 ## 6. Deliver
 
-When every lane passed: in your checkout on `acc/<slug>`, merge each lane
-(`git merge --no-ff --no-edit acc/<slug>-<lane>`), resolve conflicts, run the
+When every lane passed: in your checkout on `<feature>`, merge each lane
+(`git merge --no-ff --no-edit <feature>-<lane>`), resolve conflicts, run the
 project's tests, use verification-before-completion, then push and open the
-pull request with `gh pr create`. With every grade recorded (it lists only earlier ones), run
+pull request with `gh pr create` (`--base <Base>` when the request has one). With every grade recorded (it lists only earlier ones), run
 `ACC summary --job <slug> --pr <url>` (`--rc 1` if not delivered) in every run that opens or
 updates a PR, before any cleanup; then release engineers, remove lane worktrees and
-branches: Orca `orca worktree rm --worktree branch:acc/<slug>-<lane>` (deletes
+branches: Orca `orca worktree rm --worktree branch:<feature>-<lane>` (deletes
 the branch too); background-mode `git worktree remove ../<repo>-acc-<lane>`, `git branch
--D acc/<slug>-<lane>`. Both modes, once nothing runs: remove `../<repo>-acc-logs/`. A folder
+-D <feature>-<lane>`. Both modes, once nothing runs: remove `../<repo>-acc-logs/`. A folder
 "open in another program" is held by a leftover process: leave it, report it.
 Report: PR, each job with risk, pace, model, attempts, scrutineer scores, outcome,
 worker and engineer scores, anything open, and `ACC score --kind <kinds used>`.

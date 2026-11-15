@@ -46,10 +46,19 @@ def test_skill_md_covers_spec_kit_skills_and_plain_mode():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    assert __version__ == "0.13.1"
+    assert __version__ == "0.14.0"
     text = _read(CHANGELOG)
     current_section = text.split(f"## [{__version__}]", 1)[1].split("\n## [", 1)[0]
     assert current_section.strip()
+
+
+def test_branch_and_base_from_the_request_replace_the_acc_branch():
+    skill = _read(SKILL_MD)
+    for phrase in ("`Branch: <name>`", "`Base: <branch>`", "never pushed", "`<feature>-<lane>`"):
+        assert phrase in skill, phrase
+    # acc/<slug> is only the default, named once, in the Branches paragraph
+    assert skill.count("acc/<slug>") == 1
+    assert "Branch:" in _read(SKILL_MD.parent / "pit-wall.md")
 
 
 def test_readmes_and_tutorials_pin_the_current_release():
