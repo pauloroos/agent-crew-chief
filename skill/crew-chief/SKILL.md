@@ -68,10 +68,10 @@ result share a lane and run in order; non-overlapping jobs run in parallel. At
 most 4 lanes. With a spec, dependent or same-file tasks share a lane; `[P]`
 tasks with no shared files get separate lanes.
 
-Branches: feature branch `<feature>` = `acc/<slug>` from base, lane branches
-`<feature>-<lane>`. With `Branch: <name>` and `Base: <branch>` lines in the request,
-`<feature>` = `<name>` created from `Base`, lanes stay local (never pushed), the PR
-goes to `Base`, `<slug>` = the branch description. No spec: brief plan, go on.
+Branches: `<feature>` = `acc/<slug>` from base, lane branches `<feature>-<lane>`. With
+`Branch: <name>` and `Base: <branch>` lines in the request, `<feature>` = `<name>` created from
+`origin/<Base>` (`git fetch` first, never the current branch); lanes stay local (never
+pushed), the PR goes to `Base`, `<slug>` = branch description. No spec: brief plan, go on.
 
 ## 2. Pick models
 

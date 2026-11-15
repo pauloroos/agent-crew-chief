@@ -8,6 +8,14 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.14.1] - 2026-11-15
+
+### Fixed
+- **`Branch:`/`Base:` branches start from `origin/<Base>`.** A fresh clone has
+  `develop` only as a remote branch, so creating the feature branch from the
+  local name failed or fell back to the current branch. The skill now says
+  `git fetch` first and `origin/<Base>`.
+
 ## [0.14.0] - 2026-11-15
 
 ### Added
