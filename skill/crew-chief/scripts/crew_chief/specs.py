@@ -63,7 +63,9 @@ def import_spec(source: Path, attachments: list[Path], slug: str, root: Path) ->
     if not SLUG.match(slug):
         raise SpecError(f"bad slug {slug!r}: letters, digits, '.', '_' and '-' only")
     for path in (source, *attachments):
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink():
+            raise SpecError(f"{path}: a symbolic link, refused")
+        if not path.is_file():
             raise SpecError(f"{path}: not a regular file")
     names = [p.name for p in attachments]
     if len(set(names)) != len(names):
