@@ -252,8 +252,10 @@ to bring grades together; without setup, nothing changes.
   files that report quota, 429, timeout or `outside_write`), `pr_url`, `card`
   (`$CREW_CHIEF_CARD`, the launcher's card id), `spec_sha256` (the approved
   spec of `ACC spec-import` in this run, or `--spec <folder>`) and
-  `spec_divergente` (true, and exit 1, when the `spec.md` committed at HEAD is
-  not the approved one).
+  `spec_divergente` (true, and exit 1, when the `spec.md` committed at HEAD,
+  `approved.json`, the import note in the logs folder and a launcher's
+  `$CREW_CHIEF_SPEC_SHA256` do not all match; that variable set with no spec
+  imported counts as a lost spec).
   It runs at delivery in every run that opens or updates a pull request, and
   only grades recorded before it count, so the crew chief grades first. When a
   launcher sets `CREW_CHIEF_JOB_ID`, files older than its start (a folder left
@@ -355,12 +357,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.15.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.15.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.15.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.15.0),
+No git? Download `agent-crew-chief-v0.15.1.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.15.1),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -385,7 +387,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.15.0
+git -C agent-crew-chief checkout v0.15.1
 python agent-crew-chief/install.py /path/to/project
 ```
 

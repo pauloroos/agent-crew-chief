@@ -8,6 +8,26 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.15.1] - 2026-11-15
+
+### Fixed
+- **The approved hash no longer lives only in the coordinator's tree.** The
+  import note in `../<repo>-acc-logs/spec-import.json` now carries `sha256` and
+  `fonte` too, and a launcher can pass the hash it sent in
+  `CREW_CHIEF_SPEC_SHA256`. `ACC summary` sets `spec_divergente` (exit 1) when
+  `approved.json`, the note, that variable and the committed `spec.md` do not
+  all match, and when the variable is set but no spec was imported. Editing
+  `spec.md` and `approved.json` together, or importing another spec over the
+  note, now shows.
+- **`ACC spec-import` refuses symbolic links.** The CLI no longer resolves the
+  path before the check, and a linked specs folder, spec folder or target
+  file is refused too.
+- **Skill.** An approved spec is always imported, even for a small request;
+  a refused import (slug taken by another spec) means another slug and a line
+  in the report; "nobody to approve" means `CREW_CHIEF_JOB_ID` is set; the
+  approval stop of item 5 names both exceptions; the whole spec folder is
+  committed (`git add specs/<NNN>-<slug>`).
+
 ## [0.15.0] - 2026-11-15
 
 ### Added

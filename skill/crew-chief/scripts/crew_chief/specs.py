@@ -70,6 +70,9 @@ def import_spec(source: Path, attachments: list[Path], slug: str, root: Path) ->
         raise SpecError("two attachments with the same name")
     folder = _folder(specs_root(root), slug)
     targets = [(source, folder / "spec.md"), *((p, folder / "anexos" / p.name) for p in attachments)]
+    for path in (specs_root(root), folder, folder / "anexos", folder / APPROVED, *(d for _, d in targets)):
+        if path.is_symlink():
+            raise SpecError(f"{path}: a symbolic link, refused")
     for src, dst in targets:
         if dst.exists() and sha256(dst) != sha256(src):
             raise SpecError(f"{dst} differs from {src}: not overwritten")

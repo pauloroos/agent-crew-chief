@@ -260,8 +260,10 @@ de juntar as notas; sem configuração, nada muda.
   dos `.log` que falam de cota, 429, timeout ou `outside_write`), `pr_url`,
   `card` (`$CREW_CHIEF_CARD`, o id do card do lançador), `spec_sha256` (a spec
   aprovada do `ACC spec-import` desta rodada, ou `--spec <pasta>`) e
-  `spec_divergente` (true, e saída 1, quando o `spec.md` commitado no HEAD não é
-  o aprovado).
+  `spec_divergente` (true, e saída 1, quando o `spec.md` commitado no HEAD, o
+  `approved.json`, a nota de importação na pasta de logs e o
+  `$CREW_CHIEF_SPEC_SHA256` de um lançador não batem todos; essa variável
+  definida sem spec importada conta como spec perdida).
   Ele roda na entrega em toda rodada que abre ou atualiza um PR, e só contam
   as notas gravadas antes dele, por isso o chefe de equipe dá as notas
   primeiro. Quando um lançador define `CREW_CHIEF_JOB_ID`, arquivos mais
@@ -365,12 +367,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.15.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.15.1 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.15.0.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.15.0),
+Sem git? Baixe `agent-crew-chief-v0.15.1.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.15.1),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -395,7 +397,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.15.0
+git -C agent-crew-chief checkout v0.15.1
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
