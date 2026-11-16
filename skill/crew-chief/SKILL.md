@@ -37,24 +37,24 @@ imported spec or with nobody to approve). Ask only when the request is unclear; 
 
 ## 0. Spec first
 
-Skip for a small request (one job, one file area, no open question) or when
-the user says "run directly" / "sem spec". An approved spec in the request (a
-`spec-aprovada.md` file or a `Spec: <file>` line, plus `Anexo: <file>` lines): run
-`ACC spec-import <file> [--anexo <file>]... --slug <slug>` (copies it byte for byte into the
-folder of item 2, records its hash, prints the folder); never write or edit its `spec.md`,
-derive only `tasks.md` there, skip the approval stop and the questions, go on from item 4.
+An approved spec in the request (a `spec-aprovada.md` file or a `Spec: <file>` line, plus
+`Anexo: <file>` lines) is always imported, even for a small request: `ACC spec-import <file>
+[--anexo <file>]... --slug <slug>` copies it byte for byte into the folder of item 2 with its
+hash and prints the folder; never write or edit its `spec.md`, derive only `tasks.md` there, skip
+the questions and skip the approval stop; go on from item 4. Refused because the slug holds
+another spec: use another slug and report it. No approved spec: skip the spec for a small request
+(one job, one file area, no open question) or when the user says "run directly" / "sem spec".
 
-1. Read the request and the code. Before the spec, ask only questions whose answer changes
-   what gets built: at most 5, in one message. On "decide for me", or unattended with nobody
-   to approve and no spec: write the spec, assumptions in `spec.md`, no stop in item 5.
-2. Folder: use a specs folder the project already has; otherwise
-   `specs/<NNN>-<slug>/` at the repo root, `<NNN>` the next free number.
-3. Write `spec.md` and `tasks.md` from `templates/spec/`; add `plan.md` only
-   when the design is not obvious. In `tasks.md`, mark `[P]` on parallel tasks
-   and write "depends on Txxx" for order.
-4. Create `<feature>` (see Branches); commit the spec there before any lane branch.
-5. Plan lanes (step 1) and pick models (step 2), then stop once: show the spec
-   summary, each job's risk and pace, and the lanes, and wait for approval.
+1. Read the request and the code; ask only questions whose answer changes what gets built (at
+   most 5, one message). On "decide for me", or with nobody to approve (`CREW_CHIEF_JOB_ID` set:
+   a launcher runs you) and no spec: write the spec, assumptions in `spec.md`, no stop in item 5.
+2. Folder: a specs folder the project already has, else `specs/<NNN>-<slug>/` at the repo root (`<NNN>` next free).
+3. Write `spec.md` and `tasks.md` from `templates/spec/` (`plan.md` only when the design is not
+   obvious); in `tasks.md` mark `[P]` on parallel tasks and write "depends on Txxx" for order.
+4. Create `<feature>` (see Branches); commit the whole spec folder there (`git add
+   specs/<NNN>-<slug>`) before any lane branch.
+5. Plan lanes (step 1) and pick models (step 2), then stop once (never with an imported spec or
+   nobody to approve): show the spec summary, each job's risk/pace and lanes; wait for approval.
 
 ## 1. Plan lanes
 

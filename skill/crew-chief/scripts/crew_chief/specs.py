@@ -63,13 +63,18 @@ def import_spec(source: Path, attachments: list[Path], slug: str, root: Path) ->
     if not SLUG.match(slug):
         raise SpecError(f"bad slug {slug!r}: letters, digits, '.', '_' and '-' only")
     for path in (source, *attachments):
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink():
+            raise SpecError(f"{path}: a symbolic link, refused")
+        if not path.is_file():
             raise SpecError(f"{path}: not a regular file")
     names = [p.name for p in attachments]
     if len(set(names)) != len(names):
         raise SpecError("two attachments with the same name")
     folder = _folder(specs_root(root), slug)
     targets = [(source, folder / "spec.md"), *((p, folder / "anexos" / p.name) for p in attachments)]
+    for path in (specs_root(root), folder, folder / "anexos", folder / APPROVED, *(d for _, d in targets)):
+        if path.is_symlink():
+            raise SpecError(f"{path}: a symbolic link, refused")
     for src, dst in targets:
         if dst.exists() and sha256(dst) != sha256(src):
             raise SpecError(f"{dst} differs from {src}: not overwritten")

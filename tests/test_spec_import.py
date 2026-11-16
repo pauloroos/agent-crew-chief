@@ -8,6 +8,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
 from crew_chief import jobs
 from crew_chief.cli import main
 
@@ -130,3 +132,64 @@ def test_summary_spec_divergente(tmp_path, monkeypatch, capsys):
     [line] = _lines("orca")
     assert line["spec_divergente"] is True
     assert line["spec_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+def test_summary_ancora_fora_da_arvore(tmp_path, monkeypatch, capsys):
+    """0.15.1: spec.md and approved.json edited together still diverge from the import note in the logs."""
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setenv("CREW_CHIEF_MACHINE", "orca")
+    monkeypatch.delenv("CREW_CHIEF_JOB_ID", raising=False)
+    monkeypatch.delenv("CREW_CHIEF_SPEC_SHA256", raising=False)
+    source = _approved(tmp_path)
+    assert main(["spec-import", str(source), "--slug", "login"]) == 0
+    folder = repo / "specs" / "001-login"
+    note = json.loads((tmp_path / "shop-acc-logs" / "spec-import.json").read_text(encoding="utf-8"))
+    assert note["sha256"] == hashlib.sha256(source.read_bytes()).hexdigest() and note["fonte"] == str(source)
+    rewritten = b"# outra spec\n"
+    (folder / "spec.md").write_bytes(rewritten)
+    approved = json.loads((folder / "approved.json").read_text(encoding="utf-8"))
+    (folder / "approved.json").write_text(json.dumps({**approved, "sha256": hashlib.sha256(rewritten).hexdigest()}),
+                                          encoding="utf-8")
+    _commit(repo, "rewrite both")
+    assert main(["summary", "--job", "login", "--project", "shop"]) == 1
+    assert "spec_divergente" in capsys.readouterr().err
+    [line] = _lines("orca")
+    assert line["spec_divergente"] is True
+
+
+def test_summary_hash_esperado_da_ponte(tmp_path, monkeypatch, capsys):
+    """0.15.1: CREW_CHIEF_SPEC_SHA256 from the launcher must match; set with no spec imported = spec lost."""
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setenv("CREW_CHIEF_MACHINE", "orca")
+    monkeypatch.delenv("CREW_CHIEF_JOB_ID", raising=False)
+    source = _approved(tmp_path)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    assert main(["spec-import", str(source), "--slug", "login"]) == 0
+    _commit(repo, "spec")
+    monkeypatch.setenv("CREW_CHIEF_SPEC_SHA256", digest.upper())
+    assert main(["summary", "--job", "a", "--project", "shop"]) == 0
+    monkeypatch.setenv("CREW_CHIEF_SPEC_SHA256", hashlib.sha256(b"other").hexdigest())
+    assert main(["summary", "--job", "b", "--project", "shop"]) == 1
+    monkeypatch.setenv("CREW_CHIEF_SPEC_SHA256", digest)
+    assert main(["summary", "--job", "c", "--project", "shop", "--logs", str(tmp_path / "none")]) == 1
+    lines = {x["id"].rsplit("-", 1)[-1]: x for x in _lines("orca")}
+    assert lines["a"]["spec_divergente"] is False and lines["b"]["spec_divergente"] is True
+    assert lines["c"]["spec_divergente"] is True and lines["c"]["spec_sha256"] is None
+
+
+def test_spec_import_recusa_link_simbolico(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    source = _approved(tmp_path)
+    link = tmp_path / "bia" / "link.md"
+    try:
+        link.symlink_to(source)
+        (repo / "specs").mkdir()
+        (repo / "specs" / "001-login").symlink_to(tmp_path / "bia", target_is_directory=True)
+    except OSError:
+        pytest.skip("no symbolic links here (Windows without the privilege)")
+    assert main(["spec-import", str(link), "--slug", "other"]) == 2
+    assert "symbolic link" in capsys.readouterr().err
+    assert main(["spec-import", str(source), "--slug", "login"]) == 2  # the folder is a link
+    assert "symbolic link" in capsys.readouterr().err
+    assert sorted(p.name for p in (repo / "specs").iterdir()) == ["001-login"]
+    assert sorted(p.name for p in (tmp_path / "bia").iterdir()) == ["link.md", "spec-aprovada.md"]

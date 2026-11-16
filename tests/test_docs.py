@@ -46,7 +46,7 @@ def test_skill_md_covers_spec_kit_skills_and_plain_mode():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    assert __version__ == "0.15.0"
+    assert __version__ == "0.15.1"
     text = _read(CHANGELOG)
     current_section = text.split(f"## [{__version__}]", 1)[1].split("\n## [", 1)[0]
     assert current_section.strip()
@@ -128,5 +128,8 @@ def test_skill_regra_spec_aprovada():
     skill = " ".join(_read(SKILL_MD).split())
     for phrase in ("`spec-aprovada.md`", "`Spec: <file>`", "`ACC spec-import <file> [--anexo <file>]... --slug <slug>`",
                    "never write or edit its `spec.md`", "derive only `tasks.md`", "skip the approval stop",
-                   "nobody to approve", "assumptions in `spec.md`", "`spec_divergente`"):
+                   "nobody to approve", "assumptions in `spec.md`", "`spec_divergente`",
+                   "always imported, even for a small request", "`CREW_CHIEF_JOB_ID` set",
+                   "`git add specs/<NNN>-<slug>`", "use another slug and report it",
+                   "never with an imported spec or nobody to approve"):
         assert phrase in skill, phrase

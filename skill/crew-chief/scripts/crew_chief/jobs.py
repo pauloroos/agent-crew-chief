@@ -87,12 +87,20 @@ def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: dat
     # a logs folder left by an earlier run (Orca mode kept it until 0.13.1) must not lend its verdicts or errors
     files = [p for p in files if p.stat().st_mtime >= start.timestamp()]
     pointer = logs / specs.POINTER
-    if spec is None and pointer in files:
+    noted = {}
+    if pointer in files:
         try:
-            spec = Path(json.loads(pointer.read_text(encoding="utf-8"))["pasta"])
-        except (OSError, ValueError, KeyError, TypeError):
-            spec = None
+            noted = dict(json.loads(pointer.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            noted = {}
+    if spec is None and noted.get("pasta"):
+        spec = Path(noted["pasta"])
     spec_sha, divergent = specs.check(spec) if spec is not None else (None, False)
+    # every hash this run knows must agree: the import note, the launcher's and approved.json
+    # (a launcher that sent a spec while none was imported: the spec got lost)
+    expected = {str(h).strip().lower() for h in (noted.get("sha256"), os.environ.get("CREW_CHIEF_SPEC_SHA256")) if h}
+    if expected and expected != {spec_sha}:
+        divergent = True
     slug = re.sub(r"[^A-Za-z0-9._-]", "-", job)[:60]
     job_id = re.sub(r"[^A-Za-z0-9._-]", "-", launcher)[:80] if launcher else f"{start:%Y%m%d-%H%M%S}-{slug}"
 

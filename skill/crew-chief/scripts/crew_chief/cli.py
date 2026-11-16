@@ -275,22 +275,25 @@ def main(argv: list[str] | None = None) -> int:
         where = f"jobs/{line['maquina']}/{line['inicio'][:7]}.jsonl"
         print(f"summary {line['id']} {'written to' if jobs.write(line) else 'already in'} {where}")
         if line["spec_divergente"]:
-            print(f"spec_divergente: the committed spec.md is not the approved one ({line['spec_sha256']})",
-                  file=sys.stderr)
+            print("spec_divergente: the committed spec.md, approved.json, the import note and "
+                  f"CREW_CHIEF_SPEC_SHA256 do not all match (approved: {line['spec_sha256']})", file=sys.stderr)
             return 1
         return 0
 
     if args.command == "spec-import":
         try:
-            folder = specs.import_spec(args.file.expanduser().resolve(),
-                                       [p.expanduser().resolve() for p in args.anexo],
+            # absolute(), not resolve(): resolve() would follow a symbolic link past the check
+            folder = specs.import_spec(args.file.expanduser().absolute(),
+                                       [p.expanduser().absolute() for p in args.anexo],
                                        args.slug, specs.checkout())
         except (specs.SpecError, OSError) as exc:
             print(exc, file=sys.stderr)
             return 2
         logs = _logs_dir()
         logs.mkdir(parents=True, exist_ok=True)
-        (logs / specs.POINTER).write_text(json.dumps({"pasta": str(folder)}) + "\n", encoding="utf-8")
+        # the hash also outside the spec folder: editing spec.md and approved.json together still shows
+        note = {"pasta": str(folder), "sha256": specs.sha256(folder / "spec.md"), "fonte": str(args.file)}
+        (logs / specs.POINTER).write_text(json.dumps(note) + "\n", encoding="utf-8")
         print(folder)
         return 0
 
