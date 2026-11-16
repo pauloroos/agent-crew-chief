@@ -45,6 +45,7 @@ def test_summary_counts_errors_reads_verdicts_and_copies_no_log_text(tmp_path, m
     monkeypatch.setenv("CREW_CHIEF_MACHINE", "pc")
     monkeypatch.delenv("CREW_CHIEF_JOB_ID", raising=False)
     monkeypatch.delenv("CREW_CHIEF_COORDINATOR", raising=False)
+    monkeypatch.delenv("CREW_CHIEF_CARD", raising=False)
     logs = _logs(tmp_path)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ledger.append({"at": now, "project": "shop", "kind": "code", "agent": "opencode", "model": "beam",
@@ -59,9 +60,9 @@ def test_summary_counts_errors_reads_verdicts_and_copies_no_log_text(tmp_path, m
     assert capsys.readouterr().out == "summary 20261103-225744-mfa written to jobs/pc/2026-11.jsonl\n"
     [line] = _lines("pc")
     text = json.dumps(line)
-    assert TOKEN not in text and "Too Many" not in text and "spec" not in text
+    assert TOKEN not in text and "Too Many" not in text and "job spec" not in text
     assert set(line) == {"id", "maquina", "repo", "inicio", "fim", "minutos", "rc", "modelos_usados",
-                         "vereditos_fiscal", "erros", "pr_url"}
+                         "vereditos_fiscal", "erros", "pr_url", "card", "spec_sha256", "spec_divergente"}
     assert line["id"] == "20261103-225744-mfa" and line["maquina"] == "pc" and line["repo"] == "shop"
     assert line["inicio"] == "2026-11-03T22:57:44+00:00" and line["rc"] == 0 and line["minutos"] > 0
     assert line["erros"] == {"cota": 1, "429": 1, "timeout": 1, "escrita_fora_da_pasta": 0}

@@ -123,7 +123,11 @@ merge das trilhas em acc/<slug> → testes → push → pull request (você faz 
 3. **Escolha.** `ACC pick --kind <tipo>` para cada job (veja [o placar](#o-placar)); se você declarou [seus modelos](#seus-modelos), só eles são candidatos.
 4. **Uma parada.** Com spec, o chefe de equipe mostra o resumo da spec, as
    trilhas e os modelos, e espera a sua aprovação. É a única parada; depois
-   dela, ele vai até o fim.
+   dela, ele vai até o fim. Um pedido que já traz spec aprovada (`Spec: <arquivo>`,
+   `Anexo: <arquivo>`) pula a parada: o `ACC spec-import` copia o arquivo byte a
+   byte para a pasta de specs com o SHA-256 em `approved.json`, e o chefe de
+   equipe só deriva o `tasks.md`. Em segundo plano, sem ninguém para aprovar e
+   sem spec, ele escreve a spec com as premissas e segue.
 5. **Despacha e roda.** O chefe de equipe despacha um engenheiro de corrida por
    trilha. Os engenheiros largam os pilotos nos seus worktrees e esperam em
    verificações curtas (menos de 2 minutos cada) até todo piloto terminar.
@@ -253,7 +257,11 @@ de juntar as notas; sem configuração, nada muda.
   logs sumir: `id`, `maquina`, `repo`, `inicio`, `fim`, `minutos`, `rc`,
   `modelos_usados` (as notas desta máquina para o repo durante a rodada),
   `vereditos_fiscal` (o último `VERDICT:` de cada fiscal), `erros` (linhas
-  dos `.log` que falam de cota, 429, timeout ou `outside_write`) e `pr_url`.
+  dos `.log` que falam de cota, 429, timeout ou `outside_write`), `pr_url`,
+  `card` (`$CREW_CHIEF_CARD`, o id do card do lançador), `spec_sha256` (a spec
+  aprovada do `ACC spec-import` desta rodada, ou `--spec <pasta>`) e
+  `spec_divergente` (true, e saída 1, quando o `spec.md` commitado no HEAD não é
+  o aprovado).
   Ele roda na entrega em toda rodada que abre ou atualiza um PR, e só contam
   as notas gravadas antes dele, por isso o chefe de equipe dá as notas
   primeiro. Quando um lançador define `CREW_CHIEF_JOB_ID`, arquivos mais
@@ -333,7 +341,7 @@ Conduzindo uma execução:
 - **Limitar custo:** diga "só modelos grátis" ou "nada acima de included"; o
   chefe de equipe passa `--max-cost free|included|cheap|paid` para o `ACC pick`.
 
-Os oito comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+Os nove comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (ou `.claude/skills/...`) num projeto com a skill instalada:
 
 ```text
@@ -342,8 +350,9 @@ ACC pick --kind code [--max-cost free|included|cheap|paid] [--json]
 ACC record --kind code --agent opencode --model <modelo> --cost free --outcome pass --score 85 --minutes 12 [--effort <e>] [--lane <trilha>] [--job "<título>"] [--note "<por quê>"]
 ACC score [--kind code] [--project <nome>] [--json]
 ACC import /caminho/do/projeto     # notas guardadas pelo ACC 0.6 em docs/crew-chief/jobs
-ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <pasta>]  # uma linha sobre a rodada, antes de os logs sumirem
+ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <pasta>] [--spec <pasta>]  # uma linha sobre a rodada, antes de os logs sumirem
 ACC merge <arquivo>                # junta um ledger copiado de outra máquina
+ACC spec-import <arquivo> [--anexo <arquivo>]... --slug <slug>  # spec aprovada, byte a byte, em specs/<NNN>-<slug>/
 ACC sync [--init <url>]            # sincroniza o ledger.jsonl por um repo git privado
 ```
 
@@ -356,12 +365,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.14.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.15.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.14.1.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.14.1),
+Sem git? Baixe `agent-crew-chief-v0.15.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.15.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -386,7 +395,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.14.1
+git -C agent-crew-chief checkout v0.15.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

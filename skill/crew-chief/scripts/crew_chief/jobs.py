@@ -13,7 +13,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import ledger
+from . import ledger, specs
 
 # A launcher's id (``$CREW_CHIEF_JOB_ID``): its start time in UTC and a random suffix.
 LAUNCHER_ID = re.compile(r"^(\d{8}-\d{6})-[0-9a-f]{6}$")
@@ -68,8 +68,10 @@ def _at(text) -> datetime | None:
     return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
 
 
-def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: datetime | None = None) -> dict:
-    """The summary line of this run; reads ``logs`` (left untouched) and this machine's grades."""
+def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: datetime | None = None,
+              spec: Path | None = None) -> dict:
+    """The summary line of this run; reads ``logs`` (left untouched), this machine's grades and the
+    approved spec (``spec``, else the one ``ACC spec-import`` noted in ``logs`` during this run)."""
     end = (now or datetime.now(timezone.utc)).replace(microsecond=0)
     me = ledger.machine()
     files = [p for p in logs.iterdir() if p.is_file() and not p.is_symlink()] if logs.is_dir() else []
@@ -84,6 +86,13 @@ def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: dat
         start = end
     # a logs folder left by an earlier run (Orca mode kept it until 0.13.1) must not lend its verdicts or errors
     files = [p for p in files if p.stat().st_mtime >= start.timestamp()]
+    pointer = logs / specs.POINTER
+    if spec is None and pointer in files:
+        try:
+            spec = Path(json.loads(pointer.read_text(encoding="utf-8"))["pasta"])
+        except (OSError, ValueError, KeyError, TypeError):
+            spec = None
+    spec_sha, divergent = specs.check(spec) if spec is not None else (None, False)
     slug = re.sub(r"[^A-Za-z0-9._-]", "-", job)[:60]
     job_id = re.sub(r"[^A-Za-z0-9._-]", "-", launcher)[:80] if launcher else f"{start:%Y%m%d-%H%M%S}-{slug}"
 
@@ -108,7 +117,7 @@ def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: dat
         if (row.get("project") in (repo, name) and at is not None and start <= at <= end
                 and row.get("machine", me) == me):
             used.append(f"{row.get('agent')}:{row.get('model')}")
-    return _clean({
+    line = _clean({
         "id": job_id, "maquina": me, "repo": repo,
         "inicio": start.isoformat(), "fim": end.isoformat(),
         "minutos": round((end - start).total_seconds() / 60, 1), "rc": rc,
@@ -116,7 +125,10 @@ def summarize(repo: str, logs: Path, job: str, rc: int, pr: str | None, now: dat
         "vereditos_fiscal": verdicts,
         "erros": errors,
         "pr_url": pr or None,
+        "card": os.environ.get("CREW_CHIEF_CARD") or None,
     })
+    # after _clean: the secret filter would take a 64-hex hash for a token
+    return {**line, "spec_sha256": spec_sha, "spec_divergente": divergent}
 
 
 def write(line: dict) -> bool:

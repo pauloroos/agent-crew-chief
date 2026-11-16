@@ -1,5 +1,5 @@
 """``crew-chief.py``: record a graded job, show the scores, pick a model, summarize a run, merge a ledger, sync it,
-import 0.6 grades."""
+import 0.6 grades, import an approved spec."""
 
 from __future__ import annotations
 
@@ -8,13 +8,19 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, jobs, ledger, models, score, sync
+from . import __version__, jobs, ledger, models, score, specs, sync
 
 
 def _project_name() -> str:
     """The repository's name, the same from any of its worktrees."""
     root = models.repo_root()
     return root.name if root is not None else Path.cwd().name
+
+
+def _logs_dir() -> Path:
+    """The run's logs folder, ``../<repo>-acc-logs`` next to the main checkout."""
+    root = models.repo_root() or Path.cwd()
+    return root.parent / f"{root.name}-acc-logs"
 
 
 def _score_value(text: str) -> int:
@@ -67,6 +73,12 @@ def _parser() -> argparse.ArgumentParser:
     summary.add_argument("--rc", type=int, default=0, help="0 when delivered (default), else not")
     summary.add_argument("--logs", type=Path, help="default: ../<repo>-acc-logs")
     summary.add_argument("--project", help="default: this repository's name")
+    summary.add_argument("--spec", type=Path, help="the approved spec folder; default: this run's ACC spec-import")
+
+    imported = commands.add_parser("spec-import", help="copy an approved spec byte for byte into the specs folder")
+    imported.add_argument("file", type=Path)
+    imported.add_argument("--anexo", action="append", default=[], type=Path, help="an attachment (repeatable)")
+    imported.add_argument("--slug", required=True)
 
     synced = commands.add_parser("sync", help="sync the ledger through a private git repo")
     synced.add_argument("--init", default=None, help="the url of a private repo to sync through")
@@ -258,14 +270,28 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "summary":
-        if args.logs is not None:
-            logs = args.logs
-        else:
-            root = models.repo_root() or Path.cwd()
-            logs = root.parent / f"{root.name}-acc-logs"
-        line = jobs.summarize(args.project or _project_name(), logs, args.job, args.rc, args.pr)
+        logs = args.logs if args.logs is not None else _logs_dir()
+        line = jobs.summarize(args.project or _project_name(), logs, args.job, args.rc, args.pr, spec=args.spec)
         where = f"jobs/{line['maquina']}/{line['inicio'][:7]}.jsonl"
         print(f"summary {line['id']} {'written to' if jobs.write(line) else 'already in'} {where}")
+        if line["spec_divergente"]:
+            print(f"spec_divergente: the committed spec.md is not the approved one ({line['spec_sha256']})",
+                  file=sys.stderr)
+            return 1
+        return 0
+
+    if args.command == "spec-import":
+        try:
+            folder = specs.import_spec(args.file.expanduser().resolve(),
+                                       [p.expanduser().resolve() for p in args.anexo],
+                                       args.slug, specs.checkout())
+        except (specs.SpecError, OSError) as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        logs = _logs_dir()
+        logs.mkdir(parents=True, exist_ok=True)
+        (logs / specs.POINTER).write_text(json.dumps({"pasta": str(folder)}) + "\n", encoding="utf-8")
+        print(folder)
         return 0
 
     if args.command == "sync":
