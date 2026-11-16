@@ -119,7 +119,11 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
 3. **Pick.** `ACC pick --kind <kind>` per job (see [the scoreboard](#the-scoreboard)); if you declared [your models](#your-models), only those are candidates.
 4. **One stop.** With a spec, the crew chief shows the spec summary, the
    lanes and the models, and waits for your approval. That is the only stop;
-   after it, it runs to the end.
+   after it, it runs to the end. A request that brings an approved spec
+   (`Spec: <file>`, `Anexo: <file>`) skips it: `ACC spec-import` copies the file
+   byte for byte into the specs folder with its SHA-256 in `approved.json`, and
+   the crew chief derives only `tasks.md`. Unattended with nobody to approve and
+   no spec, it writes the spec with its assumptions and goes on.
 5. **Dispatch and run.** The crew chief dispatches a race engineer per lane.
    Engineers start drivers in their worktrees and wait in short checks (under
    2 minutes each) until every driver is done.
@@ -245,7 +249,11 @@ to bring grades together; without setup, nothing changes.
   `id`, `maquina`, `repo`, `inicio`, `fim`, `minutos`, `rc`, `modelos_usados`
   (this machine's grades for the repo during the run), `vereditos_fiscal`
   (the last `VERDICT:` of each scrutineer), `erros` (lines in the `.log`
-  files that report quota, 429, timeout or `outside_write`) and `pr_url`.
+  files that report quota, 429, timeout or `outside_write`), `pr_url`, `card`
+  (`$CREW_CHIEF_CARD`, the launcher's card id), `spec_sha256` (the approved
+  spec of `ACC spec-import` in this run, or `--spec <folder>`) and
+  `spec_divergente` (true, and exit 1, when the `spec.md` committed at HEAD is
+  not the approved one).
   It runs at delivery in every run that opens or updates a pull request, and
   only grades recorded before it count, so the crew chief grades first. When a
   launcher sets `CREW_CHIEF_JOB_ID`, files older than its start (a folder left
@@ -323,7 +331,7 @@ Steering a run:
 - **Limit cost:** say "free models only" or "nothing above included"; the
   crew chief passes `--max-cost free|included|cheap|paid` to `ACC pick`.
 
-The eight commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+The nine commands. `ACC` is `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (or `.claude/skills/...`) in a project where the skill is installed:
 
 ```text
@@ -332,8 +340,9 @@ ACC pick --kind code [--max-cost free|included|cheap|paid] [--json]
 ACC record --kind code --agent opencode --model <model> --cost free --outcome pass --score 85 --minutes 12 [--effort <e>] [--lane <lane>] [--job "<title>"] [--note "<why>"]
 ACC score [--kind code] [--project <name>] [--json]
 ACC import /path/to/project     # grades kept by ACC 0.6 in docs/crew-chief/jobs
-ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <dir>]  # one line about this run, before the logs go
+ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <dir>] [--spec <folder>]  # one line about this run, before the logs go
 ACC merge <file>                # merge a ledger file copied from another machine
+ACC spec-import <file> [--anexo <file>]... --slug <slug>  # an approved spec, byte for byte, into specs/<NNN>-<slug>/
 ACC sync [--init <url>]         # sync ledger.jsonl through a private git repo
 ```
 
@@ -346,12 +355,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.14.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.15.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.14.1.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.14.1),
+No git? Download `agent-crew-chief-v0.15.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.15.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -376,7 +385,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.14.1
+git -C agent-crew-chief checkout v0.15.0
 python agent-crew-chief/install.py /path/to/project
 ```
 

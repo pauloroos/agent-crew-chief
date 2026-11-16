@@ -5,27 +5,24 @@ description: Run a request through several coding agents in parallel and score e
 
 # Agent Crew Chief
 
-You are the **crew chief** on the pit wall. You spec, plan lanes, pick models,
-hold the approval stop, dispatch a **race engineer** per lane, check their
-reports, grade them, merge the lanes and deliver. Engineers run drivers
-(workers) and scrutineers; you never run drivers yourself except a small
-request without a spec, where you may engineer its one lane yourself.
+You are the **crew chief** on the pit wall. You spec, plan lanes, pick models, hold the approval
+stop, dispatch a **race engineer** per lane, check their reports, grade them, merge the lanes
+and deliver. Engineers run drivers (workers) and scrutineers; you never run drivers yourself
+except a small request without a spec, where you may engineer its one lane yourself.
 
-ACC keeps a score per model and kind in `~/.crew-chief/ledger.jsonl`, outside
-every repository. The Pit Wall method (`pit-wall.md`) governs Stint, Fresh
-tyres, Relay, Scrutineering, risk and pace.
+ACC keeps a score per model and kind in `~/.crew-chief/ledger.jsonl`, outside every
+repository. `pit-wall.md` (the Pit Wall method) governs Stint, Fresh tyres, Relay, Scrutineering, risk and pace.
 
 `ACC` = `python -I .agents/skills/crew-chief/scripts/crew-chief.py` (or
 `.claude/skills/...`). Any CLI can coordinate (Claude Code, Codex, OpenCode).
 
-Every child of the crew is visible in a terminal, in one of two modes:
-**Orca mode** when `orca status --json` shows a running Orca (an Orca terminal
-each in the lane worktree; load `orca skills get orchestration` once), and
-**background mode** without Orca (e.g. Windows without WSL: a process with log
-and PID).
+Every child of the crew is visible in a terminal, in one of two modes: **Orca mode** when
+`orca status --json` shows a running Orca (an Orca terminal each in the lane worktree; load
+`orca skills get orchestration` once), and **background mode** without Orca (e.g. Windows
+without WSL: a process with log and PID).
 
-Do not ask permission between steps except the spec approval in step 0. Ask
-only when the request is unclear; report at the end.
+Do not ask permission between steps except the spec approval in step 0 (none for an
+imported spec or with nobody to approve). Ask only when the request is unclear; report at the end.
 
 ## The team
 
@@ -41,11 +38,15 @@ only when the request is unclear; report at the end.
 ## 0. Spec first
 
 Skip for a small request (one job, one file area, no open question) or when
-the user says "run directly" / "sem spec".
+the user says "run directly" / "sem spec". An approved spec in the request (a
+`spec-aprovada.md` file or a `Spec: <file>` line, plus `Anexo: <file>` lines): run
+`ACC spec-import <file> [--anexo <file>]... --slug <slug>` (copies it byte for byte into the
+folder of item 2, records its hash, prints the folder); never write or edit its `spec.md`,
+derive only `tasks.md` there, skip the approval stop and the questions, go on from item 4.
 
-1. Read the request and the code. Before the spec, ask only questions whose
-   answer changes what gets built: at most 5, in one message. On "decide for
-   me", decide and write assumptions into `spec.md`.
+1. Read the request and the code. Before the spec, ask only questions whose answer changes
+   what gets built: at most 5, in one message. On "decide for me", or unattended with nobody
+   to approve and no spec: write the spec, assumptions in `spec.md`, no stop in item 5.
 2. Folder: use a specs folder the project already has; otherwise
    `specs/<NNN>-<slug>/` at the repo root, `<NNN>` the next free number.
 3. Write `spec.md` and `tasks.md` from `templates/spec/`; add `plan.md` only
@@ -57,16 +58,14 @@ the user says "run directly" / "sem spec".
 
 ## 1. Plan lanes
 
-Read the request and the code it touches. Set each job's **risk**
-(`low`/`normal`/`high`) and read the **pace** from the request (default
-`race`); see `pit-wall.md`. Split work into **jobs**: one reviewable change
-each, with a kind (`code`, `tests`, `refactor`, `design`, `docs`, `research`,
-`diagnosis`, `data`, `review`) and a check that proves it done.
+Read the request and the code it touches. Set each job's **risk** (`low`/`normal`/`high`) and
+read the **pace** from the request (default `race`); see `pit-wall.md`. Split work into
+**jobs**: one reviewable change each, with a kind (`code`, `tests`, `refactor`, `design`,
+`docs`, `research`, `diagnosis`, `data`, `review`) and a check that proves it done.
 
-Group jobs into **lanes**. Jobs that touch the same files or need each other's
-result share a lane and run in order; non-overlapping jobs run in parallel. At
-most 4 lanes. With a spec, dependent or same-file tasks share a lane; `[P]`
-tasks with no shared files get separate lanes.
+Group jobs into **lanes**. Jobs that touch the same files or need each other's result share a
+lane and run in order; non-overlapping jobs run in parallel. At most 4 lanes. With a spec,
+dependent or same-file tasks share a lane; `[P]` tasks with no shared files get separate lanes.
 
 Branches: `<feature>` = `acc/<slug>` from base, lane branches `<feature>-<lane>`. With
 `Branch: <name>` and `Base: <branch>` lines in the request, `<feature>` = `<name>` created from
@@ -164,7 +163,8 @@ the branch too); background-mode `git worktree remove ../<repo>-acc-<lane>`, `gi
 -D <feature>-<lane>`. Both modes, once nothing runs: remove `../<repo>-acc-logs/`. A folder
 "open in another program" is held by a leftover process: leave it, report it.
 Report: PR, each job with risk, pace, model, attempts, scrutineer scores, outcome,
-worker and engineer scores, anything open, and `ACC score --kind <kinds used>`.
+worker and engineer scores, anything open, and `ACC score --kind <kinds used>`. `ACC summary`
+exits 1 with `spec_divergente` when the committed `spec.md` is not the approved one: report it.
 
 ## Rules
 

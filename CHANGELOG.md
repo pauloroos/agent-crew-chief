@@ -8,6 +8,28 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.15.0] - 2026-11-15
+
+### Added
+- **`ACC spec-import <file> [--anexo <file>]... --slug <slug>`.** A request that
+  brings an approved spec (`Spec: <file>`, `Anexo: <file>`, a `spec-aprovada.md`)
+  gets it copied byte for byte to `<specs folder>/<NNN>-<slug>/spec.md`, the
+  attachments to `anexos/`, and `approved.json` (`sha256`, `fonte`,
+  `importado_em`). The specs folder is the one the project has (`specs/` or
+  `docs/specs/`), else `specs/`. A `.gitattributes` (`* -text`) keeps git from
+  rewriting line ends. A different `spec.md` or attachment already there is
+  refused (exit 2) and nothing is written; the same spec again reuses the folder.
+- **`ACC summary` writes `card`, `spec_sha256` and `spec_divergente`.** `card`
+  comes from `$CREW_CHIEF_CARD` (empty → `null`). The spec is `--spec <folder>`,
+  else the one `ACC spec-import` imported in this run (it leaves
+  `spec-import.json` in `../<repo>-acc-logs/`). `spec_divergente` is true when
+  the `spec.md` committed at HEAD is not the approved hash (or is not
+  committed); the line is still written and the command exits 1.
+- **Skill rules.** With an approved spec the crew chief runs `ACC spec-import`,
+  never writes or edits that `spec.md`, derives only `tasks.md` and skips the
+  approval stop. Unattended with nobody to approve and no spec, it writes the
+  spec with its assumptions and goes on.
+
 ## [0.14.1] - 2026-11-15
 
 ### Fixed
