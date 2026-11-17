@@ -200,3 +200,10 @@ def test_cli_launch_needs_orca_when_asked(tmp_path, capsys, monkeypatch):
     brief = _brief(tmp_path)
     assert main(["launch", "--brief", str(brief), "--where", "orca", "--job-dir", str(tmp_path / "j")]) == 2
     assert "Orca is not running" in capsys.readouterr().err
+
+
+def test_compare_reads_the_launchers_own_summary_next_to_the_run(tmp_path):
+    jobs = tmp_path / "jobs"
+    _done(jobs, "20261117-214436-465ac8.opencode", "direct", 0, 3)
+    (jobs / "20261117-214436-465ac8.resumo.json").write_text(json.dumps({"pr_url": "https://x/pull/4"}))
+    assert launch.compare(jobs)["direct"]["with_pr"] == 1

@@ -228,6 +228,15 @@ def _summaries() -> dict[str, dict]:
     return out
 
 
+def _job_summary(path: Path) -> dict:
+    """A launcher's own summary next to the run (it keeps test repos out of the jobs/ files)."""
+    try:
+        got = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
 def compare(job_dir: Path, since: str | None = None) -> dict[str, dict]:
     summaries = _summaries()
     groups: dict[str, list[dict]] = {}
@@ -242,7 +251,8 @@ def compare(job_dir: Path, since: str | None = None) -> dict[str, dict]:
             start = datetime.fromisoformat(meta["start"]).timestamp()
             minutes = round((rc_file.stat().st_mtime - start) / 60, 1)
         # a launcher may run its agent under "<its id>.<suffix>": its summary keeps the bare id
-        summary = summaries.get(meta["id"]) or summaries.get(meta["id"].split(".", 1)[0]) or {}
+        bare = meta["id"].split(".", 1)[0]
+        summary = summaries.get(meta["id"]) or summaries.get(bare) or _job_summary(job_dir / f"{bare}.resumo.json")
         groups.setdefault(meta["mode"], []).append(
             {"rc": rc, "minutes": minutes, "pr": bool(summary.get("pr_url"))})
     return {mode: {
