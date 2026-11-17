@@ -8,6 +8,27 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.16.0] - 2026-11-17
+
+### Added
+- **`ACC launch`, `ACC runs`, `ACC compare`.** A run starts from a request file in an
+  Orca terminal you can watch from the desktop or the phone when Orca runs on the
+  machine, else in the background, with the same job files either way
+  (`prompt.md`, `run.sh`, `meta.json`, `pid`, `log`, `rc`). `--crew` (default) has
+  the agent run the ACC method; `--direct` sends the request as is, so the two can
+  be compared. `ACC compare` counts runs, finished, ok, with a pull request (from
+  the summary line of the same id) and median minutes per mode. The request is
+  read from its file, never pasted into a command line. On Windows the run uses
+  Git's bash, not WSL's; Orca's CLI is never confused with the GNOME screen reader.
+  A launched crew chief runs its lanes in background mode and is told not to end
+  its turn before the pull request: as a one-shot command (`opencode run`), it
+  ended right after dispatching an Orca lane, and the lane was never merged.
+
+### Fixed
+- **The machine-wide install no longer touches `~/.claude-ghost`.** It tried to
+  replace that folder (the claude-ghost CLI's own config) with a link to the skill,
+  and crashed on a real one.
+
 ## [0.15.1] - 2026-11-15
 
 ### Fixed

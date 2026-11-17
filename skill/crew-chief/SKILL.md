@@ -176,5 +176,5 @@ exits 1 with `spec_divergente` when the committed `spec.md` is not the approved 
 - Never create, copy or ask for credentials or tokens.
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the
   grades an ACC 0.6 project kept in `docs/crew-chief/jobs` into the ledger.
-- `ACC merge <file>` merges a ledger file copied from another machine.
+- `ACC merge <file>` merges a ledger file; `ACC launch --brief <f> [--crew|--direct]` starts a whole run (an Orca terminal when Orca runs), `ACC runs [id]` and `ACC compare` follow it.
 - `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when set up, run it at the start of a request and after `ACC summary`. It also carries the `jobs/<machine>/` lines of `ACC summary` or a launcher; never put a brief, log or diff there.

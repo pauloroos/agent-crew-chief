@@ -289,6 +289,29 @@ arquivo (`~/.crew-chief/.lock`): a nota gravada no meio de um sync espera por
 ele em vez de se perder; uma trava com mais de 5 minutos é tida como deixada
 por um processo morto e é quebrada.
 
+## Lançar uma rodada inteira
+
+`ACC launch` começa uma rodada a partir de um arquivo de pedido e te deixa livre: o agente
+trabalha num terminal do [Orca](https://github.com/stablyai/orca) que você acompanha no
+computador ou no celular quando o Orca roda naquela máquina, e em segundo plano quando não.
+Nos dois casos a pasta do job (`~/.crew-chief/runs`, ou `--job-dir`) ganha `<id>.prompt.md`,
+`.run.sh`, `.meta.json`, `.pid`, `.log` e `.rc`.
+
+```bash
+ACC launch --brief pedido.md                    # --crew (padrão): o agente roda o método ACC
+ACC launch --brief pedido.md --direct           # o mesmo pedido sem ACC, para comparar
+ACC launch --brief pedido.md --agent claude --model opus --timeout 2h --where background
+ACC runs                                        # todas as rodadas e o estado delas
+ACC runs <id>                                   # uma rodada e o fim do log
+ACC compare --since 2026-11-01                  # crew x direct: terminadas, ok, com PR, minutos
+```
+
+`--agent` é `opencode` (padrão), `claude` ou `codex`. Um lançador (agendador, ponte de bots)
+passa `--id` e `--job-dir` para os arquivos ficarem onde ele lê; `CREW_CHIEF_CARD`,
+`CREW_CHIEF_SPEC_SHA256` e `CREW_CHIEF_MACHINE` no ambiente dele chegam à rodada, e a rodada
+recebe `CREW_CHIEF_JOB_ID`, então o `ACC summary` grava a linha com o mesmo id que o
+`ACC compare` lê para achar o pull request. No Windows a rodada precisa do Git Bash.
+
 ## Seus modelos
 
 Diga ao ACC quais modelos você tem. Dois arquivos opcionais, lidos com o
@@ -343,7 +366,7 @@ Conduzindo uma execução:
 - **Limitar custo:** diga "só modelos grátis" ou "nada acima de included"; o
   chefe de equipe passa `--max-cost free|included|cheap|paid` para o `ACC pick`.
 
-Os nove comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
+Os doze comandos. `ACC` é `python -I .agents/skills/crew-chief/scripts/crew-chief.py`
 (ou `.claude/skills/...`) num projeto com a skill instalada:
 
 ```text
@@ -356,6 +379,9 @@ ACC summary --job <slug> [--pr <url>] [--rc 1] [--logs <pasta>] [--spec <pasta>]
 ACC merge <arquivo>                # junta um ledger copiado de outra máquina
 ACC spec-import <arquivo> [--anexo <arquivo>]... --slug <slug>  # spec aprovada, byte a byte, em specs/<NNN>-<slug>/
 ACC sync [--init <url>]            # sincroniza o ledger.jsonl por um repo git privado
+ACC launch --brief <arquivo> [--crew|--direct] [--agent opencode|claude|codex] [--model <m>]  # lança uma rodada inteira
+ACC runs [<id>]                    # rodadas lançadas, ou uma com o fim do log
+ACC compare [--since AAAA-MM-DD]   # rodadas crew x direct
 ```
 
 Tipos: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
@@ -367,12 +393,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.15.1 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.16.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.15.1.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.15.1),
+Sem git? Baixe `agent-crew-chief-v0.16.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.16.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -397,7 +423,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.15.1
+git -C agent-crew-chief checkout v0.16.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

@@ -8,7 +8,6 @@ Usage::
 
 Installs to:
 * ``~/.claude/skills/crew-chief/`` (Claude Code)
-* ``~/.claude-ghost/`` link (Claude ghost routing)
 * ``~/.agents/skills/crew-chief/`` (Codex and OpenCode)
 * ``~/.gemini/skills/crew-chief/`` plus ``~/GEMINI.md`` reference (Gemini CLI)
 
@@ -76,23 +75,6 @@ def _write_gemini_md(home: Path) -> None:
         gemini_md.write_text(GEMINI_SNIPPET, encoding="utf-8")
 
 
-def _create_ghost_link(home: Path) -> None:
-    """Create ~/.claude-ghost symlink pointing to ~/.claude/skills/crew-chief."""
-    ghost = home / ".claude-ghost"
-    target = home / ".claude" / "skills" / "crew-chief"
-    if ghost.exists() or ghost.is_symlink():
-        ghost.unlink()
-    try:
-        ghost.symlink_to(target, target_is_directory=True)
-    except OSError:
-        if sys.platform != "win32":
-            raise
-        # Symlinks need Developer Mode or admin on Windows; a junction does not.
-        import _winapi
-
-        _winapi.CreateJunction(str(target), str(ghost))
-
-
 def install_machine_wide(
     home: Path, dry_run: bool = False, kits: list[str] | None = None
 ) -> list[str]:
@@ -119,8 +101,6 @@ def install_machine_wide(
             )
     else:
         report.extend(repo_install._install_kits(home, kits))
-        _create_ghost_link(home)
-        report.append("created ~/.claude-ghost link")
         _write_gemini_md(home)
         report.append("updated ~/GEMINI.md")
 
