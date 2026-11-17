@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, jobs, ledger, models, score, specs, sync
+from . import __version__, jobs, launch, ledger, models, score, specs, sync
 
 
 def _project_name() -> str:
@@ -85,6 +85,33 @@ def _parser() -> argparse.ArgumentParser:
 
     old = commands.add_parser("import", help="copy the grades of an ACC 0.6 project")
     old.add_argument("project", type=Path)
+
+    started = commands.add_parser("launch", help="start a run on a request: an Orca terminal when Orca runs, "
+                                                 "else the background")
+    started.add_argument("--brief", required=True, type=Path, help="the request file")
+    mode = started.add_mutually_exclusive_group()
+    mode.add_argument("--crew", dest="mode", action="store_const", const="crew",
+                      help="the agent runs the ACC method (default)")
+    mode.add_argument("--direct", dest="mode", action="store_const", const="direct",
+                      help="the agent gets the request as is, no ACC")
+    started.add_argument("--agent", default="opencode", choices=sorted(launch.AGENTS))
+    started.add_argument("--model")
+    started.add_argument("--timeout", default="4h", help="kill the run after this (default 4h)")
+    started.add_argument("--where", default="auto", choices=launch.WHERE)
+    started.add_argument("--title", help="the Orca tab title; default '<acc|direct> <repo> <id>'")
+    started.add_argument("--job-dir", type=Path, help="default: ~/.crew-chief/runs")
+    started.add_argument("--id", help="the run id; default <UTC time>-<6 hex>")
+    started.add_argument("--json", action="store_true")
+
+    listed_runs = commands.add_parser("runs", help="launched runs and their state; one run with its log tail")
+    listed_runs.add_argument("id", nargs="?")
+    listed_runs.add_argument("--job-dir", type=Path)
+    listed_runs.add_argument("--json", action="store_true")
+
+    compared = commands.add_parser("compare", help="crew vs direct runs: finished, ok, with a PR, minutes")
+    compared.add_argument("--since", help="YYYY-MM-DD")
+    compared.add_argument("--job-dir", type=Path)
+    compared.add_argument("--json", action="store_true")
     return parser
 
 
@@ -113,6 +140,51 @@ def _is_excluded(entry: dict, excludes: list[str]) -> bool:
     if score.executor(entry) in excludes:
         return True
     return f"{entry.get('agent')}:{entry.get('model')}" in excludes
+
+
+def _runs(args) -> int:
+    """launch / runs / compare."""
+    jobs = args.job_dir or launch.runs_dir()
+    try:
+        if args.command == "launch":
+            run = launch.launch(args.brief, mode=args.mode or "crew", agent=args.agent, model=args.model,
+                                timeout=args.timeout, job_dir=jobs, job_id=args.id, title=args.title,
+                                where=args.where)
+            print(json.dumps(run, indent=2) if args.json else
+                  f"run {run['id']} started ({run['mode']}, {run['where']}): {run['title']}\n"
+                  f"follow: ACC runs {run['id']}" + (f" --job-dir {args.job_dir}" if args.job_dir else ""))
+            return 0
+        if args.command == "runs" and args.id:
+            got = launch.state(jobs, args.id)
+            if args.json:
+                print(json.dumps(got, indent=2))
+            else:
+                print(f"{got['id']}: {got['state']}" + (f" (rc {got['rc']})" if got["rc"] is not None else "")
+                      + f", {got['mode']}, {got['where']}, {got['agent']}:{got['model'] or 'default'}")
+                print("\n".join(got["tail"]))
+            return 0
+    except (launch.LaunchError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    if args.command == "runs":
+        rows = launch.runs(jobs)
+        if args.json:
+            print(json.dumps(rows, indent=2))
+            return 0
+        lines = ["| run | state | mode | where | agent | repo |", "| --- | --- | --- | --- | --- | --- |"]
+        lines += [f"| {r['id']} | {r['state']} | {r['mode']} | {r['where']} | {r['agent']}:{r['model'] or 'default'} "
+                  f"| {r['repo']} |" for r in rows]
+        print("\n".join(lines) if rows else f"no runs in {jobs}")
+        return 0
+    got = launch.compare(jobs, args.since)
+    if args.json:
+        print(json.dumps(got, indent=2))
+        return 0
+    lines = ["| mode | runs | finished | ok | with PR | minutes (median) |", "| --- | --- | --- | --- | --- | --- |"]
+    lines += [f"| {m} | {r['runs']} | {r['finished']} | {r['ok']} | {r['with_pr']} | {r['minutes_median'] or '-'} |"
+              for m, r in sorted(got.items())]
+    print("\n".join(lines) if got else f"no runs in {jobs}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -299,6 +371,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "sync":
         return sync.main(args.init)
+
+    if args.command in ("launch", "runs", "compare"):
+        return _runs(args)
 
     project = args.project.expanduser().resolve()
     if not (project / "docs" / "crew-chief" / "jobs").is_dir():

@@ -42,3 +42,15 @@ def deny_external_connections(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", resolve)
 
+
+
+@pytest.fixture(autouse=True)
+def no_real_runs(monkeypatch):
+    """No test reaches a real Orca or starts a real agent: ACC launch got there once (17/11)."""
+    from crew_chief import launch
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a test tried to start a real run")
+
+    monkeypatch.setattr(launch, "orca_call", lambda args: None)
+    monkeypatch.setattr(launch, "spawn_background", refuse)

@@ -8,6 +8,19 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.16.0] - 2026-11-17
+
+### Added
+- **`ACC launch`, `ACC runs`, `ACC compare`.** A run starts from a request file in an
+  Orca terminal you can watch from the desktop or the phone when Orca runs on the
+  machine, else in the background, with the same job files either way
+  (`prompt.md`, `run.sh`, `meta.json`, `pid`, `log`, `rc`). `--crew` (default) has
+  the agent run the ACC method; `--direct` sends the request as is, so the two can
+  be compared. `ACC compare` counts runs, finished, ok, with a pull request (from
+  the summary line of the same id) and median minutes per mode. The request is
+  read from its file, never pasted into a command line. On Windows the run uses
+  Git's bash, not WSL's; Orca's CLI is never confused with the GNOME screen reader.
+
 ## [0.15.1] - 2026-11-15
 
 ### Fixed
