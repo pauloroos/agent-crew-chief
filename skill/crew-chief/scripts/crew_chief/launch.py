@@ -31,7 +31,12 @@ AGENTS = {
 PASS_ENV = ("CREW_CHIEF_CARD", "CREW_CHIEF_SPEC_SHA256", "CREW_CHIEF_MACHINE", "CREW_CHIEF_HOME")
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 TIMEOUT = re.compile(r"\d+[smhd]?")
-CREW_PROMPT = "ACC, do the request below. Nobody watches to approve: follow the spec rules for a launcher run.\n\n"
+# A launched crew chief is a one-shot command (`opencode run`, `claude -p`): ending its turn ends the run, and lanes
+# left in Orca never get merged (lab, 17/11). So: background mode, and no end of turn before the pull request.
+CREW_PROMPT = ("ACC, sem Orca (background mode). You run as a one-shot command: ending your turn ends the run, so "
+               "stay in this turn and wait on your lanes with short checks until the pull request is open and "
+               "ACC summary is written. Nobody watches to approve: follow the spec rules for a launcher run. "
+               "Do the request below.\n\n")
 
 
 class LaunchError(Exception):

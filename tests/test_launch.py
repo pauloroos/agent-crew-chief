@@ -85,7 +85,9 @@ def test_crew_mode_asks_for_acc_and_direct_sends_the_request_as_is(tmp_path):
     crew = _go(tmp_path, FakeOrca(), [], job_id="a-1")
     direct = _go(tmp_path, FakeOrca(), [], job_id="a-2", mode="direct")
     jobs = tmp_path / "jobs"
-    assert (jobs / "a-1.prompt.md").read_text(encoding="utf-8").startswith("ACC, ")
+    crew_prompt = (jobs / "a-1.prompt.md").read_text(encoding="utf-8")
+    # a one-shot crew chief must not leave lanes behind: background mode and no end of turn before the PR
+    assert crew_prompt.startswith("ACC, sem Orca") and "until the pull request is open" in crew_prompt
     assert (jobs / "a-2.prompt.md").read_text(encoding="utf-8") == _brief(tmp_path).read_text(encoding="utf-8")
     assert json.loads((jobs / "a-2.meta.json").read_text(encoding="utf-8"))["mode"] == "direct"
     assert crew["id"] == "a-1" and direct["id"] == "a-2"

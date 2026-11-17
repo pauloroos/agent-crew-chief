@@ -20,6 +20,9 @@ which keeps their full history, releases and changelog.
   the summary line of the same id) and median minutes per mode. The request is
   read from its file, never pasted into a command line. On Windows the run uses
   Git's bash, not WSL's; Orca's CLI is never confused with the GNOME screen reader.
+  A launched crew chief runs its lanes in background mode and is told not to end
+  its turn before the pull request: as a one-shot command (`opencode run`), it
+  ended right after dispatching an Orca lane, and the lane was never merged.
 
 ### Fixed
 - **The machine-wide install no longer touches `~/.claude-ghost`.** It tried to
