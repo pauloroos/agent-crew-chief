@@ -4,7 +4,6 @@ Every test runs the installer as a real process so that the documented
 invocation is the one under test.  The four CLI paths are:
 
 * ``~/.claude/skills/crew-chief/`` (Claude Code)
-* ``~/.claude-ghost/`` link (Claude ghost routing)
 * ``~/.agents/skills/crew-chief/`` (Codex and OpenCode)
 * Gemini CLI discovery path plus ``GEMINI.md`` reference
 """
@@ -132,3 +131,14 @@ def test_missing_kit_source_exits_2_only_when_wanted(tmp_path, monkeypatch, caps
 
     flags = [f"--no-{kit}" for kit in KITS]
     assert install_machine_wide.main(["--home", home, "--dry-run", *flags]) == 0
+
+
+def test_never_touches_claude_ghost(tmp_path):
+    """~/.claude-ghost is the claude-ghost CLI's own config folder: the install used to replace it with a link."""
+    from install_machine_wide import install_machine_wide
+
+    ghost = tmp_path / ".claude-ghost"
+    ghost.mkdir()
+    (ghost / "settings.json").write_text("{}")
+    install_machine_wide(tmp_path)
+    assert ghost.is_dir() and not ghost.is_symlink() and (ghost / "settings.json").read_text() == "{}"

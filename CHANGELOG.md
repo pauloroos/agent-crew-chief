@@ -21,6 +21,11 @@ which keeps their full history, releases and changelog.
   read from its file, never pasted into a command line. On Windows the run uses
   Git's bash, not WSL's; Orca's CLI is never confused with the GNOME screen reader.
 
+### Fixed
+- **The machine-wide install no longer touches `~/.claude-ghost`.** It tried to
+  replace that folder (the claude-ghost CLI's own config) with a link to the skill,
+  and crashed on a real one.
+
 ## [0.15.1] - 2026-11-15
 
 ### Fixed
