@@ -409,3 +409,16 @@ def test_pick_exclude_everything_says_nothing(ledger_home: Path, tmp_path: Path,
     monkeypatch.chdir(tmp_path)
     assert main(["pick", "--kind", "code", "--exclude", "opencode:provider/model-a"]) == 0
     assert "no model in your models.toml takes code work" in capsys.readouterr().out
+
+
+def test_max_cost_from_env(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    _write_global(ledger_home, FREE_A.replace('cost = "free"', 'cost = "included"') + PAID_B)
+    _grade("provider/model-b", 100, cost="paid", n=2)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_MAX_COST", "included")
+    assert main(["pick", "--kind", "code"]) == 0
+    assert capsys.readouterr().out.startswith("pick code: opencode:provider/model-a (not tried yet, included)")
+    assert main(["pick", "--kind", "code", "--max-cost", "paid"]) == 0  # the flag wins
+    assert capsys.readouterr().out.startswith("pick code: opencode:provider/model-b")
+    monkeypatch.setenv("CREW_CHIEF_MAX_COST", "caro")
+    assert main(["pick", "--kind", "code"]) == 2

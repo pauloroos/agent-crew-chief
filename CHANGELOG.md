@@ -8,6 +8,19 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.1] - 2026-11-18
+
+### Added
+- **`CREW_CHIEF_MAX_COST`.** When set (`free`, `included`, `cheap` or `paid`), `ACC pick`
+  uses it as the default `--max-cost`; an explicit `--max-cost` still wins, an invalid value
+  is an error. `ACC launch` passes it on, so a whole round (crew chief, engineers, drivers)
+  stays under the same ceiling.
+
+### Fixed
+- **`ACC launch --model` accepts what `ACC pick` prints.** `opencode:omni/x` with
+  `--agent opencode` now runs `omni/x`; before, the agent got the prefixed name and the
+  driver failed.
+
 ## [0.17.0] - 2026-11-17
 
 ### Added
