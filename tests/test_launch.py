@@ -61,6 +61,14 @@ def _repo_with_worktree(tmp_path: Path) -> tuple[Path, Path]:
     return repo, worktree
 
 
+def test_the_run_script_exports_the_git_tools_the_terminal_lacks(tmp_path, monkeypatch):
+    """An Orca terminal's PATH has no cat, tee or timeout: the script brings Git's."""
+    monkeypatch.setattr(launch, "_git_usr_bin", lambda: "/c/Program Files/Git/usr/bin")
+    _go(tmp_path, FakeOrca(), [], job_id="p1")
+    script = (tmp_path / "jobs" / "p1.run.sh").read_text(encoding="utf-8")
+    assert 'export PATH="/c/Program Files/Git/usr/bin:$PATH"' in script
+
+
 def test_only_the_main_repo_is_added_to_orca(tmp_path):
     """A lane worktree is a child of the repo Orca knows: adding it would duplicate the project."""
     repo, worktree = _repo_with_worktree(tmp_path)
