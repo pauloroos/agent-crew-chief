@@ -110,9 +110,10 @@ Launched round (`ACC launch --crew`): start each lane engineer with `ACC launch 
 `acc-<slug>-<lane>-engineer`: Orca tab when Orca runs, background otherwise); wait with
 `ACC runs <id>`. Do not end your turn before the pull request and `ACC summary`.
 
-Monitor: wait on engineer reports. Orca mode: `check --wait` under 2 minutes per call.
-Background mode: process, commits, log growth. Answer questions, handle escalations, wait
-again.
+## 4. Monitor
+
+Wait on engineer reports. Orca mode: `check --wait` under 2 minutes per call. Background mode:
+process, commits, log growth. Answer questions, handle escalations, wait again.
 
 ## Without Orca (background mode)
 
@@ -157,10 +158,10 @@ scores, anything open, `ACC score --kind <kinds used>`. `ACC summary` exits 1 wi
 
 ## Launcher
 `ACC launch` starts a run on a request file: an Orca terminal when Orca runs, else background.
-`ACC launch --brief <f> [--crew|--direct]` starts a whole run; `ACC launch --engineer --slug
-<slug> --lane <lane> --brief <file>` starts a lane engineer (direct mode, standard title
-`acc-<slug>-<lane>-engineer`: Orca tab when Orca runs, background otherwise). `ACC runs [id]`
-and `ACC compare` follow it. A launched crew chief starts each lane engineer with `ACC launch
+`ACC launch --brief <f> [--crew|--direct]` starts a whole run; `ACC launch --engineer --slug <slug>
+--lane <lane> --brief <file>` starts a lane engineer (direct mode, standard title
+`acc-<slug>-<lane>-engineer`: Orca tab when Orca runs, background otherwise). `ACC runs [id]` and
+`ACC compare` follow it; a launched crew chief starts each lane engineer with `ACC launch
 --engineer` and waits with `ACC runs <id>`.
 
 ## Rules
@@ -173,8 +174,7 @@ and `ACC compare` follow it. A launched crew chief starts each lane engineer wit
 - Never create, copy or ask for credentials or tokens.
 - `ACC score` shows the whole scoreboard; `ACC import <project>` copies the grades an ACC 0.6
   project kept in `docs/crew-chief/jobs` into the ledger.
-- `ACC merge <file>` merges a ledger file; `ACC launch --brief <f> [--crew|--direct]` starts
-  a whole run (an Orca terminal when Orca runs), `ACC runs [id]` and `ACC compare` follow it.
+- `ACC merge <file>` merges a ledger file.
 - `ACC sync --init <url>` sets up sync through a private git repo; `ACC sync` runs it: when
   set up, run it at the start of a request and after `ACC summary`. It also carries the
   `jobs/<machine>/` lines of `ACC summary` or a launcher; never put a brief, log or diff there.
