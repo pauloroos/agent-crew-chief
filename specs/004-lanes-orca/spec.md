@@ -72,6 +72,12 @@ sem merge nem PR.
 - **FR-006**: `README.md` e `README.pt-BR.md` contam a mesma história (mesmo
   conteúdo), e os tutoriais (`docs/tutorial.md`, `docs/tutorial.pt-BR.md`)
   fixam a v0.17.0.
+- **FR-007**: o script da rodada acha `cat`, `tee` e `timeout` no terminal do
+  Orca no Windows (o PATH do terminal não tem as ferramentas do Git: a
+  rodada morria antes do agente começar).
+- **FR-008**: `ACC launch` só adiciona o repositório ao Orca quando o `cwd` é
+  o repositório principal. De uma worktree ligada, abre o terminal direto
+  (`--worktree path:<cwd>`), sem virar um projeto solto no Orca.
 
 ## Done when
 
@@ -82,3 +88,5 @@ sem merge nem PR.
   fixture `no_real_runs` de `tests/conftest.py` continua valendo.
 - **SC-003**: PR aberto contra `main`. Sem tag e sem release: o dono testa no
   Orca do servidor antes de publicar.
+- **SC-004**: um teste com o `FakeOrca` cobre os dois casos do `repo add`:
+  o repositório principal é adicionado ao Orca, a worktree da lane não.

@@ -35,3 +35,9 @@
   launcher) e `docs/tutorial.md` + `docs/tutorial.pt-BR.md` (FR-004, FR-005,
   FR-006). Depende de T001; a forma do comando está fixada em `spec.md`
   (FR-001), então a lane corre em paralelo com a `core`.
+
+- [x] T006 (crew chief, kind code, risk normal, feito): o script da rodada
+  acha `cat`, `tee` e `timeout` no terminal do Orca (FR-007) e uma worktree
+  ligada não vira projeto no Orca (FR-008), com testes em
+  `tests/test_launch.py`. Achado rodando a primeira rodada: a rodada morria
+  antes do agente começar. Commitado na branch de feature, antes das lanes.
