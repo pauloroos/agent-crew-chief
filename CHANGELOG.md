@@ -8,6 +8,14 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.2] - 2026-11-18
+
+### Changed
+- **`ACC pick` draws among the proven models of the cheapest tier.** When several models
+  scored well at least twice at the same cost, the pick is drawn at random among them
+  (the text says `drawn among N proven`, the JSON carries `drawn_from`), so work spreads
+  across models and no single quota runs dry. One proven model: same pick as before.
+
 ## [0.17.1] - 2026-11-18
 
 ### Added

@@ -339,9 +339,12 @@ def main(argv: list[str] | None = None) -> int:
                       f"{best['cost']}) - record its score")
             else:
                 sure = best["score"] >= score.GOOD and best["n"] >= score.SURE_N
+                n = best.get("drawn_from", 1)
+                drawn = f" - drawn among {n} proven" if n > 1 else ""
                 print(
                     f"pick {args.kind}: {best['executor']} (score {best['score']}, n {best['n']}, "
                     f"{best['cost'] or 'cost ?'}){'' if sure else ' - not proven yet, try another too'}"
+                    f"{drawn}"
                 )
             print()
             print(score.render(rows[:5]))

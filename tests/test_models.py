@@ -422,3 +422,19 @@ def test_max_cost_from_env(ledger_home: Path, tmp_path: Path, monkeypatch, capsy
     assert capsys.readouterr().out.startswith("pick code: opencode:provider/model-b")
     monkeypatch.setenv("CREW_CHIEF_MAX_COST", "caro")
     assert main(["pick", "--kind", "code"]) == 2
+
+
+def test_draws_among_proven_of_the_cheapest_tier(ledger_home: Path, tmp_path: Path, monkeypatch, capsys):
+    third = FREE_A.replace("provider/model-a", "provider/model-c")
+    _write_global(ledger_home, FREE_A + third + PAID_B)
+    for m in ("provider/model-a", "provider/model-c"):
+        _grade(m, 90, n=2)
+    _grade("provider/model-b", 100, cost="paid", n=2)
+    monkeypatch.chdir(tmp_path)
+    seen = set()
+    for _ in range(40):
+        assert main(["pick", "--kind", "code"]) == 0
+        out = capsys.readouterr().out.splitlines()[0]
+        assert out.endswith("- drawn among 2 proven"), out
+        seen.add(out.split()[2])
+    assert seen == {"opencode:provider/model-a", "opencode:provider/model-c"}  # paid model-b never drawn

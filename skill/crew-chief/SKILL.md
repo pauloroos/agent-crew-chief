@@ -70,7 +70,7 @@ spec: brief plan, go on.
 ## 2. Pick models
 
 Run `ACC models` first. If it lists models, pick only among them (`ACC pick`). `ACC pick
---kind <kind>` names the cheapest model that scored well at least twice, then the scoreboard.
+--kind <kind>` draws among the cheapest models that scored well twice, then the scoreboard.
 "Not proven yet" means little data: use it, or try an unscored model; the score you record
 settles it. Prefer free models for plain work, stronger ones for risky jobs, `--max-cost` from
 the pace or the user (`$CREW_CHIEF_MAX_COST`, when set, is the default ceiling). Use `--exclude <agent:model>` (repeatable) to drop failed workers or

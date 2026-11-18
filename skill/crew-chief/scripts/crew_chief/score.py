@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from datetime import datetime, timezone
 
 from .ledger import COSTS
@@ -75,12 +76,15 @@ def _tier(row: dict) -> int:
 
 
 def suggest(rows: list[dict], max_cost: str | None = None) -> dict | None:
-    """The cheapest surely-good model, else an untried one of the cheapest tier, else the best so far."""
+    """A surely-good model of the cheapest tier (drawn at random, so no single quota runs dry), else an untried
+    one of the cheapest tier, else the best so far."""
     if max_cost:
         rows = [r for r in rows if _tier(r) <= COSTS.index(max_cost)]
     sure = [r for r in rows if r.get("score") is not None and r["score"] >= GOOD and r["n"] >= SURE_N]
     if sure:
-        return min(sure, key=lambda r: (_tier(r), -r["score"]))
+        tier = min(_tier(r) for r in sure)
+        pool = [r for r in sure if _tier(r) == tier]
+        return {**random.choice(pool), "drawn_from": len(pool)}
     untried = [r for r in rows if r["n"] == 0]
     if untried:
         return min(untried, key=lambda r: (_tier(r), r["executor"]))
