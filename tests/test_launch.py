@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +45,43 @@ def _go(tmp_path, orca, spawned, **kw):
                 job_id=None, title=None, where="auto", cwd=tmp_path, call=orca, spawn=spawned.append, now=NOW)
     opts.update(kw)
     return launch.launch(_brief(tmp_path), **opts)
+
+
+def _repo_with_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """A repo and one linked worktree of it (what a lane worktree is)."""
+    if not shutil.which("git"):
+        pytest.skip("git is not on PATH")
+    repo, worktree = tmp_path / "repo", tmp_path / "lane"
+    repo.mkdir()
+    git = ["git", "-C", str(repo)]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+    subprocess.run(git + ["-c", "user.email=t@example.com", "-c", "user.name=Test",
+                          "commit", "-q", "--allow-empty", "-m", "init"], check=True, capture_output=True)
+    subprocess.run(git + ["worktree", "add", "-q", str(worktree)], check=True, capture_output=True)
+    return repo, worktree
+
+
+def test_the_run_script_exports_the_git_tools_the_terminal_lacks(tmp_path, monkeypatch):
+    """An Orca terminal's PATH has no cat, tee or timeout: the script brings Git's."""
+    monkeypatch.setattr(launch, "_git_usr_bin", lambda: "/c/Program Files/Git/usr/bin")
+    _go(tmp_path, FakeOrca(), [], job_id="p1")
+    script = (tmp_path / "jobs" / "p1.run.sh").read_text(encoding="utf-8")
+    assert 'export PATH="/c/Program Files/Git/usr/bin:$PATH"' in script
+
+
+def test_only_the_main_repo_is_added_to_orca(tmp_path):
+    """A lane worktree is a child of the repo Orca knows: adding it would duplicate the project."""
+    repo, worktree = _repo_with_worktree(tmp_path)
+    main = FakeOrca()
+    _go(tmp_path, main, [], job_id="w1", cwd=repo)
+    assert [c for c in main.calls if c[:2] == ["repo", "add"]] == [["repo", "add", "--path", repo.as_posix()]]
+    lane = FakeOrca()
+    run = _go(tmp_path, lane, [], job_id="w2", cwd=worktree)
+    assert run["where"] == "orca"
+    assert not [c for c in lane.calls if c[:2] == ["repo", "add"]]
+    create = lane.calls[-1]
+    assert create[:2] == ["terminal", "create"]
+    assert create[create.index("--worktree") + 1] == f"path:{worktree.as_posix()}"
 
 
 def test_orca_running_opens_a_titled_terminal_running_the_script(tmp_path):
@@ -86,8 +125,10 @@ def test_crew_mode_asks_for_acc_and_direct_sends_the_request_as_is(tmp_path):
     direct = _go(tmp_path, FakeOrca(), [], job_id="a-2", mode="direct")
     jobs = tmp_path / "jobs"
     crew_prompt = (jobs / "a-1.prompt.md").read_text(encoding="utf-8")
-    # a one-shot crew chief must not leave lanes behind: background mode and no end of turn before the PR
-    assert crew_prompt.startswith("ACC, sem Orca") and "until the pull request is open" in crew_prompt
+    # a one-shot crew chief starts each lane engineer with `ACC launch --engineer` and waits on it
+    assert "sem Orca" not in crew_prompt
+    assert "ACC launch --engineer" in crew_prompt
+    assert "pull request is open" in crew_prompt
     assert (jobs / "a-2.prompt.md").read_text(encoding="utf-8") == _brief(tmp_path).read_text(encoding="utf-8")
     assert json.loads((jobs / "a-2.meta.json").read_text(encoding="utf-8"))["mode"] == "direct"
     assert crew["id"] == "a-1" and direct["id"] == "a-2"
@@ -207,3 +248,50 @@ def test_compare_reads_the_launchers_own_summary_next_to_the_run(tmp_path):
     _done(jobs, "20261117-214436-465ac8.opencode", "direct", 0, 3)
     (jobs / "20261117-214436-465ac8.resumo.json").write_text(json.dumps({"pr_url": "https://x/pull/4"}))
     assert launch.compare(jobs)["direct"]["with_pr"] == 1
+
+
+def test_engineer_with_orca_launches_in_a_titled_terminal(tmp_path):
+    orca, spawned = FakeOrca(ready=True, opens=True), []
+    run = _go(tmp_path, orca, spawned, mode="engineer", slug="lanes-orca", lane="core", where="auto")
+    assert run["where"] == "orca" and spawned == []
+    create = [c for c in orca.calls if c[:2] == ["terminal", "create"]][-1]
+    assert create[create.index("--title") + 1] == "acc-lanes-orca-core-engineer"
+    prompt = (tmp_path / "jobs" / f"{run['id']}.prompt.md").read_text(encoding="utf-8")
+    assert not prompt.startswith("ACC, sem Orca")
+    assert "ACC launch --engineer" not in prompt  # direct mode: bare brief only
+
+
+def test_engineer_without_orca_falls_back_to_background(tmp_path):
+    spawned = []
+    run = _go(tmp_path, FakeOrca(ready=False), spawned, mode="engineer", slug="lanes-orca", lane="core")
+    assert run["where"] == "background"
+    assert spawned == [tmp_path / "jobs" / f"{run['id']}.run.sh"]
+    prompt = (tmp_path / "jobs" / f"{run['id']}.prompt.md").read_text(encoding="utf-8")
+    assert "ACC launch --engineer" not in prompt
+
+
+def test_cli_engineer_launch_writes_correct_meta(tmp_path, monkeypatch):
+    from crew_chief.cli import main
+
+    orca = FakeOrca(ready=True, opens=True)
+    monkeypatch.setattr(launch, "orca_call", orca)
+    brief = _brief(tmp_path)
+    job_dir = tmp_path / "j"
+    argv = ["launch", "--engineer", "--slug", "lanes-orca", "--lane", "core",
+            "--brief", str(brief), "--job-dir", str(job_dir)]
+    assert main(argv) == 0
+    metas = list(job_dir.glob("*.meta.json"))
+    assert len(metas) == 1
+    meta = json.loads(metas[0].read_text(encoding="utf-8"))
+    assert meta["mode"] == "direct"
+    assert meta["title"] == "acc-lanes-orca-core-engineer"
+    assert meta["where"] == "orca"
+
+
+def test_cli_engineer_without_slug_or_lane_is_an_error(tmp_path, capsys):
+    from crew_chief.cli import main
+
+    brief = _brief(tmp_path)
+    assert main(["launch", "--engineer", "--brief", str(brief), "--job-dir", str(tmp_path / "j")]) == 2
+    err = capsys.readouterr().err
+    assert "--slug" in err and "--lane" in err

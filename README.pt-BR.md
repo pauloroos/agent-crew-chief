@@ -301,10 +301,15 @@ Nos dois casos a pasta do job (`~/.crew-chief/runs`, ou `--job-dir`) ganha `<id>
 ACC launch --brief pedido.md                    # --crew (padrão): o agente roda o método ACC
 ACC launch --brief pedido.md --direct           # o mesmo pedido sem ACC, para comparar
 ACC launch --brief pedido.md --agent claude --model opus --timeout 2h --where background
+ACC launch --engineer --slug <slug> --lane <lane> --brief <arquivo>  # inicia o engenheiro da lane: aba do Orca quando o Orca roda, senão em segundo plano
 ACC runs                                        # todas as rodadas e o estado delas
 ACC runs <id>                                   # uma rodada e o fim do log
 ACC compare --since 2026-11-01                  # crew x direct: terminadas, ok, com PR, minutos
 ```
+
+`ACC launch --engineer` inicia o engenheiro da lane em modo direto com o título padrão
+`acc-<slug>-<lane>-engineer`: aba do Orca quando o Orca roda, senão em segundo plano; uma
+rodada lançada inicia cada lane assim e espera com `ACC runs <id>`.
 
 `--agent` é `opencode` (padrão), `claude` ou `codex`. Um lançador (agendador, ponte de bots)
 passa `--id` e `--job-dir` para os arquivos ficarem onde ele lê; `CREW_CHIEF_CARD`,
@@ -393,12 +398,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.16.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.17.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.16.0.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.16.0),
+Sem git? Baixe `agent-crew-chief-v0.17.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -423,7 +428,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.16.0
+git -C agent-crew-chief checkout v0.17.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

@@ -46,7 +46,7 @@ def test_skill_md_covers_spec_kit_skills_and_plain_mode():
 
 
 def test_version_is_current_and_changelog_has_its_section():
-    assert __version__ == "0.16.0"
+    assert __version__ == "0.17.0"
     text = _read(CHANGELOG)
     current_section = text.split(f"## [{__version__}]", 1)[1].split("\n## [", 1)[0]
     assert current_section.strip()
@@ -64,6 +64,17 @@ def test_branch_and_base_from_the_request_replace_the_acc_branch():
 def test_readmes_and_tutorials_pin_the_current_release():
     for path in (README, README_PT, *TUTORIALS):
         assert f"v{__version__}" in _read(path), path.name
+
+
+def test_the_engineer_of_a_launched_round_starts_its_drivers_with_acc_launch():
+    """A one-shot engineer must not leave its drivers as Orca workers: they never get the brief."""
+    template = _read(SKILL_MD.parent / "templates" / "race-engineer.md")
+    for phrase in ("ACC launch --direct", "--title", "ACC runs <id>", "lane worktree",
+                   "end your turn", "lane report", "Ask anything"):
+        assert phrase in template, phrase
+    wall = _read(SKILL_MD.parent / "pit-wall.md")
+    for phrase in ("ACC launch --direct", "ACC runs <id>", "ends the lane"):
+        assert phrase in wall, phrase
 
 
 def test_readmes_name_every_subcommand():

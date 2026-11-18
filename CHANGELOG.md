@@ -8,6 +8,35 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.0] - 2026-11-17
+
+### Added
+- **`ACC launch --engineer`.** `ACC launch --engineer --slug <slug> --lane <lane> --brief
+  <file>` starts a lane engineer in direct mode with the standard title
+  `acc-<slug>-<lane>-engineer`: an Orca tab when Orca runs on the machine, background mode
+  otherwise. A launched round (`ACC launch --crew`) now starts each lane engineer this way,
+  one Orca tab per lane, and the crew chief waits for it with `ACC runs <id>`. Without
+  Orca, behaviour stays as before (background process with log and PID).
+- **`ACC launch` only adds the repository to Orca from the main checkout.** From a lane
+  worktree it opens the terminal directly (`--worktree path:<cwd>`), so a worktree no
+  longer becomes a loose project in Orca.
+
+### Changed
+- **Crew prompt of a launched round.** It no longer forces "sem Orca (background mode)":
+  it tells the crew chief to start each lane engineer with `ACC launch --engineer` and to
+  wait with `ACC runs <id>` in short checks. It still does not end its turn before the
+  pull request is open and `ACC summary` is written.
+- **The engineer of a launched round starts its drivers with `ACC launch --direct`.** The
+  race engineer brief and the Pit Wall say it: a driver of a launched lane is a run of its
+  own (`ACC launch --direct --title <standard name>` from inside the lane worktree, waited
+  with `ACC runs <id>`), not an Orca worker — an OpenCode worker stays at "Ask anything"
+  without receiving the brief — and the engineer does not end its turn before the lane
+  report.
+
+### Fixed
+- **The run script finds `cat`, `tee` and `timeout` in an Orca terminal on Windows.** The
+  terminal's PATH lacked Git's tools, so the run died before the agent started.
+
 ## [0.16.0] - 2026-11-17
 
 ### Added
