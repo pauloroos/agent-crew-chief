@@ -125,8 +125,10 @@ def test_crew_mode_asks_for_acc_and_direct_sends_the_request_as_is(tmp_path):
     direct = _go(tmp_path, FakeOrca(), [], job_id="a-2", mode="direct")
     jobs = tmp_path / "jobs"
     crew_prompt = (jobs / "a-1.prompt.md").read_text(encoding="utf-8")
-    # a one-shot crew chief must not leave lanes behind: background mode and no end of turn before the PR
-    assert crew_prompt.startswith("ACC, sem Orca") and "until the pull request is open" in crew_prompt
+    # a one-shot crew chief starts each lane engineer with `ACC launch --engineer` and waits on it
+    assert "sem Orca" not in crew_prompt
+    assert "ACC launch --engineer" in crew_prompt
+    assert "pull request is open" in crew_prompt
     assert (jobs / "a-2.prompt.md").read_text(encoding="utf-8") == _brief(tmp_path).read_text(encoding="utf-8")
     assert json.loads((jobs / "a-2.meta.json").read_text(encoding="utf-8"))["mode"] == "direct"
     assert crew["id"] == "a-1" and direct["id"] == "a-2"
@@ -246,3 +248,50 @@ def test_compare_reads_the_launchers_own_summary_next_to_the_run(tmp_path):
     _done(jobs, "20261117-214436-465ac8.opencode", "direct", 0, 3)
     (jobs / "20261117-214436-465ac8.resumo.json").write_text(json.dumps({"pr_url": "https://x/pull/4"}))
     assert launch.compare(jobs)["direct"]["with_pr"] == 1
+
+
+def test_engineer_with_orca_launches_in_a_titled_terminal(tmp_path):
+    orca, spawned = FakeOrca(ready=True, opens=True), []
+    run = _go(tmp_path, orca, spawned, mode="engineer", slug="lanes-orca", lane="core", where="auto")
+    assert run["where"] == "orca" and spawned == []
+    create = [c for c in orca.calls if c[:2] == ["terminal", "create"]][-1]
+    assert create[create.index("--title") + 1] == "acc-lanes-orca-core-engineer"
+    prompt = (tmp_path / "jobs" / f"{run['id']}.prompt.md").read_text(encoding="utf-8")
+    assert not prompt.startswith("ACC, sem Orca")
+    assert "ACC launch --engineer" not in prompt  # direct mode: bare brief only
+
+
+def test_engineer_without_orca_falls_back_to_background(tmp_path):
+    spawned = []
+    run = _go(tmp_path, FakeOrca(ready=False), spawned, mode="engineer", slug="lanes-orca", lane="core")
+    assert run["where"] == "background"
+    assert spawned == [tmp_path / "jobs" / f"{run['id']}.run.sh"]
+    prompt = (tmp_path / "jobs" / f"{run['id']}.prompt.md").read_text(encoding="utf-8")
+    assert "ACC launch --engineer" not in prompt
+
+
+def test_cli_engineer_launch_writes_correct_meta(tmp_path, monkeypatch):
+    from crew_chief.cli import main
+
+    orca = FakeOrca(ready=True, opens=True)
+    monkeypatch.setattr(launch, "orca_call", orca)
+    brief = _brief(tmp_path)
+    job_dir = tmp_path / "j"
+    argv = ["launch", "--engineer", "--slug", "lanes-orca", "--lane", "core",
+            "--brief", str(brief), "--job-dir", str(job_dir)]
+    assert main(argv) == 0
+    metas = list(job_dir.glob("*.meta.json"))
+    assert len(metas) == 1
+    meta = json.loads(metas[0].read_text(encoding="utf-8"))
+    assert meta["mode"] == "direct"
+    assert meta["title"] == "acc-lanes-orca-core-engineer"
+    assert meta["where"] == "orca"
+
+
+def test_cli_engineer_without_slug_or_lane_is_an_error(tmp_path, capsys):
+    from crew_chief.cli import main
+
+    brief = _brief(tmp_path)
+    assert main(["launch", "--engineer", "--brief", str(brief), "--job-dir", str(tmp_path / "j")]) == 2
+    err = capsys.readouterr().err
+    assert "--slug" in err and "--lane" in err
