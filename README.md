@@ -291,10 +291,15 @@ when Orca runs on that machine, else in the background. Either way the job folde
 ACC launch --brief request.md                   # --crew (default): the agent runs the ACC method
 ACC launch --brief request.md --direct          # the same request with no ACC, to compare
 ACC launch --brief request.md --agent claude --model opus --timeout 2h --where background
+ACC launch --engineer --slug <slug> --lane <lane> --brief <file>  # start a lane engineer: Orca tab when Orca runs, background otherwise
 ACC runs                                        # every run and its state
 ACC runs <id>                                   # one run and its log tail
 ACC compare --since 2026-11-01                  # crew vs direct: finished, ok, with a PR, minutes
 ```
+
+`ACC launch --engineer` starts a lane engineer in direct mode with the standard title
+`acc-<slug>-<lane>-engineer`: an Orca tab when Orca runs, background otherwise; a launched
+crew chief starts each lane this way and waits with `ACC runs <id>`.
 
 `--agent` is `opencode` (default), `claude` or `codex`. A launcher (a scheduler, a bot bridge)
 passes `--id` and `--job-dir` to keep the files where it reads them; `CREW_CHIEF_CARD`,
@@ -383,12 +388,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.16.0 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.17.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.16.0.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.16.0),
+No git? Download `agent-crew-chief-v0.17.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -413,7 +418,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.16.0
+git -C agent-crew-chief checkout v0.17.0
 python agent-crew-chief/install.py /path/to/project
 ```
 
