@@ -18,7 +18,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import ledger
+from . import ledger, terminals
 
 MODES = ("crew", "direct")
 WHERE = ("auto", "orca", "background")
@@ -32,11 +32,18 @@ PASS_ENV = ("CREW_CHIEF_CARD", "CREW_CHIEF_SPEC_SHA256", "CREW_CHIEF_MACHINE", "
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 TIMEOUT = re.compile(r"\d+[smhd]?")
 # A launched crew chief is a one-shot command (`opencode run`, `claude -p`): ending its turn ends the run, and lanes
-# left in Orca never get merged (lab, 17/11). So: background mode, and no end of turn before the pull request.
-CREW_PROMPT = ("ACC, sem Orca (background mode). You run as a one-shot command: ending your turn ends the run, so "
-               "stay in this turn and wait on your lanes with short checks until the pull request is open and "
-               "ACC summary is written. Nobody watches to approve: follow the spec rules for a launcher run. "
-               "Do the request below.\n\n")
+# left in Orca never get merged (lab, 17/11). The crew chief starts each lane engineer with `ACC launch --engineer`
+# and waits on it with `ACC runs <id>`; no end of turn before the pull request and ACC summary.
+CREW_PROMPT = (
+    "ACC. You run as a one-shot command: ending your turn ends the run. "
+    "For each lane, start its engineer with "
+    "`ACC launch --engineer --slug <slug> --lane <lane> --brief <race-engineer brief> "
+    "[--job-dir <dir>] [--id <id>]` from inside the lane worktree, then wait on it "
+    "with `ACC runs <id>` in short checks until the state is finished or failed. "
+    "Do not end your turn before the pull request is open and ACC summary is written. "
+    "Nobody watches to approve: follow the spec rules for a launcher run. "
+    "Do the request below.\n\n"
+)
 
 
 class LaunchError(Exception):
@@ -166,8 +173,18 @@ def _is_linked_worktree(cwd: Path) -> bool:
 
 def launch(brief: Path, *, mode: str = "crew", agent: str = "opencode", model: str | None = None,
            timeout: str = "4h", job_dir: Path | None = None, job_id: str | None = None, title: str | None = None,
-           where: str = "auto", cwd: Path | None = None, call=None, spawn=None,
-           now: datetime | None = None) -> dict:
+           where: str = "auto", cwd: Path | None = None, slug: str | None = None, lane: str | None = None,
+           call=None, spawn=None, now: datetime | None = None) -> dict:
+    if mode == "engineer":
+        if not slug or not isinstance(slug, str) or not slug.strip():
+            raise LaunchError("--engineer requires --slug")
+        if not lane or not isinstance(lane, str) or not lane.strip():
+            raise LaunchError("--engineer requires --lane")
+        if not brief.exists() or not brief.read_text(encoding="utf-8").strip():
+            raise LaunchError(f"--engineer requires a non-empty --brief ({brief})")
+        # shortcut: o engenheiro roda em modo direto; o título segue o padrão da lane
+        title = title or terminals.terminal_name(slug, lane, None, "engineer")
+        mode = "direct"
     if mode not in MODES or agent not in AGENTS or where not in WHERE:
         raise LaunchError(f"mode {MODES}, agent {tuple(AGENTS)}, where {WHERE}")
     call, spawn = call or orca_call, spawn or spawn_background  # looked up now: tests replace them
