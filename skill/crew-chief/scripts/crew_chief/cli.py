@@ -94,6 +94,10 @@ def _parser() -> argparse.ArgumentParser:
                       help="the agent runs the ACC method (default)")
     mode.add_argument("--direct", dest="mode", action="store_const", const="direct",
                       help="the agent gets the request as is, no ACC")
+    mode.add_argument("--engineer", dest="mode", action="store_const", const="engineer",
+                      help="start a lane engineer (requires --slug and --lane)")
+    started.add_argument("--slug", default=None, help="lane slug (required with --engineer)")
+    started.add_argument("--lane", default=None, help="lane name (required with --engineer)")
     started.add_argument("--agent", default="opencode", choices=sorted(launch.AGENTS))
     started.add_argument("--model")
     started.add_argument("--timeout", default="4h", help="kill the run after this (default 4h)")
@@ -147,9 +151,12 @@ def _runs(args) -> int:
     jobs = args.job_dir or launch.runs_dir()
     try:
         if args.command == "launch":
+            if args.mode == "engineer" and (not args.slug or not args.lane):
+                print("--engineer requires --slug and --lane", file=sys.stderr)
+                return 2
             run = launch.launch(args.brief, mode=args.mode or "crew", agent=args.agent, model=args.model,
                                 timeout=args.timeout, job_dir=jobs, job_id=args.id, title=args.title,
-                                where=args.where)
+                                where=args.where, slug=args.slug, lane=args.lane)
             print(json.dumps(run, indent=2) if args.json else
                   f"run {run['id']} started ({run['mode']}, {run['where']}): {run['title']}\n"
                   f"follow: ACC runs {run['id']}" + (f" --job-dir {args.job_dir}" if args.job_dir else ""))
