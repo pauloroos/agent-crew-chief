@@ -80,6 +80,23 @@ def orca_call(args: list[str]) -> dict | None:
     return reply.get("result") if isinstance(reply, dict) and reply.get("ok") else None
 
 
+def _git_usr_bin() -> str | None:
+    """Git's ``usr/bin``: where ``cat``, ``tee`` and ``timeout`` live on Windows.
+
+    An Orca terminal inherits a PATH without them, and the run script dies on
+    its first ``cat``.
+    """
+    if sys.platform != "win32":
+        return None
+    tools = ("cat", "tee", "timeout")
+    for tool in ("bash", *tools):
+        found = shutil.which(tool)
+        folder = Path(found).parent if found else None
+        if folder and all((folder / f"{name}.exe").is_file() for name in tools):
+            return folder.as_posix()
+    return None
+
+
 def _bash() -> str | None:
     """bash for the run script; on Windows Git's own, since ``bash`` there is often WSL's."""
     if sys.platform == "win32" and shutil.which("git"):
@@ -113,9 +130,12 @@ def _script(job: Path, cwd: Path, run_id: str, agent: str, model: str | None, ti
     env.update({k: os.environ[k] for k in PASS_ENV if os.environ.get(k)})
     cmd = " ".join(map(shlex.quote, AGENTS[agent](model)))
     j = lambda ext: q(job.parent / f"{run_id}.{ext}")  # noqa: E731
+    usr_bin = _git_usr_bin()
     return "\n".join([
         "#!/bin/bash",
         f"# ACC launch {run_id}: written by agent-crew-chief",
+        # an Orca terminal inherits a PATH without Git's tools: cat, tee and timeout would be missing
+        *( [f"export PATH={shlex.quote(usr_bin + ':$PATH')}"] if usr_bin else [] ),
         f"cd {q(cwd)} || exit 1",
         *(f"export {k}={shlex.quote(v)}" for k, v in env.items()),
         f"echo $$ > {j('pid')}",
