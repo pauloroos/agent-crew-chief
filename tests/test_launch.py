@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +45,35 @@ def _go(tmp_path, orca, spawned, **kw):
                 job_id=None, title=None, where="auto", cwd=tmp_path, call=orca, spawn=spawned.append, now=NOW)
     opts.update(kw)
     return launch.launch(_brief(tmp_path), **opts)
+
+
+def _repo_with_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """A repo and one linked worktree of it (what a lane worktree is)."""
+    if not shutil.which("git"):
+        pytest.skip("git is not on PATH")
+    repo, worktree = tmp_path / "repo", tmp_path / "lane"
+    repo.mkdir()
+    git = ["git", "-C", str(repo)]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+    subprocess.run(git + ["-c", "user.email=t@example.com", "-c", "user.name=Test",
+                          "commit", "-q", "--allow-empty", "-m", "init"], check=True, capture_output=True)
+    subprocess.run(git + ["worktree", "add", "-q", str(worktree)], check=True, capture_output=True)
+    return repo, worktree
+
+
+def test_only_the_main_repo_is_added_to_orca(tmp_path):
+    """A lane worktree is a child of the repo Orca knows: adding it would duplicate the project."""
+    repo, worktree = _repo_with_worktree(tmp_path)
+    main = FakeOrca()
+    _go(tmp_path, main, [], job_id="w1", cwd=repo)
+    assert [c for c in main.calls if c[:2] == ["repo", "add"]] == [["repo", "add", "--path", repo.as_posix()]]
+    lane = FakeOrca()
+    run = _go(tmp_path, lane, [], job_id="w2", cwd=worktree)
+    assert run["where"] == "orca"
+    assert not [c for c in lane.calls if c[:2] == ["repo", "add"]]
+    create = lane.calls[-1]
+    assert create[:2] == ["terminal", "create"]
+    assert create[create.index("--worktree") + 1] == f"path:{worktree.as_posix()}"
 
 
 def test_orca_running_opens_a_titled_terminal_running_the_script(tmp_path):

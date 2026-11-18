@@ -93,7 +93,8 @@ def _git_usr_bin() -> str | None:
         found = shutil.which(tool)
         folder = Path(found).parent if found else None
         if folder and all((folder / f"{name}.exe").is_file() for name in tools):
-            return folder.as_posix()
+            # the MSYS form: a PATH entry with a space needs the quotes of the export below
+            return "/" + folder.drive[0].lower() + folder.as_posix()[2:]
     return None
 
 
@@ -135,7 +136,8 @@ def _script(job: Path, cwd: Path, run_id: str, agent: str, model: str | None, ti
         "#!/bin/bash",
         f"# ACC launch {run_id}: written by agent-crew-chief",
         # an Orca terminal inherits a PATH without Git's tools: cat, tee and timeout would be missing
-        *( [f"export PATH={shlex.quote(usr_bin + ':$PATH')}"] if usr_bin else [] ),
+        # (double quotes: the entry has a space and $PATH must still expand)
+        *( [f'export PATH="{usr_bin}:$PATH"'] if usr_bin else [] ),
         f"cd {q(cwd)} || exit 1",
         *(f"export {k}={shlex.quote(v)}" for k, v in env.items()),
         f"echo $$ > {j('pid')}",
@@ -144,6 +146,22 @@ def _script(job: Path, cwd: Path, run_id: str, agent: str, model: str | None, ti
         f"echo ${{PIPESTATUS[0]}} > {j('rc')}",
         "",
     ])
+
+
+def _is_linked_worktree(cwd: Path) -> bool:
+    """True when the checkout is a linked worktree: its git dir lives in the main repo's ``.git``.
+
+    Such a worktree is already a child of the repo Orca knows; adding it as a
+    project of its own would duplicate it in Orca.
+    """
+    def git_dir(*args: str) -> str:
+        out = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--path-format=absolute", *args],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        return os.path.normcase(os.path.normpath(out))
+    try:
+        return git_dir("--git-dir") != git_dir("--git-common-dir")
+    except (OSError, subprocess.CalledProcessError):
+        return False
 
 
 def launch(brief: Path, *, mode: str = "crew", agent: str = "opencode", model: str | None = None,
@@ -185,7 +203,9 @@ def launch(brief: Path, *, mode: str = "crew", agent: str = "opencode", model: s
             "title": title, "start": started.isoformat(), "where": "background"}
 
     if ready:
-        call(["repo", "add", "--path", cwd.as_posix()])  # already added answers an error: fine
+        # a linked worktree is a child of the repo Orca knows: adding it would duplicate the project
+        if not _is_linked_worktree(cwd):
+            call(["repo", "add", "--path", cwd.as_posix()])  # already added answers an error: fine
         opened = call(["terminal", "create", "--worktree", f"path:{cwd.as_posix()}", "--title", title,
                        "--command", terminal_command(script)])
         if opened is not None:
