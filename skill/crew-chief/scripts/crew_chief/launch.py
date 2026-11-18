@@ -28,7 +28,7 @@ AGENTS = {
     "codex": lambda m: ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", *(["-m", m] if m else [])],
 }
 # an Orca terminal does not inherit the launcher's environment: these go into the script
-PASS_ENV = ("CREW_CHIEF_CARD", "CREW_CHIEF_SPEC_SHA256", "CREW_CHIEF_MACHINE", "CREW_CHIEF_HOME")
+PASS_ENV = ("CREW_CHIEF_CARD", "CREW_CHIEF_SPEC_SHA256", "CREW_CHIEF_MACHINE", "CREW_CHIEF_HOME", "CREW_CHIEF_MAX_COST")
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 TIMEOUT = re.compile(r"\d+[smhd]?")
 # A launched crew chief is a one-shot command (`opencode run`, `claude -p`): ending its turn ends the run, and lanes
@@ -185,6 +185,8 @@ def launch(brief: Path, *, mode: str = "crew", agent: str = "opencode", model: s
         # shortcut: o engenheiro roda em modo direto; o título segue o padrão da lane
         title = title or terminals.terminal_name(slug, lane, None, "engineer")
         mode = "direct"
+    if model and model.startswith(f"{agent}:"):  # ACC pick names "opencode:omni/x"; the agent wants "omni/x"
+        model = model[len(agent) + 1:]
     if mode not in MODES or agent not in AGENTS or where not in WHERE:
         raise LaunchError(f"mode {MODES}, agent {tuple(AGENTS)}, where {WHERE}")
     call, spawn = call or orca_call, spawn or spawn_background  # looked up now: tests replace them

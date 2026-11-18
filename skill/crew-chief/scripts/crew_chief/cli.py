@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -304,6 +305,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "pick":
+        # the launcher's ceiling reaches every engineer and driver it starts (launch.PASS_ENV)
+        env_cost = os.environ.get("CREW_CHIEF_MAX_COST", "").strip()
+        if args.max_cost is None and env_cost:
+            if env_cost not in ledger.COSTS:
+                print(f"CREW_CHIEF_MAX_COST must be one of {', '.join(ledger.COSTS)}: {env_cost!r}", file=sys.stderr)
+                return 2
+            args.max_cost = env_cost
         rows = score.table(ledger.read(), args.kind)
         if declared:
             candidates = []

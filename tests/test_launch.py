@@ -295,3 +295,15 @@ def test_cli_engineer_without_slug_or_lane_is_an_error(tmp_path, capsys):
     assert main(["launch", "--engineer", "--brief", str(brief), "--job-dir", str(tmp_path / "j")]) == 2
     err = capsys.readouterr().err
     assert "--slug" in err and "--lane" in err
+
+
+def test_model_with_the_agent_prefix_from_pick(tmp_path):
+    _go(tmp_path, FakeOrca(), [], job_id="j9", model="opencode:omni/agir")
+    script = (tmp_path / "jobs" / "j9.run.sh").read_text(encoding="utf-8")
+    assert "-m omni/agir" in script and "opencode:omni/agir" not in script.replace("CREW_CHIEF_COORDINATOR=opencode:omni/agir", "")
+
+
+def test_max_cost_reaches_the_terminal(tmp_path, monkeypatch):
+    monkeypatch.setenv("CREW_CHIEF_MAX_COST", "included")
+    _go(tmp_path, FakeOrca(), [], job_id="j10")
+    assert "export CREW_CHIEF_MAX_COST=included" in (tmp_path / "jobs" / "j10.run.sh").read_text(encoding="utf-8")

@@ -73,7 +73,7 @@ Run `ACC models` first. If it lists models, pick only among them (`ACC pick`). `
 --kind <kind>` names the cheapest model that scored well at least twice, then the scoreboard.
 "Not proven yet" means little data: use it, or try an unscored model; the score you record
 settles it. Prefer free models for plain work, stronger ones for risky jobs, `--max-cost` from
-the pace or the user. Use `--exclude <agent:model>` (repeatable) to drop failed workers or
+the pace or the user (`$CREW_CHIEF_MAX_COST`, when set, is the default ceiling). Use `--exclude <agent:model>` (repeatable) to drop failed workers or
 the first scrutineer.
 
 ## 3. Dispatch a race engineer per lane
