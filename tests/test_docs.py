@@ -66,6 +66,17 @@ def test_readmes_and_tutorials_pin_the_current_release():
         assert f"v{__version__}" in _read(path), path.name
 
 
+def test_the_engineer_of_a_launched_round_starts_its_drivers_with_acc_launch():
+    """A one-shot engineer must not leave its drivers as Orca workers: they never get the brief."""
+    template = _read(SKILL_MD.parent / "templates" / "race-engineer.md")
+    for phrase in ("ACC launch --direct", "--title", "ACC runs <id>", "lane worktree",
+                   "end your turn", "lane report", "Ask anything"):
+        assert phrase in template, phrase
+    wall = _read(SKILL_MD.parent / "pit-wall.md")
+    for phrase in ("ACC launch --direct", "ACC runs <id>", "ends the lane"):
+        assert phrase in wall, phrase
+
+
 def test_readmes_name_every_subcommand():
     commands = _parser()._subparsers._group_actions[0].choices
     for path in (README, README_PT):

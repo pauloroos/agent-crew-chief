@@ -141,6 +141,17 @@ it has no `<job>`: `acc-<slug>-<lane>-engineer[-<n>]`. The Orca tab title and
 the log file name are the same. Scrutineers running in parallel use `-1` and `-2`
 (or higher attempt numbers) to stay unique.
 
+### Launched round
+
+An engineer started by `ACC launch --engineer` is a one-shot command (`opencode
+run`): ending its turn ends the lane. It starts each driver and scrutineer with
+`ACC launch --direct --title <standard name> --brief <job spec>` from inside the
+lane worktree, and waits for it with `ACC runs <id>` in short checks (the state
+`finished` or `failed` ends the wait). Do not start an OpenCode worker of Orca
+for a driver there: it stays at "Ask anything" without receiving the brief
+(lab, 17/11). The engineer sends the lane report as its last message; the crew
+chief reads the tail of the run log.
+
 ### Orca mode
 
 The race engineer always starts as an Orca worker in the existing lane

@@ -26,6 +26,12 @@ which keeps their full history, releases and changelog.
   it tells the crew chief to start each lane engineer with `ACC launch --engineer` and to
   wait with `ACC runs <id>` in short checks. It still does not end its turn before the
   pull request is open and `ACC summary` is written.
+- **The engineer of a launched round starts its drivers with `ACC launch --direct`.** The
+  race engineer brief and the Pit Wall say it: a driver of a launched lane is a run of its
+  own (`ACC launch --direct --title <standard name>` from inside the lane worktree, waited
+  with `ACC runs <id>`), not an Orca worker — an OpenCode worker stays at "Ask anything"
+  without receiving the brief — and the engineer does not end its turn before the lane
+  report.
 
 ### Fixed
 - **The run script finds `cat`, `tee` and `timeout` in an Orca terminal on Windows.** The

@@ -30,10 +30,20 @@ to drop failed workers or the first scrutineer.
 
 ## Starting drivers
 
-Use the two modes in `pit-wall.md` ("Starting and watching drivers"): **Orca
-mode** starts you and each driver and scrutineer as an Orca worker or terminal,
-**background mode** as a process with log and PID. You run in the lane worktree
-on the lane branch — as an Orca worker or a background process — named
+**Were you started by `ACC launch`?** (a one-shot run, e.g. `opencode run`) Start
+every driver and scrutineer with `ACC launch --direct --title <standard name>
+--brief <job spec>` from inside the lane worktree, and wait for it with
+`ACC runs <id>` in short checks (the state `finished` or `failed` ends the wait).
+**Never end your turn before the lane report: your turn ending ends the lane.**
+Do not start an OpenCode worker of Orca for a driver here: it stays at
+"Ask anything" without receiving the brief (lab, 17/11).
+
+**Started any other way?** Use the two modes in `pit-wall.md` ("Starting and
+watching drivers"): **Orca mode** starts you and each driver and scrutineer as
+an Orca worker or terminal, **background mode** as a process with log and PID.
+You run in the lane worktree
+on the lane branch — as an Orca worker, a background process or an `ACC launch`
+run — named
 `acc-<slug>-<lane>-engineer[-<n>]`. Name each driver and scrutineer by the standard
 name `acc-<slug>-<lane>-<job>-<role>` for the first attempt and
 `acc-<slug>-<lane>-<job>-<role>-<n>` for the n-th; build it with
@@ -64,7 +74,9 @@ alarms against them.
 
 ## Lane report
 
-When every job is done, send one short report to the crew chief:
+When every job is done, send one short report to the crew chief — as your last
+message, since a launched engineer's turn ends with it (the crew chief reads
+the tail of your run log):
 
 - Per job: models used, attempts, outcome, worker score, scrutineer file paths
   (if any), open issues.
