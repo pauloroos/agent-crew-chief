@@ -150,6 +150,11 @@ title afterwards. The rename `<handle>` comes from the `worker-start`
 receipt, `worker-show`, or `orca terminal list --worktree <lane worktree>
 --json`.
 
+In a launched round, the engineer starts instead with `ACC launch --engineer --slug <slug>
+--lane <lane> --brief <file>`: one Orca tab per lane, standard title
+`acc-<slug>-<lane>-engineer`, direct mode; without Orca it falls back to background mode.
+The crew chief waits for it with `ACC runs <id>`.
+
 ```text
 orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --json
 orca terminal rename --terminal <handle> --title acc-<slug>-<lane>-engineer --json
