@@ -331,11 +331,7 @@ def _run_script(tmp_path, ledger_home, agent, deliver_at, mode="crew"):
     (fake / agent).write_text(FAKE_AGENT, encoding="utf-8", newline="\n")
     (fake / agent).chmod(0o755)
     if os.name != "nt" and not shutil.which("timeout"):  # macOS without coreutils: the script needs one
-        (fake / "timeout").write_text('#!/bin/bash
-shift
-exec "$@"
-', encoding="utf-8", newline="
-")
+        (fake / "timeout").write_text('#!/bin/bash\nshift\nexec "$@"\n', encoding="utf-8", newline="\n")
         (fake / "timeout").chmod(0o755)
     _go(tmp_path, FakeOrca(), [], job_id="r1", agent=agent, mode=mode)
     env = {**os.environ, "PATH": str(fake) + os.pathsep + os.environ["PATH"], "FAKE_COUNT": str(tmp_path / "n"),
