@@ -294,7 +294,8 @@ por um processo morto e é quebrada.
 `ACC launch` começa uma rodada a partir de um arquivo de pedido e te deixa livre: o agente
 trabalha num terminal do [Orca](https://github.com/stablyai/orca) que você acompanha no
 computador ou no celular quando o Orca roda naquela máquina, e em segundo plano quando não.
-Nos dois casos a pasta do job (`~/.crew-chief/runs`, ou `--job-dir`) ganha `<id>.prompt.md`,
+Nos dois casos a pasta do job (`--job-dir`, senão `$CREW_CHIEF_JOB_DIR`, senão
+`~/.crew-chief/runs`; `ACC runs` e `ACC compare` leem o mesmo padrão) ganha `<id>.prompt.md`,
 `.run.sh`, `.meta.json`, `.pid`, `.log` e `.rc`.
 
 ```bash
@@ -309,7 +310,14 @@ ACC compare --since 2026-11-01                  # crew x direct: terminadas, ok,
 
 `ACC launch --engineer` inicia o engenheiro da lane em modo direto com o título padrão
 `acc-<slug>-<lane>-engineer`: aba do Orca quando o Orca roda, senão em segundo plano; uma
-rodada lançada inicia cada lane assim e espera com `ACC runs <id>`.
+rodada lançada inicia cada lane assim e espera com `ACC runs <id>`. Sem `--model` o
+engenheiro usa o `ACC pick --kind coordinate` entre os modelos do `--agent` dele.
+
+Um chefe de equipe lançado que encerra o turno com rc 0 antes de o `ACC summary` gravar a
+linha do job (disse "vou esperar" e parou) é retomado na própria sessão com uma mensagem para
+esperar os engenheiros, abrir o pull request e rodar o `ACC summary`: até 3 vezes (`opencode
+run --session`, `claude --resume`). Se ainda assim nada, a rodada termina com rc 5 e o log diz
+`coordenador encerrou sem entrega 3x`. O Codex não é retomado, só recebe rc 5.
 
 `--agent` é `opencode` (padrão), `claude` ou `codex`. Um lançador (agendador, ponte de bots)
 passa `--id` e `--job-dir` para os arquivos ficarem onde ele lê; `CREW_CHIEF_CARD`,
@@ -398,12 +406,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.17.2 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.17.3 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.17.2.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.2),
+Sem git? Baixe `agent-crew-chief-v0.17.3.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.3),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -428,7 +436,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.17.2
+git -C agent-crew-chief checkout v0.17.3
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 

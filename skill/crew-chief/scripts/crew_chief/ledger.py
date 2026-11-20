@@ -36,6 +36,14 @@ def redact(text: str) -> str:
     return _SECRET.sub("[redacted]", text)
 
 
+def clean_model(agent, model):
+    """``model`` without a repeated ``<agent>:`` prefix: ``ACC pick`` names ``opencode:omni/x``, and that name
+    pasted as ``--model`` left ``opencode:opencode:omni/x`` on the scoreboard (audit 20/11)."""
+    while agent and isinstance(model, str) and model.startswith(f"{agent}:"):
+        model = model[len(agent) + 1:]
+    return model
+
+
 def machine() -> str:
     """This machine's name in the ledger: ``$CREW_CHIEF_MACHINE``, else the host name."""
     name = os.environ.get("CREW_CHIEF_MACHINE") or platform.node() or "unknown"

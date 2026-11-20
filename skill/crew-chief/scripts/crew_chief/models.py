@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tomllib
 from pathlib import Path
@@ -21,16 +22,31 @@ def global_path() -> Path:
     return ledger.ledger_path().parent / "models.toml"
 
 
-def repo_root() -> Path | None:
+def repo_root(cwd: Path | None = None) -> Path | None:
     """The main repository root, the same from any worktree; None outside git."""
     try:
         common = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            ["git", *(["-C", str(cwd)] if cwd else []), "rev-parse", "--path-format=absolute", "--git-common-dir"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None
     return Path(common).parent
+
+
+def repo_name(cwd: Path | None = None) -> str:
+    """The repository's name: its origin's, so a copy in ``<repo>.jobs/<id>`` is still ``<repo>``; else the main
+    checkout's folder; else ``cwd``'s folder."""
+    try:
+        url = subprocess.run(["git", *(["-C", str(cwd)] if cwd else []), "remote", "get-url", "origin"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        url = ""
+    name = re.split(r"[/:\\]", url.rstrip("/"))[-1].removesuffix(".git") if url else ""
+    if name:
+        return name
+    root = repo_root(cwd)
+    return root.name if root is not None else (cwd or Path.cwd()).name
 
 
 def project_path() -> Path | None:

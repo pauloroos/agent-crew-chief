@@ -164,7 +164,8 @@ receipt, `worker-show`, or `orca terminal list --worktree <lane worktree>
 In a launched round, the engineer starts instead with `ACC launch --engineer --slug <slug>
 --lane <lane> --brief <file>`: one Orca tab per lane, standard title
 `acc-<slug>-<lane>-engineer`, direct mode; without Orca it falls back to background mode.
-The crew chief waits for it with `ACC runs <id>`.
+Without `--model` it takes `ACC pick --kind coordinate` among its agent's models. The crew chief
+waits for it with `ACC runs <id>`.
 
 ```text
 orca orchestration worker-start --spec "<engineer brief>" --worktree branch:<lane branch> --agent <agent> --model <model> [--effort <level>] --json

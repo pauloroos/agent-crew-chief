@@ -224,3 +224,16 @@ def test_coordinate_is_a_kind(capsys):
                  "--outcome", "pass", "--score", "80", "--project", "p"]) == 0
     assert main(["pick", "--kind", "coordinate"]) == 0
     assert "claude:m" in capsys.readouterr().out
+
+
+def test_record_drops_a_repeated_agent_prefix(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert main(["record", "--kind", "code", "--agent", "opencode", "--model", "opencode:opencode:opencode-go/x",
+                 "--outcome", "pass", "--score", "80"]) == 0
+    assert ledger.read()[-1]["model"] == "opencode-go/x"
+    assert "recorded opencode:opencode-go/x" in capsys.readouterr().out
+
+
+def test_scores_read_an_old_prefixed_model_as_the_clean_one():
+    rows = score.table([_entry("opencode:x", 90), _entry("x", 70)], now=NOW)
+    assert [(r["executor"], r["n"]) for r in rows] == [("opencode:x", 2)]

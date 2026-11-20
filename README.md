@@ -284,7 +284,8 @@ than 5 minutes is taken as left by a killed process and broken.
 `ACC launch` starts a run on a request file and leaves you free: the agent works in an
 [Orca](https://github.com/stablyai/orca) terminal you can watch from the desktop or the phone
 when Orca runs on that machine, else in the background. Either way the job folder
-(`~/.crew-chief/runs`, or `--job-dir`) gets `<id>.prompt.md`, `.run.sh`, `.meta.json`, `.pid`,
+(`--job-dir`, else `$CREW_CHIEF_JOB_DIR`, else `~/.crew-chief/runs`; `ACC runs` and
+`ACC compare` read the same default) gets `<id>.prompt.md`, `.run.sh`, `.meta.json`, `.pid`,
 `.log` and `.rc`.
 
 ```bash
@@ -299,7 +300,14 @@ ACC compare --since 2026-11-01                  # crew vs direct: finished, ok, 
 
 `ACC launch --engineer` starts a lane engineer in direct mode with the standard title
 `acc-<slug>-<lane>-engineer`: an Orca tab when Orca runs, background otherwise; a launched
-crew chief starts each lane this way and waits with `ACC runs <id>`.
+crew chief starts each lane this way and waits with `ACC runs <id>`. Without `--model` the
+engineer takes `ACC pick --kind coordinate` among the models of its `--agent`.
+
+A launched crew chief that ends its turn with rc 0 before `ACC summary` wrote its job line
+(it said "I will wait" and stopped) is resumed in its own session with a message to wait for
+the engineers, open the pull request and run `ACC summary`: up to 3 times (`opencode run
+--session`, `claude --resume`). Still nothing: the run ends with rc 5 and the log says
+`coordenador encerrou sem entrega 3x`. Codex is not resumed, only gets rc 5.
 
 `--agent` is `opencode` (default), `claude` or `codex`. A launcher (a scheduler, a bot bridge)
 passes `--id` and `--job-dir` to keep the files where it reads them; `CREW_CHIEF_CARD`,
@@ -388,12 +396,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.17.2 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.17.3 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.17.2.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.2),
+No git? Download `agent-crew-chief-v0.17.3.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.3),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -418,7 +426,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.17.2
+git -C agent-crew-chief checkout v0.17.3
 python agent-crew-chief/install.py /path/to/project
 ```
 
