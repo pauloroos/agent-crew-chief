@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timezone
 
-from .ledger import COSTS
+from .ledger import COSTS, clean_model
 
 #: A grade counts half after this many days, so a model that changed upstream recovers.
 HALF_LIFE_DAYS = 30
@@ -44,6 +44,7 @@ def table(
             continue
         if not isinstance(entry.get("score"), (int, float)):
             continue
+        entry = {**entry, "model": clean_model(entry.get("agent"), entry.get("model"))}
         groups.setdefault((str(entry.get("kind")), executor(entry)), []).append(entry)
 
     rows = []

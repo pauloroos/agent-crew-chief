@@ -15,10 +15,11 @@ import shutil
 import statistics
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import ledger, terminals
+from . import ledger, models, terminals
 
 MODES = ("crew", "direct")
 WHERE = ("auto", "orca", "background")
@@ -28,7 +29,23 @@ AGENTS = {
     "codex": lambda m: ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", *(["-m", m] if m else [])],
 }
 # an Orca terminal does not inherit the launcher's environment: these go into the script
-PASS_ENV = ("CREW_CHIEF_CARD", "CREW_CHIEF_SPEC_SHA256", "CREW_CHIEF_MACHINE", "CREW_CHIEF_HOME", "CREW_CHIEF_MAX_COST")
+PASS_ENV = ("CREW_CHIEF_CARD", "CREW_CHIEF_SPEC_SHA256", "CREW_CHIEF_MACHINE", "CREW_CHIEF_HOME", "CREW_CHIEF_MAX_COST",
+            "CREW_CHIEF_JOB_DIR")
+# A crew chief that ends its turn before the delivery is resumed in its own session (audit 20/11: 8 of 21 runs
+# ended rc 0 saying "I will wait"). Each agent: (first run, resume) flags for the run id; codex has no session id
+# known in advance, so it is not resumed and only fails.
+SESSION = {
+    "opencode": lambda rid: (["--session", f"ses_acc-{rid}"],) * 2,  # OpenCode 2.x creates it when missing
+    "claude": lambda rid: (["--session-id", str(uuid.uuid5(uuid.NAMESPACE_URL, f"acc:{rid}"))],
+                           ["--resume", str(uuid.uuid5(uuid.NAMESPACE_URL, f"acc:{rid}"))]),
+}
+RESUMES = 3
+NO_DELIVERY_RC = 5
+RESUME_PROMPT = (
+    "You ended your turn before the delivery, and that ends the run. Go on: wait for the lane engineers with "
+    "`ACC runs <id>`, review their work, open the pull request and run `ACC summary`. If it cannot be delivered, "
+    "run `ACC summary --rc 1` and say why."
+)
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 TIMEOUT = re.compile(r"\d+[smhd]?")
 # A launched crew chief is a one-shot command (`opencode run`, `claude -p`): ending its turn ends the run, and lanes
@@ -38,7 +55,8 @@ CREW_PROMPT = (
     "ACC. You run as a one-shot command: ending your turn ends the run. "
     "For each lane, start its engineer with "
     "`ACC launch --engineer --slug <slug> --lane <lane> --brief <race-engineer brief> "
-    "[--job-dir <dir>] [--id <id>]` from inside the lane worktree, then wait on it "
+    "[--job-dir <dir>] [--id <id>]` from inside the lane worktree (without --model it takes "
+    "`ACC pick --kind coordinate`), then wait on it "
     "with `ACC runs <id>` in short checks until the state is finished or failed. "
     "Do not end your turn before the pull request is open and ACC summary is written. "
     "Nobody watches to approve: follow the spec rules for a launcher run. "
@@ -51,16 +69,13 @@ class LaunchError(Exception):
 
 
 def runs_dir() -> Path:
-    return ledger.ledger_path().parent / "runs"
+    """``$CREW_CHIEF_JOB_DIR``, else ``runs`` next to the ledger."""
+    folder = os.environ.get("CREW_CHIEF_JOB_DIR")
+    return Path(folder) if folder else ledger.ledger_path().parent / "runs"
 
 
 def _repo_name(cwd: Path) -> str:
-    try:
-        common = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                                capture_output=True, text=True, check=True).stdout.strip()
-        return Path(common).parent.name
-    except (OSError, subprocess.CalledProcessError):
-        return cwd.name
+    return models.repo_name(cwd)
 
 
 def _orca_command() -> list[str] | None:
@@ -132,11 +147,40 @@ def spawn_background(script: Path) -> None:
                      stderr=subprocess.DEVNULL, **extra)
 
 
-def _script(job: Path, cwd: Path, run_id: str, agent: str, model: str | None, timeout: str) -> str:
+def _resume_lines(run_id: str, agent: str, model: str | None, timeout: str, log: str) -> list[str]:
+    """After the first run: resume a crew chief that ended rc 0 with no summary of its id, at most RESUMES times;
+    still none, rc NO_DELIVERY_RC."""
+    jobs = shlex.quote((ledger.ledger_path().parent / "jobs").as_posix())
+    # the line ACC summary writes (jobs.write): json.dumps puts the id first
+    delivered = f"grep -qsF -- {shlex.quote(json.dumps({'id': run_id})[:-1] + ',')} {jobs}/*/*.jsonl"
+    flags = SESSION.get(agent)
+    lines = ["rc=${PIPESTATUS[0]}"]
+    if flags:
+        resume = " ".join(map(shlex.quote, [*AGENTS[agent](model), *flags(run_id)[1]]))
+        lines += [
+            f"for n in $(seq 1 {RESUMES}); do",
+            f'  [ "$rc" = 0 ] && ! {delivered} || break',
+            f'  echo "ACC: coordenador encerrou sem entrega; retomada $n de {RESUMES}" | tee -a {log}',
+            # shortcut: each resume gets the whole --timeout again; a deadline if runs ever go past it
+            f"  timeout {timeout} {resume} {shlex.quote(RESUME_PROMPT)} < /dev/null 2>&1 | tee -a {log}",
+            "  rc=${PIPESTATUS[0]}",
+            "done",
+        ]
+    times = f"{RESUMES}x" if flags else f"({agent} sem retomada)"
+    lines += [f'if [ "$rc" = 0 ] && ! {delivered}; then',
+              f'  echo "ACC: coordenador encerrou sem entrega {times}: rc {NO_DELIVERY_RC}" | tee -a {log}',
+              f"  rc={NO_DELIVERY_RC}", "fi"]
+    return lines
+
+
+def _script(job: Path, cwd: Path, run_id: str, agent: str, model: str | None, timeout: str,
+            mode: str = "direct") -> str:
     q = lambda p: shlex.quote(p.as_posix() if isinstance(p, Path) else p)  # noqa: E731
     env = {"CREW_CHIEF_JOB_ID": run_id, "CREW_CHIEF_COORDINATOR": f"{agent}:{model or 'default'}"}
     env.update({k: os.environ[k] for k in PASS_ENV if os.environ.get(k)})
-    cmd = " ".join(map(shlex.quote, AGENTS[agent](model)))
+    crew = mode == "crew"
+    first = SESSION[agent](run_id)[0] if crew and agent in SESSION else []
+    cmd = " ".join(map(shlex.quote, [*AGENTS[agent](model), *first]))
     j = lambda ext: q(job.parent / f"{run_id}.{ext}")  # noqa: E731
     usr_bin = _git_usr_bin()
     return "\n".join([
@@ -150,7 +194,8 @@ def _script(job: Path, cwd: Path, run_id: str, agent: str, model: str | None, ti
         f"echo $$ > {j('pid')}",
         # the request is read from its file, never pasted into the command line
         f'timeout {timeout} {cmd} "$(cat {j("prompt.md")})" < /dev/null 2>&1 | tee {j("log")}',
-        f"echo ${{PIPESTATUS[0]}} > {j('rc')}",
+        *(_resume_lines(run_id, agent, model, timeout, j("log")) if crew else ["rc=${PIPESTATUS[0]}"]),
+        f"echo $rc > {j('rc')}",
         "",
     ])
 
@@ -185,8 +230,7 @@ def launch(brief: Path, *, mode: str = "crew", agent: str = "opencode", model: s
         # shortcut: o engenheiro roda em modo direto; o título segue o padrão da lane
         title = title or terminals.terminal_name(slug, lane, None, "engineer")
         mode = "direct"
-    if model and model.startswith(f"{agent}:"):  # ACC pick names "opencode:omni/x"; the agent wants "omni/x"
-        model = model[len(agent) + 1:]
+    model = ledger.clean_model(agent, model)  # ACC pick names "opencode:omni/x"; the agent wants "omni/x"
     if mode not in MODES or agent not in AGENTS or where not in WHERE:
         raise LaunchError(f"mode {MODES}, agent {tuple(AGENTS)}, where {WHERE}")
     call, spawn = call or orca_call, spawn or spawn_background  # looked up now: tests replace them
@@ -216,7 +260,7 @@ def launch(brief: Path, *, mode: str = "crew", agent: str = "opencode", model: s
     repo = _repo_name(cwd)
     script = jobs / f"{run_id}.run.sh"
     (jobs / f"{run_id}.prompt.md").write_text((CREW_PROMPT if mode == "crew" else "") + text, encoding="utf-8")
-    script.write_text(_script(script, cwd, run_id, agent, model, timeout), encoding="utf-8", newline="\n")
+    script.write_text(_script(script, cwd, run_id, agent, model, timeout, mode), encoding="utf-8", newline="\n")
     title = title or f"{'acc' if mode == 'crew' else 'direct'} {repo} {run_id}"
     meta = {"id": run_id, "mode": mode, "agent": agent, "model": model, "repo": repo, "cwd": cwd.as_posix(),
             "title": title, "start": started.isoformat(), "where": "background"}

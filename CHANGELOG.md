@@ -8,6 +8,28 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.3] - 2026-11-20
+
+### Fixed
+- **A launched crew chief that stops before the delivery is resumed.** When it ends its turn
+  with rc 0 and no `ACC summary` line carries its job id (audit 20/11: 8 of 21 runs said
+  "I will wait" and stopped), the run script resumes it in its own session (`opencode run
+  --session ses_acc-<id>`, `claude --session-id`/`--resume`) with a message to wait for the
+  engineers, open the pull request and run `ACC summary`; up to 3 times. Still nothing: rc 5
+  and the log line `coordenador encerrou sem entrega 3x`. Codex is not resumed, only gets rc 5.
+- **`ACC launch --engineer` without `--model` takes `ACC pick --kind coordinate`** among the
+  models of its `--agent` (and `$CREW_CHIEF_MAX_COST`). Before, the engineer ran on the agent's
+  default, which an OpenCode with no default model lacks (4 of 18 engineers failed).
+- **The repository's name comes from `origin`.** A job copy in `<repo>.jobs/<id>` was named
+  after the id in `ACC launch` (`repo`, the title) and in `ACC record`/`ACC summary`
+  (`project`); now the origin's name, else the folder's, as before.
+- **`ACC record` drops a repeated agent prefix** (`--model opencode:opencode:x` with `--agent
+  opencode` records `x`), and the scoreboard reads old lines like that as the clean name.
+
+### Added
+- **`CREW_CHIEF_JOB_DIR`**: the default job folder of `ACC launch`, `ACC runs` and
+  `ACC compare` (else `~/.crew-chief/runs`); a launch passes it on to the run.
+
 ## [0.17.2] - 2026-11-18
 
 ### Changed

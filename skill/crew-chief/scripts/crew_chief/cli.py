@@ -13,9 +13,8 @@ from . import __version__, jobs, launch, ledger, models, score, specs, sync
 
 
 def _project_name() -> str:
-    """The repository's name, the same from any of its worktrees."""
-    root = models.repo_root()
-    return root.name if root is not None else Path.cwd().name
+    """The repository's name, the same from any of its worktrees and job copies."""
+    return models.repo_name()
 
 
 def _logs_dir() -> Path:
@@ -147,6 +146,45 @@ def _is_excluded(entry: dict, excludes: list[str]) -> bool:
     return f"{entry.get('agent')}:{entry.get('model')}" in excludes
 
 
+def _max_cost(given: str | None) -> str | None:
+    """``--max-cost``, else ``$CREW_CHIEF_MAX_COST`` (the launcher's ceiling reaches every engineer and driver it
+    starts, launch.PASS_ENV); ValueError when that is not a cost."""
+    env_cost = os.environ.get("CREW_CHIEF_MAX_COST", "").strip()
+    if given is None and env_cost:
+        if env_cost not in ledger.COSTS:
+            raise ValueError(f"CREW_CHIEF_MAX_COST must be one of {', '.join(ledger.COSTS)}: {env_cost!r}")
+        return env_cost
+    return given
+
+
+def _pick_rows(kind: str, declared: list[dict], exclude: list[str]) -> list[dict]:
+    """The pick's candidates, best first: the declared models (graded or not), else the scoreboard."""
+    rows = score.table(ledger.read(), kind)
+    if declared:
+        candidates = []
+        for m in declared:
+            if m.get("kinds") is not None and kind not in m["kinds"]:
+                continue
+            matched = _match(rows, m)
+            candidates += [{**r, "cost": m["cost"]} for r in matched] or [_untried(kind, m)]
+        rows = sorted(candidates, key=lambda r: (
+            score._tier(r), -r["score"] if r["score"] is not None else float("inf"),
+            -r["n"], r["executor"]))
+    return [r for r in rows if not _is_excluded(r, exclude)]
+
+
+def _engineer_model(agent: str) -> str | None:
+    """``ACC pick --kind coordinate`` among the models of ``agent``: an engineer started without ``--model`` ran
+    on the agent's default, which the Orca's OpenCode does not have (audit 20/11: 4 of 18 failed)."""
+    try:
+        declared, _ = models.load()
+        best = score.suggest([r for r in _pick_rows("coordinate", declared, []) if r.get("agent") == agent],
+                             _max_cost(None))
+    except (models.ModelsError, ValueError):
+        return None
+    return best["model"] if best else None
+
+
 def _runs(args) -> int:
     """launch / runs / compare."""
     jobs = args.job_dir or launch.runs_dir()
@@ -155,6 +193,8 @@ def _runs(args) -> int:
             if args.mode == "engineer" and (not args.slug or not args.lane):
                 print("--engineer requires --slug and --lane", file=sys.stderr)
                 return 2
+            if args.mode == "engineer" and not args.model:
+                args.model = _engineer_model(args.agent)
             run = launch.launch(args.brief, mode=args.mode or "crew", agent=args.agent, model=args.model,
                                 timeout=args.timeout, job_dir=jobs, job_id=args.id, title=args.title,
                                 where=args.where, slug=args.slug, lane=args.lane)
@@ -214,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
             "project": args.project or _project_name(),
             "kind": args.kind,
             "agent": args.agent,
-            "model": args.model,
+            "model": ledger.clean_model(args.agent, args.model),
             "effort": args.effort,
             "cost": args.cost,
             "outcome": args.outcome,
@@ -305,25 +345,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "pick":
-        # the launcher's ceiling reaches every engineer and driver it starts (launch.PASS_ENV)
-        env_cost = os.environ.get("CREW_CHIEF_MAX_COST", "").strip()
-        if args.max_cost is None and env_cost:
-            if env_cost not in ledger.COSTS:
-                print(f"CREW_CHIEF_MAX_COST must be one of {', '.join(ledger.COSTS)}: {env_cost!r}", file=sys.stderr)
-                return 2
-            args.max_cost = env_cost
-        rows = score.table(ledger.read(), args.kind)
-        if declared:
-            candidates = []
-            for m in declared:
-                if m.get("kinds") is not None and args.kind not in m["kinds"]:
-                    continue
-                matched = _match(rows, m)
-                candidates += [{**r, "cost": m["cost"]} for r in matched] or [_untried(args.kind, m)]
-            rows = sorted(candidates, key=lambda r: (
-                score._tier(r), -r["score"] if r["score"] is not None else float("inf"),
-                -r["n"], r["executor"]))
-        rows = [r for r in rows if not _is_excluded(r, args.exclude)]
+        try:
+            args.max_cost = _max_cost(args.max_cost)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        rows = _pick_rows(args.kind, declared, args.exclude)
         best = score.suggest(rows, args.max_cost)
         if args.json:
             print(json.dumps({"pick": best, "rows": rows[:5]}, indent=2))

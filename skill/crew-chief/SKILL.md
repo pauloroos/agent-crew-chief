@@ -107,8 +107,8 @@ no `<job>`. Engineers run in parallel; without Orca, steps 3-4 become "Without O
 
 Launched round (`ACC launch --crew`): start each lane engineer with `ACC launch --engineer
 --slug <slug> --lane <lane> --brief <file>` (direct mode, standard title
-`acc-<slug>-<lane>-engineer`: Orca tab when Orca runs, background otherwise); wait with
-`ACC runs <id>`. Do not end your turn before the pull request and `ACC summary`.
+`acc-<slug>-<lane>-engineer`, no `--model`: `ACC pick --kind coordinate`); wait with `ACC runs
+<id>`. Do not end your turn before the PR and `ACC summary` (else resumed, then rc 5).
 
 ## 4. Monitor
 

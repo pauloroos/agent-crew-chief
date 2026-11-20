@@ -307,3 +307,110 @@ def test_max_cost_reaches_the_terminal(tmp_path, monkeypatch):
     monkeypatch.setenv("CREW_CHIEF_MAX_COST", "included")
     _go(tmp_path, FakeOrca(), [], job_id="j10")
     assert "export CREW_CHIEF_MAX_COST=included" in (tmp_path / "jobs" / "j10.run.sh").read_text(encoding="utf-8")
+
+
+# --- 0.17.3: a crew chief that ends its turn before the delivery is resumed in its own session ---
+
+FAKE_AGENT = """#!/bin/bash
+n=$(cat "$FAKE_COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$FAKE_COUNT"
+echo "call $n: $*" >> "$FAKE_CALLS"
+echo "I will wait for the next step."
+if [ "$n" -ge "$FAKE_DELIVER_AT" ]; then
+  mkdir -p "$FAKE_JOBS/m" && echo "{\\"id\\": \\"$CREW_CHIEF_JOB_ID\\", \\"maquina\\": \\"m\\"}" >> "$FAKE_JOBS/m/2026-11.jsonl"
+fi
+"""
+
+
+def _run_script(tmp_path, ledger_home, agent, deliver_at, mode="crew"):
+    """Run the real script with a fake agent on PATH; the calls it got, its rc and its log."""
+    bash = launch._bash()
+    if bash is None:
+        pytest.skip("bash is not on PATH")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / agent).write_text(FAKE_AGENT, encoding="utf-8", newline="\n")
+    (fake / agent).chmod(0o755)
+    if os.name != "nt" and not shutil.which("timeout"):  # macOS without coreutils: the script needs one
+        (fake / "timeout").write_text('#!/bin/bash\nshift\nexec "$@"\n', encoding="utf-8", newline="\n")
+        (fake / "timeout").chmod(0o755)
+    _go(tmp_path, FakeOrca(), [], job_id="r1", agent=agent, mode=mode)
+    env = {**os.environ, "PATH": str(fake) + os.pathsep + os.environ["PATH"], "FAKE_COUNT": str(tmp_path / "n"),
+           "FAKE_CALLS": str(tmp_path / "calls"), "FAKE_DELIVER_AT": str(deliver_at),
+           "FAKE_JOBS": str(ledger_home / "jobs")}
+    jobs = tmp_path / "jobs"
+    subprocess.run([bash, (jobs / "r1.run.sh").as_posix()], env=env, capture_output=True, timeout=120)
+    calls = [c for c in (tmp_path / "calls").read_text(encoding="utf-8").splitlines() if c.startswith("call ")]
+    return calls, int((jobs / "r1.rc").read_text().strip()), (jobs / "r1.log").read_text(encoding="utf-8")
+
+
+def test_crew_chief_that_stops_early_is_resumed_in_its_own_session(tmp_path, ledger_home):
+    calls, rc, log = _run_script(tmp_path, ledger_home, "opencode", deliver_at=2)
+    assert rc == 0 and len(calls) == 2
+    assert "--session ses_acc-r1" in calls[0] and "--session ses_acc-r1" in calls[1]
+    assert "ACC summary" in calls[1] and "ACC" in calls[0]
+    assert "retomada 1 de 3" in log and "I will wait" in log
+
+
+def test_crew_chief_without_delivery_after_three_resumes_fails(tmp_path, ledger_home):
+    calls, rc, log = _run_script(tmp_path, ledger_home, "opencode", deliver_at=99)
+    assert len(calls) == 4 and rc == 5
+    assert "coordenador encerrou sem entrega 3x" in log
+
+
+def test_crew_chief_that_delivers_is_not_resumed(tmp_path, ledger_home):
+    calls, rc, _ = _run_script(tmp_path, ledger_home, "opencode", deliver_at=1)
+    assert rc == 0 and len(calls) == 1
+
+
+def test_direct_runs_are_never_resumed(tmp_path, ledger_home):
+    calls, rc, _ = _run_script(tmp_path, ledger_home, "opencode", deliver_at=99, mode="direct")
+    assert rc == 0 and len(calls) == 1 and "--session" not in calls[0]
+
+
+def test_codex_crew_chief_without_delivery_fails_without_resume(tmp_path, ledger_home):
+    calls, rc, log = _run_script(tmp_path, ledger_home, "codex", deliver_at=99)
+    assert rc == 5 and len(calls) == 1
+    assert "coordenador encerrou sem entrega" in log
+
+
+def test_claude_crew_chief_resumes_its_own_session(tmp_path):
+    _go(tmp_path, FakeOrca(), [], job_id="c1", agent="claude", model="m1")
+    script = (tmp_path / "jobs" / "c1.run.sh").read_text(encoding="utf-8")
+    sid = str(launch.uuid.uuid5(launch.uuid.NAMESPACE_URL, "acc:c1"))
+    assert f"--session-id {sid}" in script and f"--resume {sid}" in script
+
+
+def test_engineer_without_model_takes_the_pick_of_its_agent(tmp_path, monkeypatch):
+    from crew_chief import ledger
+    from crew_chief.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    for agent, model, value in (("claude", "opus", 99), ("opencode", "omni/agir", 90)):
+        for _ in range(2):
+            ledger.append({"kind": "coordinate", "agent": agent, "model": model, "cost": "free",
+                           "outcome": "pass", "score": value})
+    monkeypatch.setattr(launch, "orca_call", FakeOrca())
+    job_dir = tmp_path / "j"
+    assert main(["launch", "--engineer", "--slug", "s", "--lane", "core", "--brief", str(_brief(tmp_path)),
+                 "--job-dir", str(job_dir), "--id", "e1"]) == 0
+    assert json.loads((job_dir / "e1.meta.json").read_text(encoding="utf-8"))["model"] == "omni/agir"
+    assert "-m omni/agir" in (job_dir / "e1.run.sh").read_text(encoding="utf-8")
+
+
+def test_repo_name_comes_from_origin_in_a_job_copy(tmp_path):
+    if not shutil.which("git"):
+        pytest.skip("git is not on PATH")
+    copy = tmp_path / "shop.jobs" / "20261120-044548-6a2e62"
+    copy.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(copy)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(copy), "remote", "add", "origin", "https://example.com/o/shop.git"],
+                   check=True, capture_output=True)
+    assert launch._repo_name(copy) == "shop"
+    assert _go(copy, FakeOrca(), [], job_id="n1", job_dir=tmp_path / "jobs")["repo"] == "shop"
+
+
+def test_job_dir_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "acc-jobs"))
+    assert launch.runs_dir() == tmp_path / "acc-jobs"
+    _go(tmp_path, FakeOrca(), [], job_id="d1")
+    assert "export CREW_CHIEF_JOB_DIR=" in (tmp_path / "jobs" / "d1.run.sh").read_text(encoding="utf-8")
