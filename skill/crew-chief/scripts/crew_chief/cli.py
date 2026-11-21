@@ -161,44 +161,52 @@ def _max_cost(given: str | None) -> str | None:
 
 #: A model whose run failed on a provider error sits out of ``ACC pick`` this long ($CREW_CHIEF_BENCH_HOURS).
 BENCH_HOURS = 6.0
-#: What a provider says when the model, not the work, is the problem (21/11: a free model out of its daily quota
-#: kept being picked on its old score, and its lanes died with "Model unavailable" or "cooling down").
-PROVIDER_ERROR = re.compile(r"rate.?limit|\b(429|502|503)\b|quota|cooling down|model unavailable|overloaded|"
-                            r"free-models-per-day", re.I)
+#: The error line a CLI itself writes when the provider, not the work, is the problem (21/11: a free model out of
+#: its daily quota kept being picked on its old score, and its lanes died with "Model unavailable"). Only those
+#: line shapes count: a model's own text ("503 insertions", a /healthz 503 test, "quota" in a cache test) does not.
+PROVIDER_ERROR = re.compile(
+    r"^\s*(?:error:|! retrying \(attempt \d+\):|api error:?)\s*.*?"
+    r"(rate.?limit|\[(?:429|502|503)\]|status:? ?(?:429|502|503)|\b(?:429|502|503)\b.*(?:too many|unavailable|overloaded)|"
+    r"quota exceeded|insufficient_quota|cooling down|model unavailable|overloaded|free-models-per-day)", re.I | re.M)
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+#: The run's last lines: the error that ended it is at the bottom.
+TAIL_LINES = 10
 
 
 def _benched(job_dir: Path | None = None, now: datetime | None = None) -> set[str]:
-    """``agent:model`` of runs that failed on a provider error in the last BENCH_HOURS."""
+    """``agent:model`` of runs that failed on a provider error in the last BENCH_HOURS. A broken job file is skipped,
+    never the whole bench."""
     now = now or datetime.now(timezone.utc)
     job_dir = job_dir or launch.runs_dir()
     try:
         hours = float(os.environ.get("CREW_CHIEF_BENCH_HOURS", BENCH_HOURS))
-        found = launch.runs(job_dir)
-    except (OSError, ValueError, launch.LaunchError):
+        metas = sorted(job_dir.glob("*.meta.json")) if job_dir.is_dir() else []
+    except (OSError, ValueError):
         return set()
     out = set()
-    for run in found:
-        if run.get("state") != "failed" or not run.get("model"):
-            continue
+    for meta in metas:
+        run_id = meta.name.removesuffix(".meta.json")
         try:
+            rc = (job_dir / f"{run_id}.rc").read_text(encoding="utf-8").strip()
+            if not rc or rc == "0":
+                continue
+            run = json.loads(meta.read_text(encoding="utf-8"))
             started = datetime.fromisoformat(str(run.get("start")).replace("Z", "+00:00"))
-        except ValueError:
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if not run.get("model") or (now - started).total_seconds() > hours * 3600:
+                continue
+            log = (job_dir / f"{run_id}.log").read_text(encoding="utf-8", errors="replace").splitlines()[-TAIL_LINES:]
+        except (OSError, ValueError, TypeError):
             continue
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=timezone.utc)
-        if (now - started).total_seconds() > hours * 3600:
-            continue
-        try:
-            tail = launch.state(job_dir, str(run.get("id")), 40)["tail"]
-        except (OSError, ValueError, launch.LaunchError):
-            continue
-        if PROVIDER_ERROR.search("\n".join(tail)):
+        if PROVIDER_ERROR.search(ANSI.sub("", "\n".join(log))):
             out.add(f"{run.get('agent')}:{ledger.clean_model(run.get('agent'), run['model'])}")
     return out
 
 
-def _pick_rows(kind: str, declared: list[dict], exclude: list[str]) -> list[dict]:
-    """The pick's candidates, best first: the declared models (graded or not), else the scoreboard."""
+def _pick_rows(kind: str, declared: list[dict], exclude: list[str], bench: bool = True) -> list[dict]:
+    """The pick's candidates, best first: the declared models (graded or not), else the scoreboard. With ``bench``,
+    models that just failed on their provider are left out (callers retry with bench=False: never an empty pick)."""
     rows = score.table(ledger.read(), kind)
     if declared:
         candidates = []
@@ -211,9 +219,21 @@ def _pick_rows(kind: str, declared: list[dict], exclude: list[str]) -> list[dict
             score._tier(r), -r["score"] if r["score"] is not None else float("inf"),
             -r["n"], r["executor"]))
     rows = [r for r in rows if not _is_excluded(r, exclude)]
+    if not bench:
+        return rows
     benched = _benched()
-    playing = [r for r in rows if f"{r.get('agent')}:{ledger.clean_model(r.get('agent'), r.get('model'))}" not in benched]
-    return playing or rows  # never an empty pick: everyone benched = pick as before
+    return [r for r in rows if f"{r.get('agent')}:{ledger.clean_model(r.get('agent'), r.get('model'))}" not in benched]
+
+
+def _suggest(kind: str, declared: list[dict], exclude: list[str], max_cost, keep=lambda r: True):
+    """(best, rows): the pick without the benched models, else with them (the bench never empties a pick, even after
+    the caller's own filters: cost ceiling, agent)."""
+    for bench in (True, False):
+        rows = [r for r in _pick_rows(kind, declared, exclude, bench) if keep(r)]
+        best = score.suggest(rows, max_cost)
+        if best:
+            return best, rows
+    return None, rows
 
 
 def _engineer_model(agent: str) -> str | None:
@@ -221,8 +241,7 @@ def _engineer_model(agent: str) -> str | None:
     on the agent's default, which the Orca's OpenCode does not have (audit 20/11: 4 of 18 failed)."""
     try:
         declared, _ = models.load()
-        best = score.suggest([r for r in _pick_rows("coordinate", declared, []) if r.get("agent") == agent],
-                             _max_cost(None))
+        best, _ = _suggest("coordinate", declared, [], _max_cost(None), lambda r: r.get("agent") == agent)
     except (models.ModelsError, ValueError):
         return None
     return best["model"] if best else None
@@ -236,6 +255,8 @@ def _runs(args) -> int:
             if args.mode == "engineer" and (not args.slug or not args.lane):
                 print("--engineer requires --slug and --lane", file=sys.stderr)
                 return 2
+            if args.job_dir:  # the bench and the engineer's children read the same folder (PASS_ENV)
+                os.environ["CREW_CHIEF_JOB_DIR"] = str(Path(args.job_dir).absolute())
             if args.mode == "engineer" and not args.model:
                 args.model = _engineer_model(args.agent)
             run = launch.launch(args.brief, mode=args.mode or "crew", agent=args.agent, model=args.model,
@@ -393,8 +414,7 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(exc, file=sys.stderr)
             return 2
-        rows = _pick_rows(args.kind, declared, args.exclude)
-        best = score.suggest(rows, args.max_cost)
+        best, rows = _suggest(args.kind, declared, args.exclude, args.max_cost)
         if args.json:
             print(json.dumps({"pick": best, "rows": rows[:5]}, indent=2))
         elif best is None and declared:

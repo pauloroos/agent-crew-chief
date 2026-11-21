@@ -275,6 +275,32 @@ def test_pick_with_everyone_benched_picks_as_before(tmp_path: Path, monkeypatch,
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
     _grade_code("provider/only", 90)
-    _failed_run(tmp_path / "jobs", "r1", "provider/only", "All credentials are cooling down\n")
+    _failed_run(tmp_path / "jobs", "r1", "provider/only",
+                "! retrying (attempt 2): All credentials for model x are cooling down\n")
     assert main(["pick", "--kind", "code"]) == 0
     assert "opencode:provider/only" in capsys.readouterr().out.splitlines()[0]
+
+
+def test_pick_does_not_bench_on_the_models_own_text(tmp_path: Path, monkeypatch, capsys):
+    # review of 0.17.4: 15 of 249 good runs on the Orca had "503", "quota" or "Model unavailable" in their own text
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
+    _grade_code("provider/best", 90)
+    _grade_code("provider/next", 80)
+    _failed_run(tmp_path / "jobs", "t1", "provider/best",
+                "2 files changed, 503 insertions(+)\n/healthz returning 200 and 503\n"
+                "the drivers all failed with 'Model unavailable'\ntimeout: 4h\n")
+    assert main(["pick", "--kind", "code"]) == 0
+    assert "opencode:provider/best" in capsys.readouterr().out.splitlines()[0]
+
+
+def test_pick_bench_never_empties_a_cost_ceiling(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
+    _grade_code("provider/free", 90)
+    for _ in range(2):
+        ledger.append({"kind": "code", "agent": "opencode", "model": "provider/paid", "cost": "paid",
+                       "outcome": "pass", "score": 95, "project": "shop"})
+    _failed_run(tmp_path / "jobs", "r1", "provider/free", "Error: Model unavailable: x\n")
+    assert main(["pick", "--kind", "code", "--max-cost", "free"]) == 0
+    assert "opencode:provider/free" in capsys.readouterr().out.splitlines()[0]
