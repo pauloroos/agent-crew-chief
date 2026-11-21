@@ -8,6 +8,16 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.5] - 2026-11-21
+
+### Fixed
+- **`ACC launch --model <agent>/<name without its provider>` runs the declared model.** A crew chief
+  wrote `opencode/opencode-go/beam-free` and `opencode/kpa/claude-opus-5-5` for the declared
+  `opencode-go/beam-free` and `omni/kpa/claude-opus-5-5`, and the runs died at start with "Model
+  unavailable" (21/11 on the Orca: 21 runs). The launch now takes the one declared model that name ends
+  with, and says so on stderr. No declared match, more than one, or a real `opencode/<model>` (OpenCode's
+  own provider, one slash): the name runs as written.
+
 ## [0.17.4] - 2026-11-21
 
 ### Fixed

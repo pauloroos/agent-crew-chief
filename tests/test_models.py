@@ -438,3 +438,17 @@ def test_draws_among_proven_of_the_cheapest_tier(ledger_home: Path, tmp_path: Pa
         assert out.endswith("- drawn among 2 proven"), out
         seen.add(out.split()[2])
     assert seen == {"opencode:provider/model-a", "opencode:provider/model-c"}  # paid model-b never drawn
+
+
+def test_launch_model_with_agent_prefix_becomes_the_declared_name(ledger_home: Path, monkeypatch, tmp_path: Path):
+    # 21/11 on the Orca: 21 runs died at start on opencode/opencode-go/beam-free and opencode/kpa/claude-opus-5-5
+    from crew_chief import cli
+    monkeypatch.chdir(tmp_path)
+    _write_global(ledger_home, '[[model]]\nagent = "opencode"\nmodel = "opencode-go/beam-free"\ncost = "free"\n\n'
+                  '[[model]]\nagent = "opencode"\nmodel = "omni/kpa/claude-opus-5-5"\ncost = "free"\n')
+    assert cli._resolve_model("opencode", "opencode/opencode-go/beam-free") == "opencode-go/beam-free"
+    assert cli._resolve_model("opencode", "opencode/kpa/claude-opus-5-5") == "omni/kpa/claude-opus-5-5"
+    assert cli._resolve_model("opencode", "omni/kpa/claude-opus-5-5") == "omni/kpa/claude-opus-5-5"
+    assert cli._resolve_model("opencode", "opencode/beam-free") == "opencode/beam-free"  # OpenCode's own provider
+    assert cli._resolve_model("opencode", "opencode/nada/x") == "opencode/nada/x"  # no declared match: as written
+    assert cli._resolve_model("opencode", None) is None

@@ -2,7 +2,7 @@
 
 [English](tutorial.md) · **Português**
 
-Este passo a passo roda o ACC v0.17.4 de ponta a ponta no `examples/hello-crew`,
+Este passo a passo roda o ACC v0.17.5 de ponta a ponta no `examples/hello-crew`,
 um projeto Python minúsculo que vem com o ACC. Ele tem dois módulos
 independentes, cada um com o seu teste:
 
@@ -34,7 +34,7 @@ Copie o exemplo para **fora** do checkout do ACC. Dentro dele, as trilhas e as
 branches `acc/*` cairiam no próprio repositório do ACC.
 
 ```bash
-git clone --branch v0.17.4 https://github.com/pauloroos/agent-crew-chief ~/acc
+git clone --branch v0.17.5 https://github.com/pauloroos/agent-crew-chief ~/acc
 mkdir -p ~/scratch && cp -R ~/acc/examples/hello-crew ~/scratch/hello-crew
 cd ~/scratch/hello-crew
 git init -b main
@@ -43,7 +43,7 @@ python -m pytest -q
 ```
 
 ```powershell
-git clone --branch v0.17.4 https://github.com/pauloroos/agent-crew-chief $HOME\acc
+git clone --branch v0.17.5 https://github.com/pauloroos/agent-crew-chief $HOME\acc
 New-Item -ItemType Directory -Force $HOME\scratch | Out-Null
 Copy-Item -Recurse $HOME\acc\examples\hello-crew $HOME\scratch\hello-crew
 Set-Location $HOME\scratch\hello-crew

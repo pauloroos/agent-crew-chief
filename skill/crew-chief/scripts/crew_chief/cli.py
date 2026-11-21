@@ -247,6 +247,29 @@ def _engineer_model(agent: str) -> str | None:
     return best["model"] if best else None
 
 
+def _resolve_model(agent: str, model: str | None) -> str | None:
+    """A model name written as ``<agent>/<declared name without its provider>`` becomes the declared name: 21/11 on
+    the Orca, 21 runs died at start on ``opencode/opencode-go/beam-free`` and ``opencode/kpa/claude-opus-5-5``
+    (declared ``opencode-go/beam-free``, ``omni/kpa/claude-opus-5-5``). Only one declared match counts; a real
+    ``opencode/<model>`` (one slash, OpenCode's own provider) is left alone."""
+    if not model:
+        return model
+    try:
+        declared, _ = models.load()
+    except (models.ModelsError, ValueError):
+        return model
+    names = [m["model"] for m in declared if m.get("agent") == agent]
+    prefix = f"{agent}/"
+    if model in names or not model.startswith(prefix) or "/" not in model[len(prefix):]:
+        return model
+    rest = model[len(prefix):]
+    hits = [n for n in names if n == rest or n.endswith("/" + rest)]
+    if len(hits) != 1:
+        return model
+    print(f"model {model} -> {hits[0]} (the declared name)", file=sys.stderr)
+    return hits[0]
+
+
 def _runs(args) -> int:
     """launch / runs / compare."""
     jobs = args.job_dir or launch.runs_dir()
@@ -259,6 +282,7 @@ def _runs(args) -> int:
                 os.environ["CREW_CHIEF_JOB_DIR"] = str(Path(args.job_dir).absolute())
             if args.mode == "engineer" and not args.model:
                 args.model = _engineer_model(args.agent)
+            args.model = _resolve_model(args.agent, args.model)
             run = launch.launch(args.brief, mode=args.mode or "crew", agent=args.agent, model=args.model,
                                 timeout=args.timeout, job_dir=jobs, job_id=args.id, title=args.title,
                                 where=args.where, slug=args.slug, lane=args.lane)
