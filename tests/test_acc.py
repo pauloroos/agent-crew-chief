@@ -237,3 +237,70 @@ def test_record_drops_a_repeated_agent_prefix(tmp_path: Path, monkeypatch, capsy
 def test_scores_read_an_old_prefixed_model_as_the_clean_one():
     rows = score.table([_entry("opencode:x", 90), _entry("x", 70)], now=NOW)
     assert [(r["executor"], r["n"]) for r in rows] == [("opencode:x", 2)]
+
+
+def _failed_run(jobs: Path, run_id: str, model: str, log: str, hours_ago: float = 1.0) -> None:
+    from datetime import datetime, timedelta, timezone
+    jobs.mkdir(parents=True, exist_ok=True)
+    start = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+    (jobs / f"{run_id}.meta.json").write_text(json.dumps(
+        {"id": run_id, "agent": "opencode", "model": model, "start": start}), encoding="utf-8")
+    (jobs / f"{run_id}.rc").write_text("1", encoding="utf-8")
+    (jobs / f"{run_id}.log").write_text(log, encoding="utf-8")
+
+
+def test_pick_benches_a_model_that_failed_on_its_provider(tmp_path: Path, monkeypatch, capsys):
+    # 21/11: a free model out of its daily quota kept being picked on its old score
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
+    _grade_code("provider/best", 90)
+    _grade_code("provider/next", 80)
+    _failed_run(tmp_path / "jobs", "r1", "provider/best", "Error: Model unavailable: provider-2/any-model\n")
+    assert main(["pick", "--kind", "code"]) == 0
+    assert "opencode:provider/next" in capsys.readouterr().out.splitlines()[0]
+
+
+def test_pick_ignores_old_or_ordinary_failures(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
+    _grade_code("provider/best", 90)
+    _grade_code("provider/next", 80)
+    _failed_run(tmp_path / "jobs", "old", "provider/best", "429 rate limit\n", hours_ago=7)
+    _failed_run(tmp_path / "jobs", "bug", "provider/best", "AssertionError: tests failed\n")
+    assert main(["pick", "--kind", "code"]) == 0
+    assert "opencode:provider/best" in capsys.readouterr().out.splitlines()[0]
+
+
+def test_pick_with_everyone_benched_picks_as_before(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
+    _grade_code("provider/only", 90)
+    _failed_run(tmp_path / "jobs", "r1", "provider/only",
+                "! retrying (attempt 2): All credentials for model x are cooling down\n")
+    assert main(["pick", "--kind", "code"]) == 0
+    assert "opencode:provider/only" in capsys.readouterr().out.splitlines()[0]
+
+
+def test_pick_does_not_bench_on_the_models_own_text(tmp_path: Path, monkeypatch, capsys):
+    # review of 0.17.4: 15 of 249 good runs on the Orca had "503", "quota" or "Model unavailable" in their own text
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
+    _grade_code("provider/best", 90)
+    _grade_code("provider/next", 80)
+    _failed_run(tmp_path / "jobs", "t1", "provider/best",
+                "2 files changed, 503 insertions(+)\n/healthz returning 200 and 503\n"
+                "the drivers all failed with 'Model unavailable'\ntimeout: 4h\n")
+    assert main(["pick", "--kind", "code"]) == 0
+    assert "opencode:provider/best" in capsys.readouterr().out.splitlines()[0]
+
+
+def test_pick_bench_never_empties_a_cost_ceiling(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CREW_CHIEF_JOB_DIR", str(tmp_path / "jobs"))
+    _grade_code("provider/free", 90)
+    for _ in range(2):
+        ledger.append({"kind": "code", "agent": "opencode", "model": "provider/paid", "cost": "paid",
+                       "outcome": "pass", "score": 95, "project": "shop"})
+    _failed_run(tmp_path / "jobs", "r1", "provider/free", "Error: Model unavailable: x\n")
+    assert main(["pick", "--kind", "code", "--max-cost", "free"]) == 0
+    assert "opencode:provider/free" in capsys.readouterr().out.splitlines()[0]

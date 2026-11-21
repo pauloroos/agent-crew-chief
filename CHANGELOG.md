@@ -8,6 +8,21 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.4] - 2026-11-21
+
+### Fixed
+- **`ACC pick` benches a model whose run just failed on its provider.** A run in the job folder that
+  failed (rc not 0) in the last 6 hours with a provider error in its log (rate limit, 429/502/503,
+  quota, "cooling down", "Model unavailable", the free daily limit) takes that `agent:model` out of the
+  pick until the 6 hours pass (`CREW_CHIEF_BENCH_HOURS` changes it). Before, a free model out of its
+  daily quota kept being picked on its old score and its lanes died (21/11: two jobs lost a lane each).
+  A failure of the work itself (tests, review) does not bench. With every candidate benched, the pick
+  is the same as before: never an empty pick, also after the cost ceiling and the engineer's agent filter.
+  Only the error line the CLI writes counts (`Error: …`, `! retrying (attempt N): …`, `API Error …`), read in
+  the last 10 lines without color codes: on the Orca's 292 finished runs, 0 of 250 good runs would match and
+  37 of 42 failed runs were provider errors. `ACC launch --job-dir` now also sets `CREW_CHIEF_JOB_DIR`, so the
+  bench and the engineer's children read that folder; a broken job file is skipped, not the whole bench.
+
 ## [0.17.3] - 2026-11-20
 
 ### Fixed

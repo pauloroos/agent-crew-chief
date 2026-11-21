@@ -120,7 +120,7 @@ merge das trilhas em acc/<slug> → testes → push → pull request (você faz 
 2. **Trilhas.** Jobs que mexem nos mesmos arquivos ou dependem um do outro
    ficam na mesma trilha e rodam em ordem; tarefas marcadas `[P]` sem arquivos
    em comum ganham trilhas próprias e rodam em paralelo. No máximo 4 trilhas.
-3. **Escolha.** `ACC pick --kind <tipo>` para cada job (veja [o placar](#o-placar)); se você declarou [seus modelos](#seus-modelos), só eles são candidatos.
+3. **Escolha.** `ACC pick --kind <tipo>` para cada job (veja [o placar](#o-placar)); se você declarou [seus modelos](#seus-modelos), só eles são candidatos. Um modelo cujo job falhou no provedor (cota, limite, indisponível) nas últimas 6 horas fica de fora (`CREW_CHIEF_BENCH_HOURS`).
 4. **Uma parada.** Com spec, o chefe de equipe mostra o resumo da spec, as
    trilhas e os modelos, e espera a sua aprovação. É a única parada; depois
    dela, ele vai até o fim. Um pedido que já traz spec aprovada (`Spec: <arquivo>`,
@@ -406,12 +406,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.17.3 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.17.4 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.17.3.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.3),
+Sem git? Baixe `agent-crew-chief-v0.17.4.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.4),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -436,7 +436,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.17.3
+git -C agent-crew-chief checkout v0.17.4
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
