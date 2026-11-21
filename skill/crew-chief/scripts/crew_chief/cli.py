@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__, jobs, launch, ledger, models, score, specs, sync
@@ -157,6 +159,44 @@ def _max_cost(given: str | None) -> str | None:
     return given
 
 
+#: A model whose run failed on a provider error sits out of ``ACC pick`` this long ($CREW_CHIEF_BENCH_HOURS).
+BENCH_HOURS = 6.0
+#: What a provider says when the model, not the work, is the problem (21/11: a free model out of its daily quota
+#: kept being picked on its old score, and its lanes died with "Model unavailable" or "cooling down").
+PROVIDER_ERROR = re.compile(r"rate.?limit|\b(429|502|503)\b|quota|cooling down|model unavailable|overloaded|"
+                            r"free-models-per-day", re.I)
+
+
+def _benched(job_dir: Path | None = None, now: datetime | None = None) -> set[str]:
+    """``agent:model`` of runs that failed on a provider error in the last BENCH_HOURS."""
+    now = now or datetime.now(timezone.utc)
+    job_dir = job_dir or launch.runs_dir()
+    try:
+        hours = float(os.environ.get("CREW_CHIEF_BENCH_HOURS", BENCH_HOURS))
+        found = launch.runs(job_dir)
+    except (OSError, ValueError, launch.LaunchError):
+        return set()
+    out = set()
+    for run in found:
+        if run.get("state") != "failed" or not run.get("model"):
+            continue
+        try:
+            started = datetime.fromisoformat(str(run.get("start")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if (now - started).total_seconds() > hours * 3600:
+            continue
+        try:
+            tail = launch.state(job_dir, str(run.get("id")), 40)["tail"]
+        except (OSError, ValueError, launch.LaunchError):
+            continue
+        if PROVIDER_ERROR.search("\n".join(tail)):
+            out.add(f"{run.get('agent')}:{ledger.clean_model(run.get('agent'), run['model'])}")
+    return out
+
+
 def _pick_rows(kind: str, declared: list[dict], exclude: list[str]) -> list[dict]:
     """The pick's candidates, best first: the declared models (graded or not), else the scoreboard."""
     rows = score.table(ledger.read(), kind)
@@ -170,7 +210,10 @@ def _pick_rows(kind: str, declared: list[dict], exclude: list[str]) -> list[dict
         rows = sorted(candidates, key=lambda r: (
             score._tier(r), -r["score"] if r["score"] is not None else float("inf"),
             -r["n"], r["executor"]))
-    return [r for r in rows if not _is_excluded(r, exclude)]
+    rows = [r for r in rows if not _is_excluded(r, exclude)]
+    benched = _benched()
+    playing = [r for r in rows if f"{r.get('agent')}:{ledger.clean_model(r.get('agent'), r.get('model'))}" not in benched]
+    return playing or rows  # never an empty pick: everyone benched = pick as before
 
 
 def _engineer_model(agent: str) -> str | None:

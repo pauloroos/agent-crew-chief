@@ -116,7 +116,7 @@ merge lanes into acc/<slug> → tests → push → pull request (you merge)
 2. **Lanes.** Jobs that touch the same files or depend on each other share a
    lane and run in order; tasks marked `[P]` with no shared files get their own
    lanes and run in parallel. At most 4 lanes.
-3. **Pick.** `ACC pick --kind <kind>` per job (see [the scoreboard](#the-scoreboard)); if you declared [your models](#your-models), only those are candidates.
+3. **Pick.** `ACC pick --kind <kind>` per job (see [the scoreboard](#the-scoreboard)); if you declared [your models](#your-models), only those are candidates. A model whose run failed on its provider (quota, rate limit, unavailable) in the last 6 hours sits out (`CREW_CHIEF_BENCH_HOURS`).
 4. **One stop.** With a spec, the crew chief shows the spec summary, the
    lanes and the models, and waits for your approval. That is the only stop;
    after it, it runs to the end. A request that brings an approved spec
@@ -396,12 +396,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.17.3 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.17.4 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.17.3.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.3),
+No git? Download `agent-crew-chief-v0.17.4.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.4),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -426,7 +426,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.17.3
+git -C agent-crew-chief checkout v0.17.4
 python agent-crew-chief/install.py /path/to/project
 ```
 
