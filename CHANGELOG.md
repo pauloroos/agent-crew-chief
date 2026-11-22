@@ -8,6 +8,16 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.6] - 2026-11-22
+
+### Fixed
+- **A crew chief is resumed only after its engineers stop working.** It ended its turn three times
+  "waiting for the backend" while its engineer still fixed a test; the 3 resumes ran out, rc 5, and the
+  whole job was dispatched again (22/11 on the Orca, the Motor de Métricas screen). Now a run launched
+  from inside another one records it as `parent` in its `.meta.json`, and before each resume the run
+  script runs `ACC wait-children <id>`: it waits while any child is running or starting (up to `--max`,
+  4h), so waiting no longer uses up a resume.
+
 ## [0.17.5] - 2026-11-21
 
 ### Fixed

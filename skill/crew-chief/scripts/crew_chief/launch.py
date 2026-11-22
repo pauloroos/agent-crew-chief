@@ -48,6 +48,11 @@ RESUME_PROMPT = (
 )
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 TIMEOUT = re.compile(r"\d+[smhd]?")
+
+
+def seconds(text: str) -> int:
+    """``4h``/``90m``/``600``/``1d`` (the ``timeout`` format) in seconds."""
+    return int(text[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[text[-1]] if text[-1].isalpha() else int(text)
 # A launched crew chief is a one-shot command (`opencode run`, `claude -p`): ending its turn ends the run, and lanes
 # left in Orca never get merged (lab, 17/11). The crew chief starts each lane engineer with `ACC launch --engineer`
 # and waits on it with `ACC runs <id>`; no end of turn before the pull request and ACC summary.
@@ -147,6 +152,12 @@ def spawn_background(script: Path) -> None:
                      stderr=subprocess.DEVNULL, **extra)
 
 
+#: Blocks while runs this run launched are still working (``crew-chief.py wait-children``).
+WAIT_CHILDREN = " ".join(shlex.quote(x) for x in (Path(sys.executable).as_posix(), "-I",
+                                                     (Path(__file__).resolve().parents[1] / "crew-chief.py").as_posix(),
+                                                     "wait-children"))
+
+
 def _resume_lines(run_id: str, agent: str, model: str | None, timeout: str, log: str) -> list[str]:
     """After the first run: resume a crew chief that ended rc 0 with no summary of its id, at most RESUMES times;
     still none, rc NO_DELIVERY_RC."""
@@ -160,6 +171,8 @@ def _resume_lines(run_id: str, agent: str, model: str | None, timeout: str, log:
         lines += [
             f"for n in $(seq 1 {RESUMES}); do",
             f'  [ "$rc" = 0 ] && ! {delivered} || break',
+            # 22/11: a crew chief "waiting for the backend" ended 3x while its engineer still worked: rc 5, work lost
+            f"  {WAIT_CHILDREN} {shlex.quote(run_id)} 2>&1 | tee -a {log}",
             f'  echo "ACC: coordenador encerrou sem entrega; retomada $n de {RESUMES}" | tee -a {log}',
             # shortcut: each resume gets the whole --timeout again; a deadline if runs ever go past it
             f"  timeout {timeout} {resume} {shlex.quote(RESUME_PROMPT)} < /dev/null 2>&1 | tee -a {log}",
@@ -264,6 +277,9 @@ def launch(brief: Path, *, mode: str = "crew", agent: str = "opencode", model: s
     title = title or f"{'acc' if mode == 'crew' else 'direct'} {repo} {run_id}"
     meta = {"id": run_id, "mode": mode, "agent": agent, "model": model, "repo": repo, "cwd": cwd.as_posix(),
             "title": title, "start": started.isoformat(), "where": "background"}
+    parent = os.environ.get("CREW_CHIEF_JOB_ID")
+    if parent and parent != run_id:  # launched from inside another run (a crew chief's engineer, an engineer's driver)
+        meta["parent"] = parent
 
     if ready:
         # a linked worktree is a child of the repo Orca knows: adding it would duplicate the project

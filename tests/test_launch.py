@@ -414,3 +414,35 @@ def test_job_dir_from_the_environment(tmp_path, monkeypatch):
     assert launch.runs_dir() == tmp_path / "acc-jobs"
     _go(tmp_path, FakeOrca(), [], job_id="d1")
     assert "export CREW_CHIEF_JOB_DIR=" in (tmp_path / "jobs" / "d1.run.sh").read_text(encoding="utf-8")
+
+
+def test_engineer_launched_from_a_crew_chief_records_its_parent(tmp_path, monkeypatch):
+    # 22/11: wait-children finds a crew chief's engineers by this field
+    monkeypatch.setenv("CREW_CHIEF_JOB_ID", "chefe-1")
+    run = _go(tmp_path, FakeOrca(ready=False), [], mode="direct", job_id="eng-1")
+    meta = json.loads((tmp_path / "jobs" / "eng-1.meta.json").read_text(encoding="utf-8"))
+    assert meta["parent"] == "chefe-1" and run["parent"] == "chefe-1"
+    monkeypatch.delenv("CREW_CHIEF_JOB_ID")
+    _go(tmp_path, FakeOrca(ready=False), [], mode="direct", job_id="solto")
+    assert "parent" not in json.loads((tmp_path / "jobs" / "solto.meta.json").read_text(encoding="utf-8"))
+
+
+def test_crew_script_waits_for_its_engineers_before_each_resume(tmp_path):
+    _go(tmp_path, FakeOrca(ready=False), [], job_id="chefe-2")
+    script = (tmp_path / "jobs" / "chefe-2.run.sh").read_text(encoding="utf-8")
+    assert script.index("wait-children chefe-2") < script.index("retomada $n de")
+
+
+def test_wait_children_returns_when_no_engineer_works(tmp_path, monkeypatch):
+    import os
+    from crew_chief.cli import main
+    jobs = tmp_path / "jobs"; jobs.mkdir()
+    for rid, done in (("eng-a", True), ("eng-b", False)):
+        (jobs / f"{rid}.meta.json").write_text(json.dumps({"id": rid, "parent": "chefe-3"}), encoding="utf-8")
+        (jobs / f"{rid}.pid").write_text(str(os.getpid()), encoding="utf-8")
+        if done:
+            (jobs / f"{rid}.rc").write_text("0", encoding="utf-8")
+    assert main(["wait-children", "chefe-3", "--job-dir", str(jobs), "--max", "1", "--every", "0.1"]) == 1  # eng-b vivo
+    (jobs / "eng-b.rc").write_text("1", encoding="utf-8")
+    assert main(["wait-children", "chefe-3", "--job-dir", str(jobs), "--max", "1", "--every", "0.1"]) == 0
+    assert main(["wait-children", "outro", "--job-dir", str(jobs)]) == 0  # sem filhos

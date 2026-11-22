@@ -114,6 +114,13 @@ def _parser() -> argparse.ArgumentParser:
     listed_runs.add_argument("--job-dir", type=Path)
     listed_runs.add_argument("--json", action="store_true")
 
+    waited = commands.add_parser("wait-children", help="wait while the runs a run launched are still working "
+                                 "(the run script calls it before resuming a crew chief)")
+    waited.add_argument("id")
+    waited.add_argument("--job-dir", type=Path)
+    waited.add_argument("--max", default="4h", help="give up after this long (4h, 90m, 600)")
+    waited.add_argument("--every", type=float, default=30.0, help=argparse.SUPPRESS)
+
     compared = commands.add_parser("compare", help="crew vs direct runs: finished, ok, with a PR, minutes")
     compared.add_argument("--since", help="YYYY-MM-DD")
     compared.add_argument("--job-dir", type=Path)
@@ -268,6 +275,44 @@ def _resolve_model(agent: str, model: str | None) -> str | None:
         return model
     print(f"model {model} -> {hits[0]} (the declared name)", file=sys.stderr)
     return hits[0]
+
+
+def _working_children(job_dir: Path, run_id: str) -> list[str]:
+    """Ids of the runs launched from ``run_id`` (meta ``parent``) that are still running or starting."""
+    out = []
+    for meta in sorted(job_dir.glob("*.meta.json")) if job_dir.is_dir() else []:
+        try:
+            if json.loads(meta.read_text(encoding="utf-8")).get("parent") != run_id:
+                continue
+            child = meta.name.removesuffix(".meta.json")
+            if launch.state(job_dir, child, 0)["state"] in ("running", "starting"):
+                out.append(child)
+        except (OSError, ValueError, launch.LaunchError):
+            continue
+    return out
+
+
+def _wait_children(args) -> int:
+    """0 when no child of the run is working any more; 1 after --max (the resume then goes ahead anyway)."""
+    import time
+    job_dir = args.job_dir or launch.runs_dir()
+    m = launch.TIMEOUT.fullmatch(args.max)
+    if not m:
+        print(f"--max like 4h, 90m or 600: {args.max!r}", file=sys.stderr)
+        return 2
+    limit = time.monotonic() + launch.seconds(args.max)
+    said = None
+    while True:
+        working = _working_children(job_dir, args.id)
+        if not working:
+            return 0
+        if working != said:
+            print(f"ACC: esperando {len(working)} frente(s) de {args.id}: {', '.join(working)}", flush=True)
+            said = working
+        if time.monotonic() >= limit:
+            print(f"ACC: frentes ainda rodando depois de {args.max}; retomando assim mesmo", flush=True)
+            return 1
+        time.sleep(args.every)
 
 
 def _runs(args) -> int:
@@ -506,6 +551,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in ("launch", "runs", "compare"):
         return _runs(args)
+    if args.command == "wait-children":
+        return _wait_children(args)
 
     project = args.project.expanduser().resolve()
     if not (project / "docs" / "crew-chief" / "jobs").is_dir():
