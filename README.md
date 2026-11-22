@@ -386,6 +386,7 @@ ACC launch --brief <file> [--crew|--direct] [--agent opencode|claude|codex] [--m
 ACC runs [<id>]                 # launched runs, or one run with its log tail
 ACC compare [--since YYYY-MM-DD]  # crew vs direct runs
 ACC wait-children <id> [--max 4h]  # wait while a run's engineers work (the run script calls it before a resume)
+ACC smoke [--repo .] [--no-preview]  # start the app, call routes, shoot screens next to the prototypes
 ```
 
 Kinds: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
@@ -397,12 +398,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.17.7 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.18.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.17.7.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.7),
+No git? Download `agent-crew-chief-v0.18.0.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.18.0),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -427,7 +428,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.17.7
+git -C agent-crew-chief checkout v0.18.0
 python agent-crew-chief/install.py /path/to/project
 ```
 
@@ -452,6 +453,32 @@ The kit is vendored under its own MIT licenses (versions in each `VERSION` file)
   see [vendor/superpowers/LICENSE](vendor/superpowers/LICENSE).
 - [ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 by
   DietrichGebert: see [vendor/ponytail/LICENSE](vendor/ponytail/LICENSE).
+
+## Smoke test before the pull request
+
+`ACC smoke` starts the app the crew built, calls its routes and shoots its screens next to the prototypes, so a
+missing library, a route the screen calls that does not exist or a broken screen shows up before the merge. The
+project says how in `.crew-chief/smoke.toml`:
+
+```toml
+start = "uv run uvicorn app.main:app --port {port}"   # {port}: a free port ACC picks
+ready = "/healthz"                                    # polled until it answers below 500
+env = { APP_ENV = "test" }
+routes = ["/", "/api/v1/items"]                        # each must answer below 500
+preview = "ssh host dev-rdl preview {repo} {branch}"   # optional: prints the preview URL last
+preview_teardown = "ssh host dev-rdl preview-apagar {repo} {branch}"
+preview_headers = { "CF-Access-Client-Id" = "$CF_ACCESS_CLIENT_ID" }
+
+[[screen]]
+path = "/"
+prototype = "docs/prototype/index.html"
+widths = [390, 1440]
+```
+
+The local stage always runs; the preview stage (a real environment the project deploys) runs when `preview` is
+set. Screens use a Chromium-family browser's `--headless --screenshot` (`CREW_CHIEF_BROWSER`, else one found);
+without one they are skipped, not failed. The report (`smoke.html` with prototype and app side by side,
+`smoke.json`) goes to the runs folder. No `smoke.toml`: exit 0 and "not configured".
 
 ## License
 

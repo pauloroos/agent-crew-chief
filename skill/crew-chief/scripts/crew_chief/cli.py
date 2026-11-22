@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __version__, jobs, launch, ledger, models, score, specs, sync
+from . import __version__, jobs, launch, ledger, models, score, smoke, specs, sync
 
 
 def _project_name() -> str:
@@ -113,6 +113,13 @@ def _parser() -> argparse.ArgumentParser:
     listed_runs.add_argument("id", nargs="?")
     listed_runs.add_argument("--job-dir", type=Path)
     listed_runs.add_argument("--json", action="store_true")
+
+    smoked = commands.add_parser("smoke", help="start the app, call its routes and shoot its screens next to the "
+                                 "prototypes (.crew-chief/smoke.toml), before the pull request")
+    smoked.add_argument("--repo", type=Path, default=Path("."))
+    smoked.add_argument("--out", type=Path, help="default: smoke-<UTC time> in the runs folder")
+    smoked.add_argument("--branch", help="for the preview command; default: the checked-out branch")
+    smoked.add_argument("--no-preview", action="store_true")
 
     waited = commands.add_parser("wait-children", help="wait while the runs a run launched are still working "
                                  "(the run script calls it before resuming a crew chief)")
@@ -561,6 +568,14 @@ def main(argv: list[str] | None = None) -> int:
         return _runs(args)
     if args.command == "wait-children":
         return _wait_children(args)
+    if args.command == "smoke":
+        from datetime import datetime as _dt
+        out = args.out or launch.runs_dir() / f"smoke-{_dt.now(timezone.utc):%Y%m%d-%H%M%S}"
+        code, summary = smoke.run(args.repo.resolve(), out, args.branch, not args.no_preview)
+        print(summary, file=sys.stderr if code == 2 else sys.stdout)
+        if code != 2 and (out / "smoke.html").is_file():
+            print(f"report: {(out / 'smoke.html').as_posix()}", file=sys.stderr)  # a local path, not for the PR body
+        return code
 
     project = args.project.expanduser().resolve()
     if not (project / "docs" / "crew-chief" / "jobs").is_dir():

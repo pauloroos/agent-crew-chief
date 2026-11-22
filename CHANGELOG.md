@@ -8,6 +8,21 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.18.0] - 2026-11-22
+
+### Added
+- **`ACC smoke`: a smoke test before the pull request.** It starts the app the crew built (the command in
+  `.crew-chief/smoke.toml`, on a free port), waits for `ready`, calls the `routes` (each must answer below 400, or 401/403; no answer, a 404 or a redirect to another host such as a login page fails; redirects are never followed, so headers never leave the host) and
+  shoots each `[[screen]]` next to its prototype at the given widths, with a Chromium-family browser's own
+  `--headless --screenshot` (no browser = screens skipped, not failed). An optional `preview` command deploys the
+  branch to a real environment and prints its URL; the same routes are called there with `preview_headers`, then
+  `preview_teardown` always runs; a `$VAR` missing from the environment fails the preview step. The report (`smoke.html` side by side, `smoke.json`) goes to the runs folder. Exit 0
+  passed or not configured, 1 failed, 2 bad `smoke.toml`. Why (22/11 on the Orca): a missing library, a route the
+  screen called that did not exist and a renamed login variable only showed up after the merge, one deploy round
+  (about an hour) each.
+- The skill runs it before `gh pr create`: a failure goes back to the lane (no PR), a web app or API with no
+  `smoke.toml` gets one as part of the job, and its summary goes in the PR body.
+
 ## [0.17.7] - 2026-11-22
 
 ### Fixed

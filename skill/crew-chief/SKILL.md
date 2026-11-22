@@ -145,8 +145,8 @@ under the engineer's own `agent:model` (`ACC pick --kind coordinate`). On each l
 
 ## 6. Deliver
 When every lane passed: in your checkout on `<feature>`, merge each lane (`git merge --no-ff
---no-edit <feature>-<lane>`), resolve conflicts, run the project's tests, use
-verification-before-completion, then push and open the PR with `gh pr create` (`--base <Base>`
+--no-edit <feature>-<lane>`), resolve conflicts, run the project's tests and `ACC smoke` (starts the app, calls its routes, shoots screens next to the prototypes;
+it fails = back to the lane, no PR; a web app or API with no `.crew-chief/smoke.toml` gets one as part of the job; paste its summary in the PR), use verification-before-completion, then push and open the PR with `gh pr create` (`--base <Base>`
 when the request has one). With every grade recorded, run `ACC summary --job <slug> --pr <url>`
 (`--rc 1` if not delivered) in every run that opens or updates a PR, before cleanup; then
 release engineers, remove lane worktrees and branches: Orca `orca worktree rm --worktree
