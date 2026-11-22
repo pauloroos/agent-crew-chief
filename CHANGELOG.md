@@ -8,6 +8,14 @@ Versions up to 0.4.4 were developed in the repository now archived as
 [`agent-crew-chief-legacy`](https://github.com/pauloroos/agent-crew-chief-legacy),
 which keeps their full history, releases and changelog.
 
+## [0.17.7] - 2026-11-22
+
+### Fixed
+- **The skill tells the crew chief never to delete the run files.** A crew chief cleaning up after its
+  lanes ran `rm -f <id>.log <id>.meta.json <id>.pid` on its engineers' runs (22/11 on the Orca); those files
+  are what `ACC pick` (the bench of 0.17.4) and `ACC wait-children` (0.17.6) read. Only
+  `../<repo>-acc-logs/` is cleaned up.
+
 ## [0.17.6] - 2026-11-22
 
 ### Fixed
