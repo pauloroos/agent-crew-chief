@@ -282,10 +282,18 @@ def _working_children(job_dir: Path, run_id: str) -> list[str]:
     out = []
     for meta in sorted(job_dir.glob("*.meta.json")) if job_dir.is_dir() else []:
         try:
-            if json.loads(meta.read_text(encoding="utf-8")).get("parent") != run_id:
+            info = json.loads(meta.read_text(encoding="utf-8"))
+            if info.get("parent") != run_id:
                 continue
             child = meta.name.removesuffix(".meta.json")
-            if launch.state(job_dir, child, 0)["state"] in ("running", "starting"):
+            now = launch.state(job_dir, child, 0)["state"]
+            # a run "starting" for 10 min never started (Orca tab that did not run it): it is not working
+            stale = False
+            if now == "starting" and info.get("start"):
+                started = datetime.fromisoformat(str(info["start"]).replace("Z", "+00:00"))
+                started = started if started.tzinfo else started.replace(tzinfo=timezone.utc)
+                stale = (datetime.now(timezone.utc) - started).total_seconds() > 600
+            if now == "running" or (now == "starting" and not stale):
                 out.append(child)
         except (OSError, ValueError, launch.LaunchError):
             continue

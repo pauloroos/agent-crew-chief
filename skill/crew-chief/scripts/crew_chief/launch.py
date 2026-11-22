@@ -49,10 +49,6 @@ RESUME_PROMPT = (
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 TIMEOUT = re.compile(r"\d+[smhd]?")
 
-
-def seconds(text: str) -> int:
-    """``4h``/``90m``/``600``/``1d`` (the ``timeout`` format) in seconds."""
-    return int(text[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[text[-1]] if text[-1].isalpha() else int(text)
 # A launched crew chief is a one-shot command (`opencode run`, `claude -p`): ending its turn ends the run, and lanes
 # left in Orca never get merged (lab, 17/11). The crew chief starts each lane engineer with `ACC launch --engineer`
 # and waits on it with `ACC runs <id>`; no end of turn before the pull request and ACC summary.
@@ -158,7 +154,8 @@ WAIT_CHILDREN = " ".join(shlex.quote(x) for x in (Path(sys.executable).as_posix(
                                                      "wait-children"))
 
 
-def _resume_lines(run_id: str, agent: str, model: str | None, timeout: str, log: str) -> list[str]:
+def _resume_lines(run_id: str, agent: str, model: str | None, timeout: str, log: str,
+                  jobs_dir: str = "") -> list[str]:
     """After the first run: resume a crew chief that ended rc 0 with no summary of its id, at most RESUMES times;
     still none, rc NO_DELIVERY_RC."""
     jobs = shlex.quote((ledger.ledger_path().parent / "jobs").as_posix())
@@ -172,7 +169,9 @@ def _resume_lines(run_id: str, agent: str, model: str | None, timeout: str, log:
             f"for n in $(seq 1 {RESUMES}); do",
             f'  [ "$rc" = 0 ] && ! {delivered} || break',
             # 22/11: a crew chief "waiting for the backend" ended 3x while its engineer still worked: rc 5, work lost
-            f"  {WAIT_CHILDREN} {shlex.quote(run_id)} 2>&1 | tee -a {log}",
+            # one timed-out wait is enough: a dead engineer must not hold every resume for --max
+            f'  [ -n "$desistiu" ] || {{ {WAIT_CHILDREN} {shlex.quote(run_id)} --job-dir {jobs_dir} 2>&1 | tee -a {log};'
+            ' [ "${PIPESTATUS[0]}" = 1 ] && desistiu=1; }',
             f'  echo "ACC: coordenador encerrou sem entrega; retomada $n de {RESUMES}" | tee -a {log}',
             # shortcut: each resume gets the whole --timeout again; a deadline if runs ever go past it
             f"  timeout {timeout} {resume} {shlex.quote(RESUME_PROMPT)} < /dev/null 2>&1 | tee -a {log}",
@@ -202,12 +201,12 @@ def _script(job: Path, cwd: Path, run_id: str, agent: str, model: str | None, ti
         # an Orca terminal inherits a PATH without Git's tools: cat, tee and timeout would be missing
         # (double quotes: the entry has a space and $PATH must still expand)
         *( [f'export PATH="{usr_bin}:$PATH"'] if usr_bin else [] ),
-        f"cd {q(cwd)} || exit 1",
+        f"cd {q(cwd)} || {{ echo 1 > {j('rc')}; exit 1; }}",
         *(f"export {k}={shlex.quote(v)}" for k, v in env.items()),
         f"echo $$ > {j('pid')}",
         # the request is read from its file, never pasted into the command line
         f'timeout {timeout} {cmd} "$(cat {j("prompt.md")})" < /dev/null 2>&1 | tee {j("log")}',
-        *(_resume_lines(run_id, agent, model, timeout, j("log")) if crew else ["rc=${PIPESTATUS[0]}"]),
+        *(_resume_lines(run_id, agent, model, timeout, j("log"), q(job.parent)) if crew else ["rc=${PIPESTATUS[0]}"]),
         f"echo $rc > {j('rc')}",
         "",
     ])
@@ -382,3 +381,8 @@ def compare(job_dir: Path, since: str | None = None) -> dict[str, dict]:
         "minutes_median": statistics.median(m) if (m := [r["minutes"] for r in rows if r["minutes"] is not None])
         else None,
     } for mode, rows in groups.items()}
+
+
+def seconds(text: str) -> int:
+    """``4h``/``90m``/``600``/``1d`` (the ``timeout`` format) in seconds."""
+    return int(text[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[text[-1]] if text[-1].isalpha() else int(text)

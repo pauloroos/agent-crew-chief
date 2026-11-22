@@ -17,6 +17,9 @@ which keeps their full history, releases and changelog.
   from inside another one records it as `parent` in its `.meta.json`, and before each resume the run
   script runs `ACC wait-children <id>`: it waits while any child is running or starting (up to `--max`,
   4h), so waiting no longer uses up a resume.
+  A wait that hits `--max` is not repeated on the next resumes (a dead engineer cannot hold the crew
+  chief for 3 × 4h), a run left "starting" for 10 minutes does not count as working, and a run script
+  whose `cd` fails now writes rc 1 instead of staying "starting".
 
 ## [0.17.5] - 2026-11-21
 

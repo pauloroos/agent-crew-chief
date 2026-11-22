@@ -446,3 +446,21 @@ def test_wait_children_returns_when_no_engineer_works(tmp_path, monkeypatch):
     (jobs / "eng-b.rc").write_text("1", encoding="utf-8")
     assert main(["wait-children", "chefe-3", "--job-dir", str(jobs), "--max", "1", "--every", "0.1"]) == 0
     assert main(["wait-children", "outro", "--job-dir", str(jobs)]) == 0  # sem filhos
+
+
+def test_wait_children_ignores_a_run_that_never_started(tmp_path):
+    # review of 0.17.6: an Orca tab that never ran its command stays "starting" forever
+    from datetime import datetime, timedelta, timezone
+    from crew_chief.cli import main
+    jobs = tmp_path / "jobs"; jobs.mkdir()
+    velho = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    (jobs / "eng-x.meta.json").write_text(json.dumps({"id": "eng-x", "parent": "chefe-4", "start": velho}),
+                                          encoding="utf-8")
+    assert main(["wait-children", "chefe-4", "--job-dir", str(jobs), "--max", "1", "--every", "0.1"]) == 0
+
+
+def test_crew_script_gives_up_waiting_once_and_records_a_failed_cd(tmp_path):
+    _go(tmp_path, FakeOrca(ready=False), [], job_id="chefe-5")
+    script = (tmp_path / "jobs" / "chefe-5.run.sh").read_text(encoding="utf-8")
+    assert '[ -n "$desistiu" ]' in script and "desistiu=1" in script and "--job-dir" in script
+    assert "|| { echo 1 >" in script
