@@ -38,6 +38,7 @@ import sys
 import time
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -81,13 +82,26 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # a 3xx comes back as itself: headers never follow to another host
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def get(url: str, headers: dict | None = None, timeout: float = 15) -> tuple[int | None, str]:
-    """(status, note): status None when nothing answered."""
+    """(status, note): status None when nothing answered. Redirects are not followed; one to another host is
+    reported in the note (an access gate sending the request to its login page answers 200 there)."""
     req = urllib.request.Request(url, headers={"User-Agent": "agent-crew-chief-smoke", **(headers or {})})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 (local or the project's preview)
+        with _OPENER.open(req, timeout=timeout) as r:  # noqa: S310 (local or the project's preview)
             return r.status, ""
     except urllib.error.HTTPError as exc:
+        where = exc.headers.get("Location", "") if 300 <= exc.code < 400 else ""
+        dest = urllib.parse.urlsplit(urllib.parse.urljoin(url, where)).netloc if where else ""
+        if dest and dest != urllib.parse.urlsplit(url).netloc:
+            return exc.code, f"redirects to another host ({dest}): a login page? check the headers"
         return exc.code, ""
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return None, str(getattr(exc, "reason", exc))[:200]
@@ -105,16 +119,22 @@ def find_browser() -> str | None:
               r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
               r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
               "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
-    cache = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or Path.home() / ".cache" / "ms-playwright")
-    places += sorted(glob.glob(str(cache / "chromium*" / "*" / "chrome"))) + \
-        sorted(glob.glob(str(cache / "chromium_headless_shell*" / "*" / "headless_shell")))
+    caches = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH"), Path.home() / ".cache" / "ms-playwright",
+              os.environ.get("LOCALAPPDATA") and Path(os.environ["LOCALAPPDATA"]) / "ms-playwright",
+              Path.home() / "Library" / "Caches" / "ms-playwright"]
+    for cache in [Path(c) for c in caches if c]:
+        for pattern in ("chromium-*/*/chrome", "chromium-*/*/chrome.exe", "chromium_headless_shell-*/*/headless_shell",
+                        "chromium_headless_shell-*/*/chrome-headless-shell",
+                        "chromium_headless_shell-*/*/chrome-headless-shell.exe"):
+            places += sorted(glob.glob(str(cache / pattern)))
     return next((p for p in places if Path(p).is_file()), None)
 
 
 def shot(browser: str, url: str, out: Path, width: int, height: int = 900) -> str:
     """Screenshot ``url`` into ``out``; '' when it worked, else why not."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [browser, "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
+    profile = out.parent / ".browser-profile"  # never the user's open profile
+    cmd = [browser, "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", f"--user-data-dir={profile}",
            f"--window-size={width},{height}", "--virtual-time-budget=4000", f"--screenshot={out}", url]
     try:
         subprocess.run(cmd, capture_output=True, timeout=60, check=False)
@@ -124,17 +144,18 @@ def shot(browser: str, url: str, out: Path, width: int, height: int = 900) -> st
 
 
 def _stop(proc: subprocess.Popen) -> None:
-    if proc.poll() is not None:
-        return
+    """Stop the app's whole process group, even when the shell already exited and left the app running."""
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)
     else:
-        try:
-            os.killpg(proc.pid, 15)
-        except OSError:
-            proc.terminate()
+        for sig in (15, 9):
+            try:
+                os.killpg(proc.pid, sig)
+            except OSError:
+                break
+            time.sleep(1)  # the group may outlive the shell: TERM, then KILL whatever is left
     try:
-        proc.wait(timeout=10)
+        proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
 
@@ -143,18 +164,19 @@ def _routes(base: str, routes: list[str], headers: dict | None = None) -> list[d
     out = []
     for path in routes:
         status, note = get(base + path, headers)
-        out.append({"path": path, "status": status, "ok": status is not None and status < 500, "note": note})
+        # below 400, or 401/403 (an app that asks for login); a redirect to another host fails
+        ok = status is not None and (status < 400 or status in (401, 403)) and not note.startswith("redirects")
+        out.append({"path": path, "status": status, "ok": ok, "note": note})
     return out
 
 
-def _expand(headers: dict) -> dict:
-    """$VARS in header values from the environment (a missing one leaves the header out)."""
-    out = {}
+def _expand(headers: dict) -> tuple[dict, list[str]]:
+    """($VARS in header values from the environment, names of the missing ones)."""
+    out, missing = {}, []
     for k, v in (headers or {}).items():
-        value = re.sub(r"\$([A-Z_][A-Z0-9_]*)", lambda m: os.environ.get(m.group(1), "\0"), str(v))
-        if "\0" not in value:
-            out[str(k)] = value
-    return out
+        missing += [n for n in re.findall(r"\$([A-Z_][A-Z0-9_]*)", str(v)) if n not in os.environ]
+        out[str(k)] = re.sub(r"\$([A-Z_][A-Z0-9_]*)", lambda m: os.environ.get(m.group(1), ""), str(v))
+    return out, missing
 
 
 def local(repo: Path, cfg: dict, out: Path) -> dict:
@@ -186,9 +208,9 @@ def local(repo: Path, cfg: dict, out: Path) -> dict:
         if "error" not in result:
             result["routes"] = _routes(base, [ready] + [r for r in cfg.get("routes", []) if r != ready])
             browser = find_browser()
-            for s in cfg.get("screen", []):
+            for i, s in enumerate(cfg.get("screen", []), 1):
                 for w in s.get("widths", [390, 1440]):
-                    name = re.sub(r"[^a-z0-9]+", "-", s["path"].lower()).strip("-") or "root"
+                    name = f"{i}-" + (re.sub(r"[^a-z0-9]+", "-", s["path"].lower()).strip("-") or "root")
                     entry = {"path": s["path"], "width": w}
                     if not browser:
                         entry["note"] = "no browser found (CREW_CHIEF_BROWSER): screen skipped"
@@ -205,7 +227,11 @@ def local(repo: Path, cfg: dict, out: Path) -> dict:
             result["ok"] = all(r["ok"] for r in result["routes"])
     finally:
         _stop(proc)
-    result["log_tail"] = log.read_text(encoding="utf-8", errors="replace")[-1500:] if log.is_file() else ""
+    result["log_tail"] = ""
+    if log.is_file():
+        with open(log, "rb") as fh:
+            fh.seek(max(0, log.stat().st_size - 1500))
+            result["log_tail"] = fh.read().decode("utf-8", "replace")
     return result
 
 
@@ -213,24 +239,27 @@ def preview(repo: Path, cfg: dict, branch: str) -> dict:
     """Run the project's preview command, call the routes on the URL it prints, tear it down."""
     subst = lambda c: c.replace("{repo}", repo.name).replace("{branch}", branch)  # noqa: E731
     result = {"stage": "preview", "routes": [], "ok": False}
-    try:
-        run = subprocess.run(subst(cfg["preview"]), shell=True, cwd=repo, capture_output=True, text=True,  # noqa: S602
-                             timeout=float(cfg.get("preview_timeout", 900)), check=False)
-    except subprocess.TimeoutExpired:
-        result["error"] = "the preview command timed out"
+    headers, missing = _expand(cfg.get("preview_headers"))
+    if missing:
+        result["error"] = f"preview_headers need {', '.join(missing)} in the environment"
         return result
-    lines = [x.strip() for x in run.stdout.splitlines() if x.strip()]
-    url = lines[-1] if lines else ""
-    if run.returncode != 0 or not re.match(r"https?://", url):
-        result["error"] = f"the preview command failed (rc {run.returncode}): {(run.stderr or run.stdout)[-300:]}"
-        return result
-    result["base"] = url.rstrip("/")
     try:
+        try:
+            run = subprocess.run(subst(cfg["preview"]), shell=True, cwd=repo, capture_output=True, text=True,  # noqa: S602
+                                 timeout=float(cfg.get("preview_timeout", 900)), check=False)
+        except subprocess.TimeoutExpired:
+            result["error"] = "the preview command timed out"
+            return result
+        lines = [x.strip() for x in run.stdout.splitlines() if x.strip()]
+        url = lines[-1] if lines else ""
+        if run.returncode != 0 or not re.match(r"https?://", url):
+            result["error"] = f"the preview command failed (rc {run.returncode}): {(run.stderr or run.stdout)[-300:]}"
+            return result
+        result["base"] = url.rstrip("/")
         ready = cfg.get("ready", "/")
-        result["routes"] = _routes(result["base"], [ready] + [r for r in cfg.get("routes", []) if r != ready],
-                                   _expand(cfg.get("preview_headers")))
+        result["routes"] = _routes(result["base"], [ready] + [r for r in cfg.get("routes", []) if r != ready], headers)
         result["ok"] = all(r["ok"] for r in result["routes"])
-    finally:
+    finally:  # also after a failure or a timeout: the environment may exist already
         if cfg.get("preview_teardown"):
             subprocess.run(subst(cfg["preview_teardown"]), shell=True, cwd=repo, capture_output=True,  # noqa: S602
                            timeout=300, check=False)
@@ -244,6 +273,9 @@ def report(stages: list[dict], out: Path) -> str:
     for st in stages:
         verdict = "ok" if st["ok"] else "FAILED"
         lines.append(f"- {st['stage']}: {verdict}" + (f" ({st['error']})" if st.get("error") else ""))
+        if not st["ok"] and st.get("log_tail"):
+            lines += ["  log:"] + ["    " + x for x in st["log_tail"].strip().splitlines()[-10:]]
+        rows.append(f"<tr><td colspan=3><b>{st['stage']}: {verdict}</b> {html.escape(st.get('error', ''))}</td></tr>")
         for r in st.get("routes", []):
             lines.append(f"  - {r['path']} -> {r['status'] if r['status'] is not None else 'no answer'}"
                          + (f" ({r['note']})" if r.get("note") else ""))
@@ -274,7 +306,7 @@ def run(repo: Path, out: Path, branch: str | None, with_preview: bool = True) ->
     stages = [local(repo, cfg, out)]
     if with_preview and cfg.get("preview") and stages[0]["ok"]:
         stages.append(preview(repo, cfg, branch or _branch(repo)))
-    summary = report(stages, out) + f"\nreport: {(out / 'smoke.html').as_posix()}"
+    summary = report(stages, out)
     return (0 if all(s["ok"] for s in stages) else 1), summary
 
 

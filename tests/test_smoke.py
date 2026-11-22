@@ -38,15 +38,30 @@ def no_browser(monkeypatch):
     monkeypatch.setenv("CREW_CHIEF_BROWSER", "nao-existe-este-navegador")
 
 
-def test_app_up_routes_answer_and_404_is_not_a_failure(tmp_path):
-    repo = _repo(tmp_path, f'start = \'{PY} app.py {{port}}\'\nready = "/healthz"\nroutes = ["/", "/sumiu"]\n'
+def test_app_up_routes_answer(tmp_path):
+    repo = _repo(tmp_path, f'start = \'{PY} app.py {{port}}\'\nready = "/healthz"\nroutes = ["/", "/api"]\n'
                            '[[screen]]\npath = "/"\nwidths = [390]\n')
     code, summary = smoke.run(repo, tmp_path / "out", "feature/x")
     assert code == 0, summary
-    assert "/sumiu -> 404" in summary and "local: ok" in summary
+    assert "/api -> 200" in summary and "local: ok" in summary
     data = json.loads((tmp_path / "out" / "smoke.json").read_text(encoding="utf-8"))
     assert data[0]["screens"][0]["note"].startswith("no browser found")  # screens skipped, never a failure
     assert (tmp_path / "out" / "smoke.html").is_file()
+
+
+def test_a_listed_route_that_is_missing_fails(tmp_path):
+    # 22/11: the screen called routes the API did not have
+    repo = _repo(tmp_path, f"start = '{PY} app.py {{port}}'\nroutes = [\"/sumiu\"]\n")
+    code, summary = smoke.run(repo, tmp_path / "out", None)
+    assert code == 1 and "/sumiu -> 404" in summary
+
+
+def test_preview_without_its_header_variable_fails(tmp_path, monkeypatch):
+    monkeypatch.delenv("PREVIEW_TOKEN", raising=False)
+    repo = _repo(tmp_path, f"start = '{PY} app.py {{port}}'\npreview = \"echo http://127.0.0.1:9\"\n"
+                           "preview_headers = { \"X-Token\" = \"$PREVIEW_TOKEN\" }\n")
+    code, summary = smoke.run(repo, tmp_path / "out", "feature/z")
+    assert code == 1 and "PREVIEW_TOKEN" in summary
 
 
 def test_a_route_with_500_fails(tmp_path):
@@ -59,7 +74,7 @@ def test_an_app_that_dies_at_start_fails_with_its_log(tmp_path):
     # 22/11: ModuleNotFoundError: No module named 'jwt' at import time
     repo = _repo(tmp_path, f'start = \'{PY} -c "import jwt_que_nao_existe" {{port}}\'\nready_timeout = 20\n')
     code, summary = smoke.run(repo, tmp_path / "out", None)
-    assert code == 1 and "the app exited" in summary
+    assert code == 1 and "the app exited" in summary and "jwt_que_nao_existe" in summary  # log tail in the PR
     data = json.loads((tmp_path / "out" / "smoke.json").read_text(encoding="utf-8"))
     assert "jwt_que_nao_existe" in data[0]["log_tail"]
 

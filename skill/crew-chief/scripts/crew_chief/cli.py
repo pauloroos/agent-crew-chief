@@ -573,6 +573,8 @@ def main(argv: list[str] | None = None) -> int:
         out = args.out or launch.runs_dir() / f"smoke-{_dt.now(timezone.utc):%Y%m%d-%H%M%S}"
         code, summary = smoke.run(args.repo.resolve(), out, args.branch, not args.no_preview)
         print(summary, file=sys.stderr if code == 2 else sys.stdout)
+        if code != 2 and (out / "smoke.html").is_file():
+            print(f"report: {(out / 'smoke.html').as_posix()}", file=sys.stderr)  # a local path, not for the PR body
         return code
 
     project = args.project.expanduser().resolve()
