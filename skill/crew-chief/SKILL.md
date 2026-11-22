@@ -151,7 +151,7 @@ when the request has one). With every grade recorded, run `ACC summary --job <sl
 (`--rc 1` if not delivered) in every run that opens or updates a PR, before cleanup; then
 release engineers, remove lane worktrees and branches: Orca `orca worktree rm --worktree
 branch:<feature>-<lane>`; background-mode `git worktree remove ../<repo>-acc-<lane>`, `git
-branch -D <feature>-<lane>`. Both modes, once nothing runs: remove `../<repo>-acc-logs/`. Report:
+branch -D <feature>-<lane>`. Both modes, once nothing runs: remove `../<repo>-acc-logs/`. Never delete the run files ACC launch writes (`<id>.meta.json`, `.log`, `.pid`, `.rc` in the runs folder): `ACC pick` and `ACC wait-children` read them. Report:
 PR, each job with risk, pace, model, attempts, scrutineer scores, outcome, worker and engineer
 scores, anything open, `ACC score --kind <kinds used>`. `ACC summary` exits 1 with
 `spec_divergente` when the committed `spec.md` is not the approved one: report it.
