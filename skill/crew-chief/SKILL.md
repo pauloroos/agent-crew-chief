@@ -162,7 +162,7 @@ scores, anything open, `ACC score --kind <kinds used>`. `ACC summary` exits 1 wi
 --lane <lane> --brief <file>` starts a lane engineer (direct mode, standard title
 `acc-<slug>-<lane>-engineer`: Orca tab when Orca runs, background otherwise). `ACC runs [id]` and
 `ACC compare` follow it; a launched crew chief starts each lane engineer with `ACC launch
---engineer` and waits with `ACC runs <id>`.
+--engineer` and waits with `ACC runs <id>`; before resuming it, the run script runs `ACC wait-children <id>`.
 
 ## Rules
 

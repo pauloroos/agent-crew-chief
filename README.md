@@ -385,6 +385,7 @@ ACC sync [--init <url>]         # sync ledger.jsonl through a private git repo
 ACC launch --brief <file> [--crew|--direct] [--agent opencode|claude|codex] [--model <m>]  # start a whole run
 ACC runs [<id>]                 # launched runs, or one run with its log tail
 ACC compare [--since YYYY-MM-DD]  # crew vs direct runs
+ACC wait-children <id> [--max 4h]  # wait while a run's engineers work (the run script calls it before a resume)
 ```
 
 Kinds: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
@@ -396,12 +397,12 @@ You need Python 3.11+, git, and at least one agent CLI (`claude`, `codex` or
 `opencode`). [Orca](https://github.com/stablyai/orca) is optional.
 
 ```bash
-git clone --branch v0.17.5 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.17.6 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /path/to/project
 ```
 
-No git? Download `agent-crew-chief-v0.17.5.zip` from the
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.5),
+No git? Download `agent-crew-chief-v0.17.6.zip` from the
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.6),
 unzip it and run `python install.py /path/to/project` from the unzipped folder.
 
 `install.py` copies the skill and the kit into `.claude/skills/`,
@@ -426,7 +427,7 @@ Then tell your agent "ACC, do X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.17.5
+git -C agent-crew-chief checkout v0.17.6
 python agent-crew-chief/install.py /path/to/project
 ```
 
