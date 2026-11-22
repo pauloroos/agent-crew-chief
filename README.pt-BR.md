@@ -396,6 +396,7 @@ ACC launch --brief <arquivo> [--crew|--direct] [--agent opencode|claude|codex] [
 ACC runs [<id>]                    # rodadas lançadas, ou uma com o fim do log
 ACC compare [--since AAAA-MM-DD]   # rodadas crew x direct
 ACC wait-children <id> [--max 4h] # espera as frentes de uma rodada (o roteiro chama antes de retomar)
+ACC smoke [--repo .] [--no-preview] # sobe o app, chama as rotas e fotografa as telas ao lado dos protótipos
 ```
 
 Tipos: `code`, `tests`, `refactor`, `design`, `docs`, `research`,
@@ -407,12 +408,12 @@ Você precisa de Python 3.11+, git e pelo menos um CLI de agente (`claude`,
 `codex` ou `opencode`). O [Orca](https://github.com/stablyai/orca) é opcional.
 
 ```bash
-git clone --branch v0.17.7 https://github.com/pauloroos/agent-crew-chief
+git clone --branch v0.18.0 https://github.com/pauloroos/agent-crew-chief
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
-Sem git? Baixe `agent-crew-chief-v0.17.7.zip` das
-[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.17.7),
+Sem git? Baixe `agent-crew-chief-v0.18.0.zip` das
+[releases](https://github.com/pauloroos/agent-crew-chief/releases/tag/v0.18.0),
 descompacte e rode `python install.py /caminho/do/projeto` na pasta descompactada.
 
 O `install.py` copia a skill e o kit para `.claude/skills/`, `.agents/skills/`
@@ -437,7 +438,7 @@ Depois é só dizer ao seu agente "ACC, faz X".
 
 ```bash
 git -C agent-crew-chief fetch --tags
-git -C agent-crew-chief checkout v0.17.7
+git -C agent-crew-chief checkout v0.18.0
 python agent-crew-chief/install.py /caminho/do/projeto
 ```
 
@@ -463,6 +464,16 @@ arquivo `VERSION` de cada um):
   veja [vendor/superpowers/LICENSE](vendor/superpowers/LICENSE).
 - [ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2, de
   DietrichGebert: veja [vendor/ponytail/LICENSE](vendor/ponytail/LICENSE).
+
+## Teste de fumaça antes do pull request
+
+`ACC smoke` sobe o app que a equipe construiu, chama as rotas e fotografa as telas ao lado dos protótipos: biblioteca
+faltando, rota que a tela chama e não existe ou tela quebrada aparecem antes da mescla. O projeto diz como em
+`.crew-chief/smoke.toml` (formato no README em inglês: `start` com `{port}`, `ready`, `env`, `routes`, `[[screen]]`
+com `path`, `prototype` e `widths`, e o `preview` opcional, que publica a branch num ambiente real e imprime a URL
+por último). A etapa local roda sempre; a de preview, quando há `preview`. Sem navegador da família Chromium as telas
+são puladas, não reprovadas. Relatório (`smoke.html` lado a lado e `smoke.json`) na pasta das rodadas. Sem
+`smoke.toml`: sai 0 e avisa "não configurado".
 
 ## Licença
 
